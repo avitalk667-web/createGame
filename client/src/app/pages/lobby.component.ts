@@ -27,6 +27,9 @@ import { IconComponent } from '../ui/icon.component';
             @if (canShare) { <button class="btn small" (click)="share()">שיתוף</button> }
           </div>
           @if (copied()) { <span class="copied" role="status">{{ copied() }}</span> }
+          @if (manualCopy(); as t) {
+            <input id="manual-copy" class="manual" readonly dir="ltr" [value]="t" (focus)="$any($event.target).select()" aria-label="טקסט להעתקה" />
+          }
         </div>
       </header>
 
@@ -79,7 +82,9 @@ import { IconComponent } from '../ui/icon.component';
     .code .lbl { color: var(--muted); font-size: .85rem; }
     .code strong { font-size: 2.2rem; letter-spacing: .25em; color: #fff; font-family: 'Heebo', monospace; }
     .code-actions { display:flex; gap:.4rem; flex-wrap:wrap; justify-content:center; }
-    .copied { color: var(--ok); font-size: .85rem; }
+.copied { color: var(--ok); font-size: .85rem; max-width: 280px; text-align: center; }
+    .manual { width: 100%; font-size: .9rem; text-align: center; }
+    .code strong { user-select: all; }
     .players { display:grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: .8rem; margin: 1.4rem 0; }
     .pl { position:relative; background: linear-gradient(180deg, #1a2550, #0d1430); border: 2px solid rgba(201,162,77,.45); border-radius: 14px;
       padding: .6rem; display:flex; flex-direction:column; align-items:center; gap:.2rem; min-height: 200px; }
@@ -105,6 +110,7 @@ export class LobbyComponent {
   busy = signal(false);
   error = signal<string | null>(null);
   copied = signal<string | null>(null);
+  manualCopy = signal<string | null>(null);
   canShare = typeof navigator.share === 'function';
   char = characterInfo;
   emptySlots = computed(() => {
@@ -118,13 +124,44 @@ export class LobbyComponent {
   }
 
   async copy(text: string, msg: string) {
+    this.manualCopy.set(null);
+    if (await this.writeClipboard(text)) {
+      this.copied.set(msg);
+      setTimeout(() => this.copied.set(null), 2500);
+      return;
+    }
+    // Clipboard blocked (in-app browsers, strict settings): show the text selected, ready for Ctrl+C / long-press.
+    this.copied.set('הדפדפן חסם העתקה אוטומטית — הטקסט מסומן, העתיקו אותו (Ctrl+C או לחיצה ארוכה).');
+    this.manualCopy.set(text);
+    setTimeout(() => {
+      const el = document.getElementById('manual-copy') as HTMLInputElement | null;
+      el?.focus();
+      el?.select();
+    });
+  }
+
+  private async writeClipboard(text: string): Promise<boolean> {
     try {
       await navigator.clipboard.writeText(text);
-      this.copied.set(msg);
+      return true;
     } catch {
-      this.copied.set('לא ניתן להעתיק — סמנו את הקוד והעתיקו ידנית');
+      // older fallback that still works where the async clipboard API is blocked
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try {
+        ok = document.execCommand('copy');
+      } catch {
+        ok = false;
+      }
+      ta.remove();
+      return ok;
     }
-    setTimeout(() => this.copied.set(null), 2500);
   }
 
   share() {
