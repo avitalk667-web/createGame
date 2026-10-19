@@ -24,8 +24,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR /app
 COPY --from=server /app ./
 ENV ASPNETCORE_ENVIRONMENT=Production \
-    DOTNET_CLI_TELEMETRY_OPTOUT=1 \
-    DOTNET_GCHeapHardLimitPercent=0x46
+    DOTNET_CLI_TELEMETRY_OPTOUT=1
 USER $APP_UID
 # Render provides PORT (default 10000); fall back to 8080 elsewhere.
 CMD ["sh", "-c", "ASPNETCORE_URLS=http://0.0.0.0:${PORT:-8080} exec dotnet PortalX.Server.dll"]

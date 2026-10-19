@@ -61,10 +61,12 @@ var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<PortalDbContext>();
     try
     {
+        app.Logger.LogInformation("Database: {Target}", DatabaseConfig.Describe(DatabaseConfig.Resolve(app.Configuration)));
+        var db = scope.ServiceProvider.GetRequiredService<PortalDbContext>();
         await PortalDbContext.InitializeAsync(db, scope.ServiceProvider.GetRequiredService<ScenarioCatalog>());
+        app.Logger.LogInformation("Database ready.");
     }
     catch (Exception ex)
     {
