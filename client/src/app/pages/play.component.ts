@@ -1,0 +1,582 @@
+import {
+  AfterViewInit, ChangeDetectionStrategy, Component, DestroyRef, ElementRef, NgZone, OnDestroy, computed, effect, inject, output, signal, untracked, viewChild,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { AudioService } from '../core/audio.service';
+import { GameService } from '../core/game.service';
+import { GameNotice } from '../core/models';
+import { SettingsService } from '../core/settings.service';
+import { ChatComponent } from '../ui/chat.component';
+import { IconComponent } from '../ui/icon.component';
+import { JoystickComponent } from '../ui/joystick.component';
+import { SettingsPanelComponent } from '../ui/settings-panel.component';
+import { InteractableDef, PanelId, ZONE_ORDER, ZoneId } from '../world/layout';
+import { GameWorld } from '../world/world';
+import { PuzzlePanelComponent } from './puzzle-panel.component';
+import { ResultComponent } from './result.component';
+
+interface Toast { id: number; text: string; kind: string }
+
+/** Intro timeline (seconds from the start of the cinematic) — narration by the portal guardian. */
+const INTRO_LINES: [number, string][] = [
+  [2, 'intro_01'], [11, 'intro_02'], [21, 'intro_03'], [32, 'intro_04'], [41.5, 'intro_05'],
+];
+
+/** Steps 4–7: opening scene, exploration, finale and result (spec §4). */
+@Component({
+  selector: 'px-play',
+  imports: [IconComponent, ChatComponent, JoystickComponent, SettingsPanelComponent, PuzzlePanelComponent, ResultComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="stage" [class.cine]="phase() !== 'playing'">
+      <canvas #c tabindex="0" aria-label="עולם המשחק התלת־ממדי. השתמשו במקשי החיצים לתנועה ובעכבר לסיבוב."></canvas>
+      @if (loading()) { <div class="loading">בונים את האחוזה...</div> }
+      @if (flash()) { <div class="flash"></div> }
+    </div>
+
+    <!-- opening cinematic -->
+    @if (phase() === 'intro') {
+      <div class="letterbox top"></div><div class="letterbox bottom"></div>
+      @if (introT() < 6) { <div class="title-card"><h1 class="gold-title">PORTAL X</h1><p>הפורטל האחרון</p></div> }
+      @if (introT() > game.snapshot()!.introSeconds - 8) {
+        <div class="mission card">
+          <span class="chip">המשימה שלכם</span>
+          <h2>פתחו את הפורטל לפני שייסגר</h2>
+          <ul>
+            <li>עברו בחמשת חדרי האחוזה ופתרו את החידות</li>
+            <li>אספו את הידית, הגביש וגלגל השיניים</li>
+            <li>אספו חמש אותיות זהב — הן מילת הסוד של הפורטל</li>
+          </ul>
+        </div>
+      }
+      <div class="cine-actions">
+        @if (game.isHost()) { <button class="btn small" (click)="skipIntro()">דילוג על הפתיחה ›</button> }
+        @else { <span class="muted small">רק המארח יכול לדלג על הפתיחה</span> }
+      </div>
+    }
+
+    <!-- gameplay HUD -->
+    @if (phase() === 'playing') {
+      <header class="hud-top">
+        <div class="zone card">
+          <px-icon [name]="zoneIcon(zone())" [size]="22" />
+          <b>{{ zoneName(zone()) }}</b>
+          <span class="timer" aria-label="זמן משחק">{{ elapsed() }}</span>
+        </div>
+        <div class="letters card" aria-label="אותיות זהב">
+          <span class="muted small">אותיות זהב</span>
+          @for (l of game.snapshot()!.letters; track $index) {
+            <span class="gl" [title]="zoneName(l.zone)">{{ l.letter }}<small><px-icon [name]="zoneIcon(l.zone)" [size]="12" /></small></span>
+          }
+          @for (e of emptyLetters(); track $index) { <span class="gl empty">?</span> }
+        </div>
+        <div class="tools">
+          <button class="btn small" (click)="panel.set({ id: 'map' })" aria-label="מפת האחוזה"><px-icon name="map" [size]="18" /> מפה</button>
+          <button class="btn small" (click)="showSettings.set(true)">הגדרות</button>
+          <button class="btn small ghost" (click)="confirmLeave()">יציאה</button>
+        </div>
+      </header>
+
+      <aside class="objectives card" [class.collapsed]="!showObjectives()">
+        <button class="obj-head" (click)="showObjectives.set(!showObjectives())" [attr.aria-expanded]="showObjectives()">
+          <b>המשימות שלנו</b><span>{{ showObjectives() ? '−' : '+' }}</span></button>
+        @if (showObjectives()) {
+          <ul>
+            @for (p of objectives(); track p.id) {
+              <li [class.done]="p.status === 'solved'" [class.locked]="p.status === 'locked'">
+                <span class="box">@if (p.status === 'solved') { <px-icon name="check" [size]="14" /> } @else if (p.status === 'locked') { <px-icon name="lock" [size]="12" /> }</span>
+                {{ p.objective }}
+              </li>
+            }
+          </ul>
+          <p class="players-line">
+            @for (pl of game.snapshot()!.players; track pl.id) {
+              <span [class.off]="!pl.isConnected" [title]="pl.isConnected ? 'מחובר' : 'מנותק'">● {{ pl.nickname }}</span>
+            }
+          </p>
+        }
+      </aside>
+
+      @if (showMap()) {
+        <div class="map card" aria-label="מפת האחוזה">
+          @for (z of zones(); track z.id) {
+            <div class="mz" [class.here]="z.id === zone()" [class.locked]="!game.snapshot()!.unlockedZones.includes(z.id)">
+              <px-icon [name]="game.snapshot()!.unlockedZones.includes(z.id) ? z.icon : 'lock'" [size]="18" />{{ z.name }}
+            </div>
+          }
+        </div>
+      }
+
+      @if (hover(); as h) { <div class="hover-label">{{ h.label }} <small>· לחצו לבדיקה</small></div> }
+      @if (pingText()) { <div class="ping">{{ pingText() }}</div> }
+
+      <footer class="hud-bottom">
+        <div class="inventory card" aria-label="התיק המשותף">
+          <span class="muted small">התיק המשותף</span>
+          @for (id of game.snapshot()!.inventory; track id) {
+            <button class="inv-item" (click)="inspectItem(id)" [attr.aria-label]="itemName(id)"><px-icon [name]="id" [size]="26" /><small>{{ itemName(id) }}</small></button>
+          } @empty { <span class="muted small">ריק — חפשו חפצים בחדרים</span> }
+        </div>
+        <div class="right-tools">
+          <button class="btn" (click)="openHintFor()"><px-icon name="hint" [size]="20" /> רמזים</button>
+          <button class="btn" (click)="showChat.set(!showChat())">צ׳אט @if (unread()) { <span class="badge">{{ unread() }}</span> }</button>
+        </div>
+      </footer>
+
+      @if (showChat()) {
+        <section class="chat-pop card" aria-label="צ׳אט הקבוצה">
+          <header><b>צ׳אט הקבוצה</b><button class="btn small ghost" (click)="showChat.set(false)" aria-label="סגירת הצ׳אט">✕</button></header>
+          <px-chat />
+        </section>
+      }
+
+      @if (touch) {
+        <px-joystick class="joy" (changed)="world?.setJoystick($event.x, $event.y)" />
+        <button class="btn primary act" (click)="interactNearest()">בדיקה</button>
+      }
+    }
+
+    @if (cutscene(); as c) {
+      <div class="letterbox top"></div><div class="letterbox bottom"></div>
+      <div class="cut-banner" role="status" aria-live="assertive">
+        @if (c.puzzle) { <p class="by">{{ c.puzzle }}</p> }
+        <h2 class="gold-title">{{ c.title }}</h2>
+        @if (c.letter) { <div class="new-letter"><span>אות זהב חדשה</span><b>{{ c.letter }}</b></div> }
+      </div>
+    }
+
+    <div class="toasts" aria-live="polite">
+      @for (t of toasts(); track t.id) { <div class="toast" [class]="t.kind">{{ t.text }}</div> }
+    </div>
+
+    @if (panel(); as p) {
+      <px-puzzle-panel [panel]="p.id" [ref]="p.ref" [here]="zone()" [ringBell]="ringBell" (close)="closePanel()" />
+    }
+    @if (showSettings()) { <px-settings (close)="showSettings.set(false)" /> }
+
+    <!-- finale -->
+    @if (phase() === 'completed') {
+      @if (!showResult()) {
+        <div class="letterbox top"></div><div class="letterbox bottom"></div>
+        @if (outroT() > 5) {
+          <div class="success">
+            <h1 class="gold-title">הצלחנו!</h1>
+            <p>הפורטל נפתח בזכות שיתוף הפעולה שלכם</p>
+            <button class="btn primary" (click)="showResult.set(true)">לתוצאות המשחק ‹</button>
+          </div>
+        }
+      } @else {
+        <px-result (home)="leave.emit()" />
+      }
+    }
+  `,
+  styles: [`
+    :host { display:block; position:fixed; inset:0; overflow:hidden; }
+    .stage { position:absolute; inset:0; } canvas { width:100%; height:100%; display:block; outline:none; touch-action:none; cursor: grab; }
+    .loading { position:absolute; inset:0; display:grid; place-items:center; font-size:1.4rem; color: var(--gold-2); background: var(--bg); }
+    .flash { position:absolute; inset:0; background:#fff; animation: flash 1.6s ease-out forwards; pointer-events:none; }
+    @keyframes flash { 0% { opacity:0 } 15% { opacity: .95 } 100% { opacity:0 } }
+    .letterbox { position:fixed; inset-inline:0; height: 9vh; background:#000; z-index: 5; } .letterbox.top { top:0 } .letterbox.bottom { bottom:0 }
+    .title-card { position:fixed; inset:0; display:grid; place-content:center; text-align:center; z-index: 6; pointer-events:none; animation: fadein 2s ease; }
+    .title-card h1 { font-size: clamp(3rem, 12vw, 7rem); font-weight:900; } .title-card p { font-family: var(--font-title); font-size: 1.8rem; color: var(--gold-2); }
+    @keyframes fadein { from { opacity:0; transform: scale(1.05) } }
+    .mission { position:fixed; top: 14vh; inset-inline-start: 50%; transform: translateX(50%); z-index: 7; max-width: 520px; width: calc(100% - 32px); animation: missionIn .8s ease both; }
+    @keyframes missionIn { from { opacity:0; transform: translate(50%, 12px) } to { opacity:1; transform: translate(50%, 0) } }
+    .mission ul { line-height: 1.9; padding-inline-start: 1.2rem; }
+    .cine-actions { position:fixed; bottom: calc(9vh + 12px); inset-inline-end: 16px; z-index: 8; }
+    .hud-top { position:fixed; top: 10px; inset-inline: 10px; display:flex; gap:.6rem; align-items:flex-start; z-index: 10; pointer-events:none; flex-wrap: wrap; }
+    .hud-top > * { pointer-events:auto; }
+    .zone { display:flex; align-items:center; gap:.5rem; padding:.5rem .9rem; color: var(--gold-2); }
+    .timer { color: var(--text); font-variant-numeric: tabular-nums; margin-inline-start: .4rem; direction:ltr; }
+    .letters { display:flex; align-items:center; gap:.3rem; padding:.4rem .7rem; }
+    .gl { display:inline-flex; flex-direction:column; align-items:center; font-family: var(--font-title); font-size: 1.4rem; color: #1d1405; background: linear-gradient(180deg,#ffe39a,#e0a93f); width: 34px; border-radius: 6px; line-height:1.1; padding-bottom:2px; }
+    .gl small { line-height:0; } .gl.empty { background: rgba(255,255,255,.08); color: var(--muted); }
+    .tools { margin-inline-start: auto; display:flex; gap:.4rem; }
+    .objectives { position:fixed; top: 70px; inset-inline-start: 10px; width: 290px; z-index: 9; padding: .6rem .9rem; }
+    .obj-head { all: unset; cursor:pointer; display:flex; justify-content:space-between; width:100%; color: var(--gold-2); }
+    .objectives ul { list-style:none; padding:0; margin:.5rem 0; display:flex; flex-direction:column; gap:.35rem; font-size:.92rem; }
+    .objectives li { display:flex; gap:.45rem; align-items:center; } .objectives li.done { color: var(--muted); text-decoration: line-through; } .objectives li.locked { opacity:.5; }
+    .box { width: 18px; height: 18px; border:1px solid var(--gold); border-radius: 4px; display:grid; place-items:center; flex-shrink:0; color: var(--ok); }
+    .players-line { display:flex; flex-wrap:wrap; gap:.5rem; font-size:.82rem; margin:0; } .players-line span { color: var(--ok); } .players-line .off { color: var(--muted); }
+    .map { position:fixed; top: 70px; inset-inline-end: 10px; z-index: 9; display:flex; flex-direction:column; gap:.3rem; padding:.6rem; }
+    .mz { display:flex; gap:.4rem; align-items:center; padding:.3rem .6rem; border-radius: 8px; } .mz.here { background: rgba(224,185,92,.25); color: var(--gold-2); } .mz.locked { opacity:.45; }
+    .hover-label { position:fixed; top: 46%; left: 50%; transform: translate(-50%, -140%); background: rgba(0,0,0,.75); padding:.35rem .8rem; border-radius: 999px; border:1px solid var(--line); pointer-events:none; z-index: 8; white-space:nowrap; }
+    .hover-label small { color: var(--gold-2); }
+    .ping { position:fixed; top: 76px; left: 50%; transform: translateX(-50%); background: rgba(106,168,255,.2); border: 1px solid var(--blue); padding:.4rem .9rem; border-radius: 999px; z-index: 11; }
+    .hud-bottom { position:fixed; bottom: 10px; inset-inline: 10px; display:flex; gap:.6rem; align-items:flex-end; z-index: 10; pointer-events:none; }
+    .hud-bottom > * { pointer-events:auto; }
+    .inventory { display:flex; align-items:center; gap:.5rem; padding:.45rem .8rem; flex-wrap: wrap; }
+    .inv-item { display:flex; flex-direction:column; align-items:center; background: rgba(255,255,255,.07); border:1px solid var(--line); border-radius: 10px; color: var(--gold-2); padding: .25rem .5rem; cursor:pointer; font-family: inherit; }
+    .inv-item small { color: var(--text); font-size: .72rem; }
+    .right-tools { margin-inline-start: auto; display:flex; gap:.4rem; }
+    .badge { background: var(--bad); color:#fff; border-radius: 999px; font-size:.75rem; padding: 0 .45em; }
+    .chat-pop { position:fixed; bottom: 80px; inset-inline-end: 10px; width: min(360px, calc(100% - 20px)); height: 380px; z-index: 12; display:flex; flex-direction:column; padding:.6rem; }
+    .chat-pop header { display:flex; justify-content:space-between; align-items:center; }
+    .toasts { position:fixed; top: 70px; left: 50%; transform: translateX(-50%); display:flex; flex-direction:column; gap:.4rem; align-items:center; z-index: 30; pointer-events:none; width: min(560px, calc(100% - 32px)); }
+    .toast { background: rgba(10,16,36,.92); border: 1px solid var(--line); padding:.55rem 1rem; border-radius: 12px; box-shadow: var(--shadow); animation: fadein .3s ease; text-align:center; }
+    .toast.puzzle-solved, .toast.zone-unlocked, .toast.letter { border-color: var(--gold-2); color: var(--gold-2); }
+    .toast.wrong-answer { border-color: rgba(226,113,91,.6); }
+    .toast.hint { border-color: var(--blue); }
+    .joy { position:fixed; bottom: 90px; left: 20px; z-index: 11; }
+    .act { position:fixed; bottom: 110px; right: 20px; z-index: 11; width: 86px; height: 86px; border-radius: 50%; }
+    .cut-banner { position:fixed; top: calc(9vh + 14px); left: 50%; transform: translateX(-50%); z-index: 15; text-align:center; animation: bannerIn .6s ease both; width: min(640px, calc(100% - 32px)); }
+    @keyframes bannerIn { from { opacity:0; transform: translate(-50%, -12px) } to { opacity:1; transform: translate(-50%, 0) } }
+    .cut-banner h2 { font-size: clamp(1.8rem, 5vw, 3rem); font-weight: 900; margin: .2rem 0; }
+    .cut-banner .by { margin:0; font-size: 1.1rem; text-shadow: 0 2px 8px #000; }
+    .new-letter { display:inline-flex; align-items:center; gap:.6rem; background: rgba(0,0,0,.6); border:1px solid var(--gold); border-radius: 999px; padding:.3rem .9rem; }
+    .new-letter b { font-family: var(--font-title); font-size: 2.2rem; color: #1d1405; background: linear-gradient(180deg,#ffe39a,#e0a93f); border-radius: 8px; padding: 0 .5rem; animation: pop 1s ease .8s both; }
+    @keyframes pop { from { transform: scale(0) rotate(-30deg) } 70% { transform: scale(1.3) } to { transform: scale(1) } }
+    .success { position:fixed; inset:0; display:grid; place-content:center; text-align:center; z-index: 20; animation: fadein 1.2s ease; gap: .6rem; }
+    .success h1 { font-size: clamp(3.5rem, 12vw, 7rem); font-weight: 900; } .success p { font-size: 1.4rem; text-shadow: 0 2px 10px #000; }
+    .small { font-size: .85rem; }
+    @media (max-width: 760px) {
+      .objectives { top: auto; bottom: 150px; width: calc(100% - 20px); max-height: 32vh; overflow:auto; }
+      .objectives.collapsed { width: auto; }
+      .tools .btn { padding: .4em .7em; }
+      .hover-label { display:none; }
+    }
+  `],
+})
+export class PlayComponent implements AfterViewInit, OnDestroy {
+  game = inject(GameService);
+  private audio = inject(AudioService);
+  private settings = inject(SettingsService);
+  private ngZone = inject(NgZone);
+  private destroyRef = inject(DestroyRef);
+  leave = output<void>();
+
+  private canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('c');
+  world?: GameWorld;
+  touch = matchMedia('(pointer: coarse)').matches;
+
+  loading = signal(true);
+  flash = signal(false);
+  zone$ = signal<ZoneId>('library');
+  hover = signal<InteractableDef | null>(null);
+  panel = signal<{ id: PanelId; ref?: string } | null>(null);
+  toasts = signal<Toast[]>([]);
+  showChat = signal(false);
+  showMap = signal(false);
+  showSettings = signal(false);
+  showObjectives = signal(!matchMedia('(max-width: 760px)').matches);
+  showResult = signal(false);
+  pingText = signal<string | null>(null);
+  cutscene = signal<{ title: string; letter?: string; puzzle?: string } | null>(null);
+  unread = signal(0);
+  tick = signal(0);
+
+  phase = computed(() => this.game.snapshot()?.phase ?? 'lobby');
+  zone = this.zone$.asReadonly();
+  zones = computed(() => [...(this.game.scenario()?.zones ?? [])].sort((a, b) => a.order - b.order));
+  objectives = computed(() => {
+    const sc = this.game.scenario();
+    const s = this.game.snapshot();
+    if (!sc || !s) return [];
+    return sc.puzzles.map((p) => ({ id: p.id, objective: p.objective, status: s.puzzles.find((x) => x.id === p.id)?.status ?? 'locked' }));
+  });
+  emptyLetters = computed(() => Array.from({ length: Math.max(0, 5 - (this.game.snapshot()?.letters.length ?? 0)) }));
+  introT = computed(() => {
+    this.tick();
+    const s = this.game.snapshot();
+    return s?.introStartedAt ? (this.game.serverNow() - new Date(s.introStartedAt).getTime()) / 1000 : 0;
+  });
+  outroT = computed(() => {
+    this.tick();
+    const s = this.game.snapshot();
+    return s?.endedAt ? (this.game.serverNow() - new Date(s.endedAt).getTime()) / 1000 : 0;
+  });
+  elapsed = computed(() => {
+    this.tick();
+    const s = this.game.snapshot();
+    if (!s?.startedAt) return '00:00';
+    const sec = Math.max(0, Math.floor((this.game.serverNow() - new Date(s.startedAt).getTime()) / 1000));
+    return `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+  });
+
+  private toastId = 0;
+  private ticker?: ReturnType<typeof setInterval>;
+  private introTimers: ReturnType<typeof setTimeout>[] = [];
+  private lastPhase: string | null = null;
+  private introFinishSent = false;
+  private seenChat = 0;
+
+  ringBell = (id: string) => this.world?.ringBell(id);
+
+  constructor() {
+    this.ticker = setInterval(() => this.tick.update((t) => t + 1), 500);
+
+    effect(() => {
+      const s = this.game.snapshot();
+      const sc = this.game.scenario();
+      if (!s || !this.world) return;
+      untracked(() => {
+        if (this.loading() && sc) this.buildWorld();
+        if (this.loading()) return;
+        this.world!.applySnapshot(s);
+        this.world!.setPlayers(s.players, this.game.playerId(), this.game.positions);
+        this.onPhase(s.phase);
+      });
+    });
+
+    effect(() => {
+      const t = this.introT();
+      if (this.phase() !== 'intro') return;
+      untracked(() => {
+        if (!this.introFinishSent && t >= (this.game.snapshot()?.introSeconds ?? 52)) {
+          this.introFinishSent = true;
+          this.game.finishIntro(false).then((r) => {
+            if (!r.ok) setTimeout(() => (this.introFinishSent = false), 2000);
+          });
+        }
+      });
+    });
+
+    effect(() => {
+      const n = this.game.chat().length;
+      untracked(() => {
+        if (!this.showChat() && n > this.seenChat) this.unread.update((u) => u + (n - this.seenChat));
+        if (this.showChat()) this.unread.set(0);
+        this.seenChat = n;
+      });
+    });
+    effect(() => {
+      if (this.showChat()) untracked(() => this.unread.set(0));
+    });
+
+    this.game.notices$.pipe(takeUntilDestroyed()).subscribe((n) => this.onNotice(n));
+    this.game.pings$.pipe(takeUntilDestroyed()).subscribe((p) => {
+      const def = this.world?.focusOn(p.objectId);
+      if (!def) return;
+      this.pingText.set(`${this.game.playerName(p.playerId)} מצביע על חפץ`);
+      setTimeout(() => this.pingText.set(null), 3000);
+    });
+    effect(() => {
+      const sens = this.settings.settings().lookSensitivity;
+      if (this.world) this.world.sensitivity = sens;
+    });
+  }
+
+  ngAfterViewInit() {
+    try {
+      this.world = this.ngZone.runOutsideAngular(
+        () =>
+          new GameWorld(this.canvas().nativeElement, this.settings.settings().quality, {
+            onHover: (d) => this.ngZone.run(() => this.hover.set(d)),
+            onInteract: (d) => this.ngZone.run(() => this.interact(d)),
+            onTooFar: (d) => this.ngZone.run(() => this.toast(`התקרבו אל ${d.label} כדי לבדוק`, 'info')),
+            onZoneChange: (z) => this.ngZone.run(() => this.zone$.set(z)),
+            onMove: (x, y, z, ry, zone) => this.game.move(x, y, z, ry, zone),
+          }),
+      );
+      this.world.sensitivity = this.settings.settings().lookSensitivity;
+      if (this.game.scenario()) this.buildWorld();
+    } catch {
+      this.loading.set(false);
+      this.toast('הדפדפן אינו תומך בתלת־ממד (WebGL). נסו דפדפן מעודכן כמו Chrome, Edge או Firefox.', 'wrong-answer');
+    }
+  }
+
+  private buildWorld() {
+    if (!this.world || !this.loading()) return;
+    this.ngZone.runOutsideAngular(() => {
+      this.world!.build(this.game.scenario());
+      this.world!.start();
+    });
+    this.loading.set(false);
+    const s = this.game.snapshot()!;
+    this.world.applySnapshot(s);
+    this.world.setPlayers(s.players, this.game.playerId(), this.game.positions);
+    const mine = this.game.positions.get(this.game.playerId() ?? '');
+    if (mine && s.phase === 'playing') this.world.placePlayer(mine);
+    this.onPhase(s.phase);
+  }
+
+  private onPhase(phase: string) {
+    if (phase === this.lastPhase || !this.world) return;
+    const prev = this.lastPhase;
+    this.lastPhase = phase;
+    if (phase === 'intro') {
+      this.world.setMode('intro');
+      this.world.setIntroTime(this.introT());
+      this.audio.setMusic('intro');
+      this.audio.sfx('whoosh');
+      this.scheduleIntroLines();
+      this.introFinishSent = false;
+    } else if (phase === 'playing') {
+      this.clearIntro();
+      this.world.setMode('play');
+      if (prev === 'intro' || prev === null) {
+        this.world.resetPlayer();
+        const mine = this.game.positions.get(this.game.playerId() ?? '');
+        if (mine && prev === null) this.world.placePlayer(mine);
+      }
+      this.audio.setMusic('explore');
+      if (prev === 'intro') {
+        this.audio.speak('mission', undefined, undefined, true);
+        this.toast('המשימה התחילה! בדקו את הספרייה ודברו עם יהודה המדריך.', 'zone-unlocked');
+      }
+      this.canvas().nativeElement.focus();
+    } else if (phase === 'completed') {
+      this.panel.set(null);
+      this.world.setMode('outro');
+      this.audio.setMusic('victory');
+      this.audio.sfx('whoosh');
+      this.showResult.set(prev === null);
+      if (prev === 'playing') {
+        setTimeout(() => this.flashOnce(), 3500);
+        this.audio.speak('outro_success', undefined, undefined, true);
+        this.audio.speak('outro_02');
+      }
+    }
+  }
+
+  private scheduleIntroLines() {
+    this.clearIntro();
+    const t = this.introT();
+    for (const [at, id] of INTRO_LINES) {
+      if (at + 3 < t) continue;
+      this.introTimers.push(setTimeout(() => this.audio.speak(id), Math.max(0, (at - t) * 1000)));
+    }
+  }
+
+  private clearIntro() {
+    this.introTimers.forEach(clearTimeout);
+    this.introTimers = [];
+  }
+
+  async skipIntro() {
+    this.audio.stopVoice();
+    const r = await this.game.finishIntro(true);
+    if (!r.ok) this.toast(r.message, 'info');
+  }
+
+  private flashOnce() {
+    this.flash.set(true);
+    setTimeout(() => this.flash.set(false), 1700);
+  }
+
+  private onNotice(n: GameNotice) {
+    const mine = n.playerId === this.game.playerId();
+    switch (n.kind) {
+      case 'puzzle-solved':
+        this.audio.sfx('success');
+        // a solved room is followed by the transition scene, which shows the same news
+        if (!this.game.scenario()?.puzzles.find((p) => p.id === n.puzzleId)?.unlocksZone) this.toast(n.message, n.kind);
+        this.audio.speak(n.voiceLine, n.message.split('! ').slice(1).join('! ') || n.message, 'שומר הפורטל');
+        break;
+      case 'zone-unlocked':
+        this.audio.sfx('door');
+        this.playCutscene(n.zone);
+        this.audio.speak(n.voiceLine, undefined, 'יהודה');
+        break;
+      case 'letter':
+        this.audio.sfx('letter'); // shown in the HUD and in the transition banner
+        break;
+      case 'wrong-answer':
+        this.audio.sfx('wrong');
+        if (!mine) this.toast(n.message, n.kind);
+        else this.audio.speak(n.voiceLine, undefined, 'שומר הפורטל');
+        break;
+      case 'hint':
+        this.audio.sfx('hint');
+        this.toast(n.message, n.kind);
+        this.audio.speak(n.voiceLine, n.message.split(': ').slice(1).join(': '), 'יהודה');
+        break;
+      case 'item-picked':
+      case 'item-combined':
+      case 'item-placed':
+        this.audio.sfx('pickup');
+        this.toast(n.message, n.kind);
+        break;
+      case 'game-started':
+        break;
+      case 'player-disconnected':
+      case 'player-connected':
+      case 'player-joined':
+      case 'player-left':
+        if (this.phase() === 'playing') this.toast(n.message, 'info');
+        break;
+      default:
+        if (n.message) this.toast(n.message, n.kind);
+    }
+  }
+
+  /** Transition after a solved room: door cutscene for everyone, with the new golden letter. */
+  private playCutscene(zone: string | undefined) {
+    if (!zone) return;
+    this.panel.set(null);
+    const s = this.game.snapshot();
+    const last = s?.letters[s.letters.length - 1];
+    const solved = [...(s?.puzzles ?? [])].filter((p) => p.status === 'solved').sort((a, b) => (b.solvedAt ?? '').localeCompare(a.solvedAt ?? ''))[0];
+    const by = this.game.playerName(solved?.solvedBy);
+    this.cutscene.set({
+      title: `נפתחה הדרך אל ${this.zoneName(zone)}`,
+      letter: last?.letter,
+      puzzle: by ? `${by} והקבוצה פתרו את „${this.game.scenario()?.puzzles.find((p) => p.id === solved?.id)?.title ?? ''}”` : undefined,
+    });
+    setTimeout(() => this.world?.playDoorCutscene(zone), 1200);
+    setTimeout(() => this.cutscene.set(null), 6500);
+  }
+
+  toast(text: string, kind = 'info') {
+    const id = ++this.toastId;
+    this.toasts.update((t) => [...t.slice(-3), { id, text, kind }]);
+    setTimeout(() => this.toasts.update((t) => t.filter((x) => x.id !== id)), 5200);
+  }
+
+  async interact(def: InteractableDef) {
+    if (def.itemId) {
+      const r = await this.game.pickUp(def.itemId);
+      if (!r.ok) this.toast(r.message, 'info');
+      return;
+    }
+    if (def.panel) {
+      this.panel.set({ id: def.panel, ref: def.ref });
+      this.game.ping(def.id);
+    }
+  }
+
+  interactNearest() {
+    const d = this.world?.interactNearest();
+    if (!d) this.toast('אין כאן חפץ קרוב לבדיקה. התקרבו לחפץ מסומן.', 'info');
+  }
+
+  closePanel() {
+    this.panel.set(null);
+    this.canvas().nativeElement.focus();
+  }
+
+  openHintFor() {
+    // Open the lock panel of the puzzle in the current room so its hints can be requested.
+    const map: Record<ZoneId, PanelId> = {
+      library: 'cipher-lock', symbols: 'sequence-lock', echo: 'sound-lock', mirrors: 'split-lock', items: 'pedestal', portal: 'portal-lock',
+    };
+    this.panel.set({ id: map[this.zone()] });
+  }
+
+  inspectItem(id: string) {
+    const item = this.game.scenario()?.items.find((i) => i.id === id);
+    if (item) this.toast(`${item.name}: ${item.description}`, 'info');
+  }
+
+  zoneName(id: string) {
+    return this.game.scenario()?.zones.find((z) => z.id === id)?.name ?? '';
+  }
+  zoneIcon(id: string) {
+    return this.game.scenario()?.zones.find((z) => z.id === id)?.icon ?? 'lock';
+  }
+  itemName(id: string) {
+    return this.game.scenario()?.items.find((i) => i.id === id)?.name ?? id;
+  }
+
+  confirmLeave() {
+    if (confirm('לצאת מהמשחק? אפשר לחזור לאותו חדר מאותה לשונית.')) this.leave.emit();
+  }
+
+  ngOnDestroy() {
+    clearInterval(this.ticker);
+    this.clearIntro();
+    this.audio.stopVoice();
+    this.world?.dispose();
+  }
+}

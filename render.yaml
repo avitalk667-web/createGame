@@ -1,0 +1,20 @@
+# Render Blueprint for PORTAL X (free plan, no credit card).
+# The database is an external free Neon PostgreSQL; its URL is entered in the Render dashboard
+# as the secret DATABASE_URL (sync: false = never stored in this repository).
+services:
+  - type: web
+    name: portal-x
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      # Spec minimum is 4 players. "2" allows a two-player test; delete this variable to require 4.
+      - key: Game__MinPlayersOverride
+        value: "2"

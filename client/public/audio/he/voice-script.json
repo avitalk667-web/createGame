@@ -1,0 +1,355 @@
+{
+  "language": "he",
+  "lines": [
+    {
+      "id": "intro_01",
+      "speaker": "שומר הפורטל",
+      "text": "ברוכים הבאים, אורחים צעירים. אני שומר הפורטל, ואני שומר על האחוזה הזאת כבר מאות שנים.",
+      "file": "audio/he/intro_01.mp3",
+      "durationMs": 7280
+    },
+    {
+      "id": "intro_02",
+      "speaker": "שומר הפורטל",
+      "text": "בלב האחוזה עומד פורטל עתיק — שער של אור. הלילה, האור שלו מתחיל לדעוך.",
+      "file": "audio/he/intro_02.mp3",
+      "durationMs": 6192
+    },
+    {
+      "id": "intro_03",
+      "speaker": "שומר הפורטל",
+      "text": "אם הפורטל ייסגר, הסוד שהוא שומר יאבד לעולם. רק קבוצה שפועלת יחד, בשיתוף ובאמון, יכולה לפתוח אותו מחדש.",
+      "file": "audio/he/intro_03.mp3",
+      "durationMs": 8436
+    },
+    {
+      "id": "intro_04",
+      "speaker": "שומר הפורטל",
+      "text": "עליכם לעבור בחדרי האחוזה, לפענח את החידות, לאסוף שלושה חפצים ולגלות את מילת הסוד.",
+      "file": "audio/he/intro_04.mp3",
+      "durationMs": 7008
+    },
+    {
+      "id": "intro_05",
+      "speaker": "שומר הפורטל",
+      "text": "זכרו: כל אחד מכם רואה משהו שהאחרים אינם רואים. דברו ושתפו — ויחד תצליחו. השער נפתח... בהצלחה!",
+      "file": "audio/he/intro_05.mp3",
+      "durationMs": 7824
+    },
+    {
+      "id": "mission",
+      "speaker": "שומר הפורטל",
+      "text": "המשימה התחילה. היכנסו לספרייה, והקשיבו ליהודה המדריך.",
+      "file": "audio/he/mission.mp3",
+      "durationMs": 5104
+    },
+    {
+      "id": "guide_01",
+      "speaker": "יהודה",
+      "text": "שלום! אני יהודה, ואני מכיר את האחוזה הזאת היטב. כל חדר כאן נעול בחידה, וכל חידה שתפתרו תפתח את הדלת לחדר הבא.",
+      "file": "audio/he/guide_01.mp3",
+      "durationMs": 8912
+    },
+    {
+      "id": "guide_02",
+      "speaker": "יהודה",
+      "text": "לחצו על חפצים מסומנים כדי לבדוק אותם. חפצים שאפשר לאסוף ייכנסו לתיק המשותף של הקבוצה, וכל אחד מכם יוכל להשתמש בהם.",
+      "file": "audio/he/guide_02.mp3",
+      "durationMs": 9252
+    },
+    {
+      "id": "guide_03",
+      "speaker": "יהודה",
+      "text": "בכל חידה שתפתרו תקבלו אות זהב. שמרו עליהן — בסוף הדרך הן יפתחו את הפורטל.",
+      "file": "audio/he/guide_03.mp3",
+      "durationMs": 6464
+    },
+    {
+      "id": "guide_04",
+      "speaker": "יהודה",
+      "text": "ואם נתקעתם — אפשר לבקש רמז. יש שלוש דרגות רמזים, מרמז עדין ועד רמז כמעט מפורש. בהצלחה, ושתפו הרבה!",
+      "file": "audio/he/guide_04.mp3",
+      "durationMs": 8164
+    },
+    {
+      "id": "zone_library",
+      "speaker": "יהודה",
+      "text": "זו הספרייה העתיקה. חפשו ספר שנראה שונה מכל השאר, וקלף עם סמלים מוזרים.",
+      "file": "audio/he/zone_library.mp3",
+      "durationMs": 6260
+    },
+    {
+      "id": "zone_symbols",
+      "speaker": "יהודה",
+      "text": "חדר הסמלים! על הקירות תלויים לוחות אבן. קראו את כולם לפני שאתם מסובבים את המנגנון.",
+      "file": "audio/he/zone_symbols.mp3",
+      "durationMs": 7076
+    },
+    {
+      "id": "zone_echo",
+      "speaker": "יהודה",
+      "text": "שמעתם את ההד? זה חדר ההדים. תיבת הנגינה תלמד אתכם את שיר הפעמונים.",
+      "file": "audio/he/zone_echo.mp3",
+      "durationMs": 5988
+    },
+    {
+      "id": "zone_mirrors",
+      "speaker": "יהודה",
+      "text": "חדר המראות. כל אחד מכם יראה במראה משהו אחר. ספרו זה לזה מה אתם רואים!",
+      "file": "audio/he/zone_mirrors.mp3",
+      "durationMs": 6192
+    },
+    {
+      "id": "zone_items",
+      "speaker": "יהודה",
+      "text": "זה חדר החפצים. בדקו מה יש בתיק המשותף, ומה אפשר לחבר על שולחן העבודה.",
+      "file": "audio/he/zone_items.mp3",
+      "durationMs": 6192
+    },
+    {
+      "id": "zone_portal",
+      "speaker": "שומר הפורטל",
+      "text": "הגעתם אל הפורטל. הציבו את אותיות הזהב במקומן — ופתחו את השער.",
+      "file": "audio/he/zone_portal.mp3",
+      "durationMs": 5648
+    },
+    {
+      "id": "item_found",
+      "speaker": "יהודה",
+      "text": "מצאתם חפץ חדש! הוא נמצא עכשיו בתיק המשותף.",
+      "file": "audio/he/item_found.mp3",
+      "durationMs": 4356
+    },
+    {
+      "id": "item_combined",
+      "speaker": "יהודה",
+      "text": "יפה מאוד! חיברתם את החפצים.",
+      "file": "audio/he/item_combined.mp3",
+      "durationMs": 3336
+    },
+    {
+      "id": "outro_success",
+      "speaker": "שומר הפורטל",
+      "text": "עשיתם זאת! הפורטל נפתח והאור חוזר לזרוח. בזכות שיתוף הפעולה שלכם, הסוד של האחוזה נשמר.",
+      "file": "audio/he/outro_success.mp3",
+      "durationMs": 7348
+    },
+    {
+      "id": "outro_02",
+      "speaker": "שומר הפורטל",
+      "text": "זכרו תמיד: כשעובדים יחד, באמונה ובכבוד הדדי — אין דלת שלא נפתחת. תודה לכם, אלופי הפורטל!",
+      "file": "audio/he/outro_02.mp3",
+      "durationMs": 7484
+    },
+    {
+      "id": "p1-cipher_success",
+      "speaker": "שומר הפורטל",
+      "text": "נכון מאוד! המילה היא „שער”. הדלת לחדר הסמלים נפתחת.",
+      "file": "audio/he/p1-cipher_success.mp3",
+      "durationMs": 4968
+    },
+    {
+      "id": "p1-cipher_fail",
+      "speaker": "שומר הפורטל",
+      "text": "זו לא המילה. בדקו שוב כל סמל מול ספר המפתח.",
+      "file": "audio/he/p1-cipher_fail.mp3",
+      "durationMs": 4424
+    },
+    {
+      "id": "p1-cipher_hint1",
+      "speaker": "יהודה",
+      "text": "יש בספרייה ספר פתוח שנראה שונה מכל השאר. אולי הוא מסביר מה פירוש הסמלים?",
+      "file": "audio/he/p1-cipher_hint1.mp3",
+      "durationMs": 6396
+    },
+    {
+      "id": "p1-cipher_hint2",
+      "speaker": "יהודה",
+      "text": "כל סמל על הקלף מייצג אות אחת לפי הטבלה שבספר המפתח. קראו את הסמלים מימין לשמאל.",
+      "file": "audio/he/p1-cipher_hint2.mp3",
+      "durationMs": 6872
+    },
+    {
+      "id": "p1-cipher_hint3",
+      "speaker": "יהודה",
+      "text": "טיפה היא ש׳, להבה היא ע׳ וירח הוא ר׳. המילה היא שם של פתח גדול בחומה.",
+      "file": "audio/he/p1-cipher_hint3.mp3",
+      "durationMs": 6192
+    },
+    {
+      "id": "p2-sequence_success",
+      "speaker": "שומר הפורטל",
+      "text": "המנגנון מסתובב בנקישה עמוקה! הדלת לחדר ההדים נפתחת.",
+      "file": "audio/he/p2-sequence_success.mp3",
+      "durationMs": 4968
+    },
+    {
+      "id": "p2-sequence_fail",
+      "speaker": "שומר הפורטל",
+      "text": "המנגנון נתקע. הסדר אינו נכון — קראו שוב את לוחות האבן.",
+      "file": "audio/he/p2-sequence_fail.mp3",
+      "durationMs": 5172
+    },
+    {
+      "id": "p2-sequence_hint1",
+      "speaker": "יהודה",
+      "text": "קראו את שלושת לוחות האבן שעל הקירות. כל לוח מגלה חלק מהסדר.",
+      "file": "audio/he/p2-sequence_hint1.mp3",
+      "durationMs": 5512
+    },
+    {
+      "id": "p2-sequence_hint2",
+      "speaker": "יהודה",
+      "text": "התחילו מהלוח הברור ביותר: הכוכב נמצא במקום הרביעי. עכשיו נשארו שלושה מקומות.",
+      "file": "audio/he/p2-sequence_hint2.mp3",
+      "durationMs": 6668
+    },
+    {
+      "id": "p2-sequence_hint3",
+      "speaker": "יהודה",
+      "text": "השמש והכתר צמודים, והעלה לא ראשון — לכן הסדר הוא: שמש, כתר, עלה, כוכב.",
+      "file": "audio/he/p2-sequence_hint3.mp3",
+      "durationMs": 6260
+    },
+    {
+      "id": "p3-sound_success",
+      "speaker": "שומר הפורטל",
+      "text": "הפעמונים מצלצלים יחד בהרמוניה! גביש כחול נחשף בתוך הקיר.",
+      "file": "audio/he/p3-sound_success.mp3",
+      "durationMs": 5308
+    },
+    {
+      "id": "p3-sound_fail",
+      "speaker": "שומר הפורטל",
+      "text": "המנגינה לא תואמת. הקשיבו שוב לתיבת הנגינה.",
+      "file": "audio/he/p3-sound_fail.mp3",
+      "durationMs": 4356
+    },
+    {
+      "id": "p3-sound_hint1",
+      "speaker": "יהודה",
+      "text": "לחצו על תיבת הנגינה כדי לשמוע את המנגינה. אפשר לשמוע אותה שוב כמה פעמים שצריך.",
+      "file": "audio/he/p3-sound_hint1.mp3",
+      "durationMs": 6804
+    },
+    {
+      "id": "p3-sound_hint2",
+      "speaker": "יהודה",
+      "text": "המנגינה בנויה מחמישה צלילים. בזמן הנגינה כל פעמון מאיר כשהוא מצלצל — עקבו אחרי האותיות.",
+      "file": "audio/he/p3-sound_hint2.mp3",
+      "durationMs": 7416
+    },
+    {
+      "id": "p3-sound_hint3",
+      "speaker": "יהודה",
+      "text": "הסדר מתחיל בפעמון ג׳, אחריו א׳, ואז ד׳. נשארו עוד שני צלילים: א׳ ואז ב׳.",
+      "file": "audio/he/p3-sound_hint3.mp3",
+      "durationMs": 6396
+    },
+    {
+      "id": "p4-split_success",
+      "speaker": "שומר הפורטל",
+      "text": "הקופסה נפתחת בחריקה! בפנים מונח גלגל שיניים מנחושת.",
+      "file": "audio/he/p4-split_success.mp3",
+      "durationMs": 4968
+    },
+    {
+      "id": "p4-split_fail",
+      "speaker": "שומר הפורטל",
+      "text": "הקוד שגוי. האם כל אחד שיתף את הרמז שלו?",
+      "file": "audio/he/p4-split_fail.mp3",
+      "durationMs": 4152
+    },
+    {
+      "id": "p4-split_hint1",
+      "speaker": "יהודה",
+      "text": "כל אחד מהשחקנים רואה במראה רמז אחר. כתבו בצ׳אט מה אתם רואים, כדי שכולם יוכלו לחבר את הרמזים.",
+      "file": "audio/he/p4-split_hint1.mp3",
+      "durationMs": 7756
+    },
+    {
+      "id": "p4-split_hint2",
+      "speaker": "יהודה",
+      "text": "רמז אחד מדבר על כוכבים, השני על מדרגות והשלישי על אות. כל רמז נותן ספרה אחת.",
+      "file": "audio/he/p4-split_hint2.mp3",
+      "durationMs": 6668
+    },
+    {
+      "id": "p4-split_hint3",
+      "speaker": "יהודה",
+      "text": "יש שבעה כוכבים, ארבע מדרגות, והאות ט׳ שווה תשע. הקוד הוא שבע, ארבע, תשע.",
+      "file": "audio/he/p4-split_hint3.mp3",
+      "durationMs": 6396
+    },
+    {
+      "id": "p5-items_success",
+      "speaker": "שומר הפורטל",
+      "text": "הכן מתעורר לחיים! הגביש זוהר והמנגנון מסתובב — הדרך אל הפורטל פתוחה.",
+      "file": "audio/he/p5-items_success.mp3",
+      "durationMs": 6124
+    },
+    {
+      "id": "p5-items_fail",
+      "speaker": "שומר הפורטל",
+      "text": "חסר משהו על הכן. בדקו שיש לכם את כל החפצים הדרושים.",
+      "file": "audio/he/p5-items_fail.mp3",
+      "durationMs": 4968
+    },
+    {
+      "id": "p5-items_hint1",
+      "speaker": "יהודה",
+      "text": "בדקו את החפצים שאספתם. אולי שניים מהם מתאימים זה לזה?",
+      "file": "audio/he/p5-items_hint1.mp3",
+      "durationMs": 5104
+    },
+    {
+      "id": "p5-items_hint2",
+      "speaker": "יהודה",
+      "text": "על שולחן העבודה אפשר לחבר את ידית הברזל עם גלגל השיניים.",
+      "file": "audio/he/p5-items_hint2.mp3",
+      "durationMs": 5308
+    },
+    {
+      "id": "p5-items_hint3",
+      "speaker": "יהודה",
+      "text": "חברו ידית וגלגל למנגנון מסובב, ואז הניחו על הכן את המנגנון ואת הגביש הכחול.",
+      "file": "audio/he/p5-items_hint3.mp3",
+      "durationMs": 6600
+    },
+    {
+      "id": "p6-final_success",
+      "speaker": "שומר הפורטל",
+      "text": "הפורטל נפתח באור גדול!",
+      "file": "audio/he/p6-final_success.mp3",
+      "durationMs": 2996
+    },
+    {
+      "id": "p6-final_fail",
+      "speaker": "שומר הפורטל",
+      "text": "הפורטל רועד אך נשאר סגור. בדקו שכל אות במקום הנכון.",
+      "file": "audio/he/p6-final_fail.mp3",
+      "durationMs": 4968
+    },
+    {
+      "id": "p6-final_hint1",
+      "speaker": "יהודה",
+      "text": "כל אות זהב שקיבלתם קשורה לחדר שבו פתרתם את החידה. בדקו ברשימת אותיות הזהב.",
+      "file": "audio/he/p6-final_hint1.mp3",
+      "durationMs": 6532
+    },
+    {
+      "id": "p6-final_hint2",
+      "speaker": "יהודה",
+      "text": "המשבצת הראשונה מסומנת במראה: האות מחדר המראות היא א׳. המשיכו כך לפי הסמלים.",
+      "file": "audio/he/p6-final_hint2.mp3",
+      "durationMs": 6600
+    },
+    {
+      "id": "p6-final_hint3",
+      "speaker": "יהודה",
+      "text": "הסדר הוא: מראות א׳, סמלים מ׳, חפצים ו׳, ספרייה נ׳, הדים ה׳ — המילה היא „אמונה”.",
+      "file": "audio/he/p6-final_hint3.mp3",
+      "durationMs": 6872
+    }
+  ]
+}

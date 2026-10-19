@@ -1,0 +1,229 @@
+using System.Collections.Concurrent;
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http.Connections;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Extensions.Configuration;
+
+namespace PortalX.Tests;
+
+/// <summary>
+/// End-to-end over HTTP + SignalR against the real PostgreSQL test database (portalx_test):
+/// four simulated players create, join, start and finish a full game.
+/// </summary>
+public class HubIntegrationTests : IClassFixture<HubIntegrationTests.Factory>
+{
+    public sealed class Factory : WebApplicationFactory<Program>
+    {
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            var pass = Environment.GetEnvironmentVariable("PORTALX_PG_PASSWORD")
+                ?? File.ReadAllText(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PortalX", "pg.pass")).Trim();
+            builder.UseEnvironment("Testing");
+            builder.ConfigureAppConfiguration((_, cfg) => cfg.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:Default"] = $"Host=localhost;Port=5433;Database=portalx_test;Username=portalx;Password={pass}",
+            }));
+        }
+    }
+
+    private readonly Factory _factory;
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    public HubIntegrationTests(Factory factory) => _factory = factory;
+
+    private sealed class Client : IAsyncDisposable
+    {
+        public required HubConnection Conn { get; init; }
+        public required string Token { get; init; }
+        public string PlayerId { get; set; } = "";
+        public ConcurrentQueue<JsonElement> States { get; } = new();
+        public ConcurrentQueue<JsonElement> Notices { get; } = new();
+        public ConcurrentQueue<JsonElement> Chats { get; } = new();
+        public JsonElement? LastState => States.LastOrDefault();
+        public ValueTask DisposeAsync() => Conn.DisposeAsync();
+    }
+
+    private HubConnection NewConnection()
+    {
+        var server = _factory.Server;
+        return new HubConnectionBuilder()
+            .WithUrl(new Uri(server.BaseAddress, "/hubs/game"), o =>
+            {
+                o.Transports = HttpTransportType.LongPolling;
+                o.HttpMessageHandlerFactory = _ => server.CreateHandler();
+            })
+            .Build();
+    }
+
+    private async Task<Client> JoinAsync(HttpClient http, string code, string nickname, string character, string? hostClaim = null)
+    {
+        var res = await http.PostAsJsonAsync($"/api/rooms/{code}/players", new { nickname, characterId = character, appearance = "{\"skin\":1}", hostClaim });
+        var body = await res.Content.ReadFromJsonAsync<JsonElement>(Json);
+        Assert.True(res.IsSuccessStatusCode, body.ToString());
+        var c = new Client { Conn = NewConnection(), Token = body.GetProperty("token").GetString()! };
+        c.Conn.On<JsonElement>("state", s => c.States.Enqueue(s));
+        c.Conn.On<JsonElement>("notice", n => c.Notices.Enqueue(n));
+        c.Conn.On<JsonElement>("chat", m => c.Chats.Enqueue(m));
+        await c.Conn.StartAsync();
+        var r = await c.Conn.InvokeAsync<JsonElement>("Connect", c.Token);
+        Assert.True(r.GetProperty("ok").GetBoolean(), r.ToString());
+        c.PlayerId = r.GetProperty("data").GetProperty("playerId").GetString()!;
+        c.States.Enqueue(r.GetProperty("snapshot"));
+        return c;
+    }
+
+    private static async Task<JsonElement> Ok(Task<JsonElement> call)
+    {
+        var r = await call;
+        Assert.True(r.GetProperty("ok").GetBoolean(), r.ToString());
+        return r;
+    }
+
+    private static async Task WaitFor(Func<bool> cond, string what)
+    {
+        for (var i = 0; i < 100 && !cond(); i++) await Task.Delay(50);
+        Assert.True(cond(), "Timed out waiting for " + what);
+    }
+
+    private static string Phase(JsonElement? s) => s?.GetProperty("phase").GetString() ?? "";
+
+    [Fact]
+    public async Task Four_players_play_a_full_game_in_sync()
+    {
+        var http = _factory.CreateClient();
+        var create = await (await http.PostAsJsonAsync("/api/rooms", new { scenarioId = "last-portal" })).Content.ReadFromJsonAsync<JsonElement>(Json);
+        var code = create.GetProperty("code").GetString()!;
+        Assert.Equal(6, code.Length);
+
+        var host = await JoinAsync(http, code, "ישראל", "explorer", create.GetProperty("hostClaim").GetString());
+        var dovid = await JoinAsync(http, code, "דוד", "scholar");
+        var uri = await JoinAsync(http, code, "אורי", "navigator");
+        var moshe = await JoinAsync(http, code, "משה", "detective");
+        var all = new[] { host, dovid, uri, moshe };
+
+        await WaitFor(() => host.LastState?.GetProperty("players").GetArrayLength() == 4, "host to see 4 players");
+        Assert.Equal(host.PlayerId, host.LastState!.Value.GetProperty("hostPlayerId").GetString());
+
+        // Non-host cannot start; host cannot start before everyone is ready.
+        var bad = await dovid.Conn.InvokeAsync<JsonElement>("StartGame");
+        Assert.Equal("not-host", bad.GetProperty("code").GetString());
+        Assert.Equal("not-ready", (await host.Conn.InvokeAsync<JsonElement>("StartGame")).GetProperty("code").GetString());
+
+        foreach (var c in all.Skip(1)) await Ok(c.Conn.InvokeAsync<JsonElement>("SetReady", true));
+        await Ok(host.Conn.InvokeAsync<JsonElement>("StartGame"));
+        await WaitFor(() => all.All(c => Phase(c.LastState) == "intro"), "everyone in intro");
+        await Ok(host.Conn.InvokeAsync<JsonElement>("FinishIntro", true));
+        await WaitFor(() => all.All(c => Phase(c.LastState) == "playing"), "everyone playing");
+
+        // Chat is filtered and relayed.
+        await Ok(dovid.Conn.InvokeAsync<JsonElement>("SendChat", "מצאתי רמז!", (string?)null));
+        Assert.False((await dovid.Conn.InvokeAsync<JsonElement>("SendChat", "אתה טיפש", (string?)null)).GetProperty("ok").GetBoolean());
+        await WaitFor(() => moshe.Chats.Count == 1, "chat relay");
+
+        // The library key book shows each player only half of the table.
+        var keyHost = (await Ok(host.Conn.InvokeAsync<JsonElement>("GetPersonalClues", "p1-cipher"))).GetProperty("data").GetProperty("key");
+        var keyDovid = (await Ok(dovid.Conn.InvokeAsync<JsonElement>("GetPersonalClues", "p1-cipher"))).GetProperty("data").GetProperty("key");
+        Assert.Equal(4, keyHost.GetArrayLength());
+        Assert.NotEqual(keyHost[0].GetProperty("symbol").GetString(), keyDovid[0].GetProperty("symbol").GetString());
+
+        await Ok(moshe.Conn.InvokeAsync<JsonElement>("PickUp", "handle", "a-1"));
+        // Wrong answer then a duplicated correct submission with the same action id is processed once.
+        var wrong = await dovid.Conn.InvokeAsync<JsonElement>("SubmitAnswer", "p1-cipher", JsonSerializer.SerializeToElement("דלת"), "a-2");
+        Assert.Equal("wrong", wrong.GetProperty("code").GetString());
+        await Ok(dovid.Conn.InvokeAsync<JsonElement>("SubmitAnswer", "p1-cipher", JsonSerializer.SerializeToElement("שער"), "a-3"));
+        var dup = await dovid.Conn.InvokeAsync<JsonElement>("SubmitAnswer", "p1-cipher", JsonSerializer.SerializeToElement("שער"), "a-3");
+        Assert.Equal("duplicate", dup.GetProperty("code").GetString());
+
+        await Ok(uri.Conn.InvokeAsync<JsonElement>("RequestHint", "p2-sequence", "a-4"));
+        await WaitFor(() => host.Notices.Any(n => n.GetProperty("kind").GetString() == "hint"), "hint broadcast");
+        await Ok(uri.Conn.InvokeAsync<JsonElement>("SubmitAnswer", "p2-sequence", JsonSerializer.SerializeToElement(new[] { "sun", "crown", "leaf", "star" }), "a-5"));
+
+        var tune = await Ok(host.Conn.InvokeAsync<JsonElement>("GetTune", "p3-sound"));
+        var seq = tune.GetProperty("data").GetProperty("sequence").EnumerateArray().Select(e => e.GetString()).ToArray();
+        await Ok(host.Conn.InvokeAsync<JsonElement>("SubmitAnswer", "p3-sound", JsonSerializer.SerializeToElement(seq), "a-6"));
+        await Ok(uri.Conn.InvokeAsync<JsonElement>("PickUp", "crystal", "a-7"));
+
+        // Each player sees a different mirror clue.
+        var clueIdx = new List<int>();
+        foreach (var c in all)
+        {
+            var r = await Ok(c.Conn.InvokeAsync<JsonElement>("GetPersonalClues", "p4-split"));
+            var clues = r.GetProperty("data").GetProperty("clues");
+            Assert.Equal(1, clues.GetArrayLength());
+            clueIdx.Add(clues[0].GetProperty("index").GetInt32());
+        }
+        Assert.Equal(3, clueIdx.Distinct().Count());
+        await Ok(moshe.Conn.InvokeAsync<JsonElement>("SubmitAnswer", "p4-split", JsonSerializer.SerializeToElement("749"), "a-8"));
+        await Ok(dovid.Conn.InvokeAsync<JsonElement>("PickUp", "gear", "a-9"));
+        await Ok(host.Conn.InvokeAsync<JsonElement>("Combine", "handle", "gear", "a-10"));
+        await Ok(dovid.Conn.InvokeAsync<JsonElement>("PlaceItem", "p5-items", "crystal", "a-11"));
+        await Ok(uri.Conn.InvokeAsync<JsonElement>("PlaceItem", "p5-items", "mechanism", "a-12"));
+
+        // A player drops and reconnects with the same token: the current state comes back.
+        await moshe.Conn.StopAsync();
+        await WaitFor(() => host.LastState!.Value.GetProperty("players").EnumerateArray()
+            .Any(p => p.GetProperty("nickname").GetString() == "משה" && !p.GetProperty("isConnected").GetBoolean()), "disconnect seen");
+        await using var moshe2 = new Client { Conn = NewConnection(), Token = moshe.Token };
+        await moshe2.Conn.StartAsync();
+        var re = await Ok(moshe2.Conn.InvokeAsync<JsonElement>("Connect", moshe.Token));
+        Assert.Equal(5, re.GetProperty("snapshot").GetProperty("letters").GetArrayLength());
+        Assert.Contains("portal", re.GetProperty("snapshot").GetProperty("unlockedZones").EnumerateArray().Select(z => z.GetString()));
+
+        await Ok(moshe2.Conn.InvokeAsync<JsonElement>("SubmitAnswer", "p6-final", JsonSerializer.SerializeToElement("אמונה"), "a-13"));
+        await WaitFor(() => all.Take(3).All(c => Phase(c.LastState) == "completed"), "everyone completed");
+        var result = host.LastState!.Value.GetProperty("result");
+        Assert.Equal(6, result.GetProperty("puzzlesSolved").GetInt32());
+        Assert.Equal(4, result.GetProperty("playersCount").GetInt32());
+        Assert.Equal(1, result.GetProperty("hintsUsed").GetInt32());
+
+        // Replay returns everybody to the lobby.
+        await Ok(host.Conn.InvokeAsync<JsonElement>("PlayAgain"));
+        await WaitFor(() => Phase(dovid.LastState) == "lobby", "replay lobby");
+
+        foreach (var c in all) await c.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Rooms_are_isolated_and_bad_codes_are_rejected()
+    {
+        var http = _factory.CreateClient();
+        var a = await (await http.PostAsJsonAsync("/api/rooms", new { scenarioId = "last-portal" })).Content.ReadFromJsonAsync<JsonElement>(Json);
+        var b = await (await http.PostAsJsonAsync("/api/rooms", new { scenarioId = "last-portal" })).Content.ReadFromJsonAsync<JsonElement>(Json);
+        var ca = await JoinAsync(http, a.GetProperty("code").GetString()!, "אליהו", "explorer", a.GetProperty("hostClaim").GetString());
+        var cb = await JoinAsync(http, b.GetProperty("code").GetString()!, "שמואל", "scholar", b.GetProperty("hostClaim").GetString());
+        await Ok(ca.Conn.InvokeAsync<JsonElement>("SendChat", "שלום", (string?)null));
+        await Task.Delay(300);
+        Assert.Empty(cb.Chats);
+        Assert.Single(ca.LastState!.Value.GetProperty("players").EnumerateArray());
+
+        var missing = await http.GetAsync("/api/rooms/ZZZZZZ");
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, missing.StatusCode);
+        var badToken = NewConnection();
+        await badToken.StartAsync();
+        var r = await badToken.InvokeAsync<JsonElement>("Connect", "not-a-token");
+        Assert.Equal("bad-token", r.GetProperty("code").GetString());
+
+        // Host revokes the invite: old code stops working, the room keeps its players.
+        var oldCode = a.GetProperty("code").GetString()!;
+        await Ok(ca.Conn.InvokeAsync<JsonElement>("RegenerateCode"));
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, (await http.GetAsync($"/api/rooms/{oldCode}")).StatusCode);
+
+        await badToken.DisposeAsync();
+        await ca.DisposeAsync();
+        await cb.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Public_api_never_exposes_solutions()
+    {
+        var http = _factory.CreateClient();
+        var json = await http.GetStringAsync("/api/scenarios/last-portal");
+        Assert.Contains("הפורטל האחרון", json);
+        Assert.DoesNotContain("solution", json);
+        Assert.DoesNotContain("749", json);
+    }
+}

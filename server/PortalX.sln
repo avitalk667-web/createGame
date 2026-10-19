@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PortalX.Server", "PortalX.Server\PortalX.Server.csproj", "{149546D3-FE57-4CF6-B34C-E64071C8D315}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PortalX.Tests", "PortalX.Tests\PortalX.Tests.csproj", "{D86DB651-EF46-436F-97C8-73FB8820C691}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{149546D3-FE57-4CF6-B34C-E64071C8D315}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{149546D3-FE57-4CF6-B34C-E64071C8D315}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{149546D3-FE57-4CF6-B34C-E64071C8D315}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{149546D3-FE57-4CF6-B34C-E64071C8D315}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D86DB651-EF46-436F-97C8-73FB8820C691}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D86DB651-EF46-436F-97C8-73FB8820C691}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D86DB651-EF46-436F-97C8-73FB8820C691}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D86DB651-EF46-436F-97C8-73FB8820C691}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

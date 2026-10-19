@@ -1,0 +1,13 @@
+**/node_modules
+**/bin
+**/obj
+**/.angular
+server/PortalX.Server/wwwroot
+server/PortalX.Tests
+.claude
+.git
+docs
+tools
+*.md
+*.ps1
+*.cmd

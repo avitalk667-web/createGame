@@ -1,0 +1,210 @@
+
+:root {
+  --bg: #070b1c;
+  --bg-2: #0e1530;
+  --panel: rgba(13, 20, 44, 0.92);
+  --panel-solid: #111a38;
+  --line: rgba(201, 162, 77, 0.35);
+  --gold: #e0b95c;
+  --gold-2: #f6d78d;
+  --gold-dark: #9a7a32;
+  --text: #f3ead6;
+  --muted: #b5b0c6;
+  --ok: #3fbf6a;
+  --bad: #e2715b;
+  --blue: #6aa8ff;
+  --radius: 14px;
+  --shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  --font: 'Heebo', 'Segoe UI', Arial, sans-serif;
+  --font-title: 'Frank Ruhl Libre', 'Heebo', serif;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+a {
+  color: var(--gold-2);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-title);
+  margin: 0 0 0.5em;
+  line-height: 1.15;
+}
+
+button {
+  font-family: inherit;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+  padding: 0.75em 1.5em;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s, background 0.15s, box-shadow 0.15s;
+  text-decoration: none;
+  min-height: 44px;
+
+  &:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.12);
+    transform: translateY(-1px);
+  }
+  &:focus-visible {
+    outline: 3px solid var(--gold-2);
+    outline-offset: 2px;
+  }
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  &.primary {
+    background: linear-gradient(180deg, #ffe39a, #e0a93f);
+    color: #1d1405;
+    border-color: #f6d78d;
+    box-shadow: 0 6px 24px rgba(224, 169, 63, 0.35);
+    &:hover:not(:disabled) {
+      background: linear-gradient(180deg, #fff0bf, #eab64f);
+    }
+  }
+  &.small {
+    padding: 0.45em 1em;
+    min-height: 36px;
+    font-size: 0.9rem;
+  }
+  &.ghost {
+    background: transparent;
+  }
+  &.danger {
+    border-color: rgba(226, 113, 91, 0.6);
+    color: #ffc2b5;
+  }
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.25rem;
+  backdrop-filter: blur(6px);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  label {
+    font-weight: 700;
+    color: var(--gold-2);
+    font-size: 0.95rem;
+  }
+}
+
+input[type='text'],
+input:not([type]) {
+  font-family: inherit;
+  font-size: 1.05rem;
+  padding: 0.7em 0.9em;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  min-height: 44px;
+  &:focus {
+    outline: 2px solid var(--gold);
+    border-color: transparent;
+  }
+}
+
+.error {
+  color: #ffb4a3;
+  background: rgba(226, 113, 91, 0.12);
+  border: 1px solid rgba(226, 113, 91, 0.35);
+  border-radius: 10px;
+  padding: 0.6em 0.9em;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.gold-title {
+  background: linear-gradient(180deg, #fff2c4 10%, #e0b95c 60%, #9a7a32);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 6, 16, 0.7);
+  display: grid;
+  place-items: center;
+  z-index: 50;
+  padding: 16px;
+}
+
+.panel-modal {
+  width: min(760px, 100%);
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  background: linear-gradient(180deg, #16204a, #0d1430);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  padding: 1.25rem 1.4rem 1.4rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.2em 0.7em;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 0.85rem;
+  color: var(--gold-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
