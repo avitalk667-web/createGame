@@ -482,6 +482,8 @@ export class PlayComponent implements AfterViewInit, OnDestroy {
     const mine = this.game.positions.get(this.game.playerId() ?? '');
     if (mine && s.phase === 'playing') this.world.placePlayer(mine);
     this.onPhase(s.phase);
+    // the first state arrived before the world existed — apply the server's active room now (reload / reconnect)
+    this.handleProgress(s);
   }
 
   private onPhase(phase: string) {
