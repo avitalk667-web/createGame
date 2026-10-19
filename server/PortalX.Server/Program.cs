@@ -20,6 +20,7 @@ builder.Services.AddSingleton(_ => ScenarioCatalog.LoadDefault());
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IConfiguration>().GetSection("Game").Get<GameOptions>() ?? new GameOptions());
 builder.Services.AddSingleton<GameEngine>();
 builder.Services.AddSingleton<RoomRuntime>();
+builder.Services.AddSingleton<DatabaseStatus>();
 builder.Services.AddScoped<RoomService>();
 
 builder.Services.ConfigureHttpJsonOptions(o =>
@@ -59,30 +60,42 @@ builder.Services.AddRateLimiter(o =>
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
-{
-    try
-    {
-        app.Logger.LogInformation("Database: {Target}", DatabaseConfig.Describe(DatabaseConfig.Resolve(app.Configuration)));
-        var db = scope.ServiceProvider.GetRequiredService<PortalDbContext>();
-        await PortalDbContext.InitializeAsync(db, scope.ServiceProvider.GetRequiredService<ScenarioCatalog>());
-        app.Logger.LogInformation("Database ready.");
-    }
-    catch (Exception ex)
-    {
-        app.Logger.LogCritical(ex, "Cannot reach PostgreSQL. Locally: start-portalx.ps1 starts it. In the cloud: check the DATABASE_URL environment variable.");
-        throw;
-    }
-}
+// A database problem must not stop the web server: start anyway, report it on /api/health, keep retrying.
+if (!await DatabaseStartup.TryInitializeAsync(app.Services, app.Logger))
+    DatabaseStartup.RetryInBackground(app.Services, app.Logger, app.Lifetime.ApplicationStopping);
 
 app.UseForwardedHeaders();
+// Until the database is ready, game endpoints answer 503 with a Hebrew message instead of failing.
+app.Use(async (ctx, next) =>
+{
+    var path = ctx.Request.Path;
+    if ((path.StartsWithSegments("/api") && !path.StartsWithSegments("/api/health") && !path.StartsWithSegments("/api/scenarios"))
+        || path.StartsWithSegments("/hubs"))
+    {
+        if (!ctx.RequestServices.GetRequiredService<DatabaseStatus>().IsReady)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            ctx.Response.Headers.RetryAfter = "10";
+            await ctx.Response.WriteAsJsonAsync(new ApiError("db-starting", "השרת מתחבר למסד הנתונים. נסו שוב בעוד כמה שניות."));
+            return;
+        }
+    }
+    await next();
+});
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseRateLimiter();
 
 var api = app.MapGroup("/api");
 
-api.MapGet("/health", () => Results.Ok(new { status = "ok", time = DateTime.UtcNow }));
+api.MapGet("/health", (DatabaseStatus db) => Results.Ok(new
+{
+    status = db.IsReady ? "ok" : "degraded",
+    database = db.State,
+    problem = db.Problem,
+    attempts = db.Attempts,
+    time = DateTime.UtcNow,
+}));
 
 api.MapGet("/scenarios", (ScenarioCatalog catalog) => catalog.All.Select(s => new
 {
