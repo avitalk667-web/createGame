@@ -43,7 +43,6 @@ export function walkableRects(unlocked: Set<string>): Rect[] {
 export const inRects = (rects: Rect[], x: number, z: number) => rects.some((r) => x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1);
 
 export type PanelId =
-  | 'guide'
   | 'cipher-key'
   | 'cipher-message'
   | 'cipher-lock'
@@ -74,9 +73,8 @@ export interface InteractableDef {
 export const INTERACTABLES: InteractableDef[] = [
   // ספרייה
   { id: 'wall-map', zone: 'library', label: 'מפת האחוזה', panel: 'map', pos: [-7.6, 2.3, 1.45], radius: 1.0 },
-  { id: 'guide', zone: 'library', label: 'יהודה המדריך', panel: 'guide', pos: [-3.2, 1.2, 4.2], radius: 0.8 },
   { id: 'key-book', zone: 'library', label: 'ספר פתוח על הדוכן', panel: 'cipher-key', pos: [-5.2, 1.25, -2.5], radius: 0.8 },
-  { id: 'parchment', zone: 'library', label: 'קלף ישן על הקיר', panel: 'cipher-message', pos: [7.6, 2.4, -1.5], radius: 1.0 },
+  { id: 'parchment', zone: 'library', label: 'קלף ישן על הקיר — לחצו להגדלה', panel: 'cipher-message', pos: [7.6, 2.55, -1.5], radius: 1.2 },
   { id: 'handle', zone: 'library', label: 'ידית ברזל', itemId: 'handle', pos: [5.4, 1.0, 4.2], radius: 0.6 },
   { id: 'door-symbols', zone: 'library', label: 'שער נעול — מנעול אותיות', panel: 'cipher-lock', pos: [0, 1.8, -6.9], radius: 1.5 },
   // חדר הסמלים
@@ -119,7 +117,6 @@ const LOCAL_OBSTACLES: Record<ZoneId, [number, number, number, number][]> = {
     [-5.7, -4.7, -3.0, -2.0], // lectern
     [4.4, 6.4, 3.6, 4.8], // desk
     [-1.6, 1.6, -0.3, 1.3], // reading table
-    [-3.6, -2.8, 3.8, 4.6], // Yehuda the guide
   ],
   symbols: [
     [-7.2, -6.0, -6.2, -5.0], [6.0, 7.2, -6.2, -5.0], [-7.2, -6.0, 5.0, 6.2], [6.0, 7.2, 5.0, 6.2], // pillars

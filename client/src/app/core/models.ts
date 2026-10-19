@@ -76,6 +76,11 @@ export interface RoomSnapshot {
   placedItems: string[];
   letters: GoldenLetter[];
   result?: ResultDto;
+  /** Room the whole group belongs in — decided by the server. */
+  activeZone: string;
+  /** When the server unlocked it; clients move the group at activeZoneSince + transitionDelayMs. */
+  activeZoneSince?: string;
+  transitionDelayMs: number;
 }
 
 export interface HubResult<T = any> {

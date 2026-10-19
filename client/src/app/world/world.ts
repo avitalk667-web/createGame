@@ -114,7 +114,6 @@ export class GameWorld {
   private lastSent = 0;
   private lastSentKey = '';
   private currentZone: ZoneId = 'library';
-  private guide?: BoyAvatar;
   sensitivity = 1;
 
   constructor(private canvas: HTMLCanvasElement, private quality: Quality, private cb: WorldCallbacks = {}) {
@@ -640,22 +639,52 @@ export class GameWorld {
     this.candle(-4.6, 1.05, c - 2.2, true);
 
     // parchment with the secret writing
+    // (The plane must sit in front of the frame's front face — previously it was inside the frame box and hidden.)
     const pc = document.createElement('canvas');
-    pc.width = 512;
-    pc.height = 360;
+    pc.width = 1024;
+    pc.height = 720;
     const g = pc.getContext('2d')!;
     const img = parchmentTexture().image as HTMLCanvasElement;
-    g.drawImage(img, 0, 0, 512, 360);
+    g.drawImage(img, 0, 0, 1024, 720);
+    g.direction = 'rtl';
+    g.textAlign = 'center';
+    g.fillStyle = '#2a1608';
+    g.font = 'bold 64px "Frank Ruhl Libre", Heebo, serif';
+    g.fillText('הכתובת הסודית', 512, 96);
     const message: string[] = scenario?.puzzles.find((p) => p.id === 'p1-cipher')?.publicData?.message ?? [];
-    message.forEach((s, k) => drawSymbol(g, s, 512 - 110 - k * 145, 180, 110, '#3b2410'));
+    // read right-to-left: the first symbol is on the right
+    message.forEach((s, k) => {
+      const x = 1024 - 210 - k * 302;
+      g.fillStyle = 'rgba(255,240,205,0.55)';
+      g.beginPath();
+      g.arc(x, 360, 128, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = '#5a3a1c';
+      g.lineWidth = 6;
+      g.stroke();
+      drawSymbol(g, s, x, 360, 190, '#2a1608');
+      g.fillStyle = '#5a3a1c';
+      g.font = 'bold 40px Heebo, Arial, sans-serif';
+      g.fillText(String(k + 1), x, 540);
+    });
+    g.font = 'bold 44px Heebo, Arial, sans-serif';
+    g.fillStyle = '#2a1608';
+    g.fillText('← קראו מימין לשמאל', 512, 640);
     const ptex = new THREE.CanvasTexture(pc);
     ptex.colorSpace = THREE.SRGBColorSpace;
-    const parchment = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 1.55), this.std('#ffffff', { map: ptex, roughness: 1 }));
+    ptex.anisotropy = 8;
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.1, 2.9), this.std('#5a3a1e', { metalness: 0.3 }));
+    frame.position.set(ROOM_HALF_W - 0.03, 2.55, c - 1.5); // front face at x = W - 0.06
+    const parchment = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.83), new THREE.MeshStandardMaterial({ map: ptex, roughness: 1, emissive: '#3a2a14', emissiveIntensity: 0.18 }));
     parchment.rotation.y = -Math.PI / 2;
-    parchment.position.set(ROOM_HALF_W - 0.04, 2.4, c - 1.5);
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.8, 2.45), this.std('#5a3a1e', { metalness: 0.3 }));
-    frame.position.set(ROOM_HALF_W - 0.02, 2.4, c - 1.5);
+    parchment.position.set(ROOM_HALF_W - 0.075, 2.55, c - 1.5);
     this.scene.add(frame, parchment);
+    // reading lamp so the parchment is legible in the dim library
+    const lamp = new THREE.SpotLight('#ffe2b0', 7, 7, Math.PI / 4.2, 0.95, 1.2);
+    lamp.position.set(ROOM_HALF_W - 2.6, 4.4, c - 1.5);
+    lamp.target.position.set(ROOM_HALF_W - 0.1, 2.5, c - 1.5);
+    this.scene.add(lamp, lamp.target);
+    this.candle(ROOM_HALF_W - 0.3, 1.3, c - 0.2, false);
 
     // desk with the iron handle
     const desk = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.9, 1), shelfMat);
@@ -670,7 +699,7 @@ export class GameWorld {
     this.addItem('handle', handle);
     this.candle(4.8, 0.9, c + 4.0, true);
 
-    // reading table, rug, guide character
+    // reading table and rug
     const table = new THREE.Mesh(new THREE.BoxGeometry(3, 0.12, 1.4), shelfMat);
     table.position.set(0, 0.85, c + 0.5);
     for (const [x, z] of [[-1.3, -0.55], [1.3, -0.55], [-1.3, 0.55], [1.3, 0.55]]) {
@@ -688,10 +717,6 @@ export class GameWorld {
     this.sconce(-ROOM_HALF_W + 0.15, 2.8, c - 5.5, 1);
     this.sconce(ROOM_HALF_W - 0.15, 2.8, c - 5.5, -1);
 
-    this.guide = new BoyAvatar('scholar', { skin: 1, hair: 0, glasses: 1, bag: 2 }, 'יהודה המדריך');
-    this.guide.root.position.set(-3.2, 0, c + 4.2);
-    this.guide.root.rotation.y = 0.6;
-    this.scene.add(this.guide.root);
   }
 
   /** Framed parchment map of the mansion, hanging between the library shelves. */
@@ -1218,7 +1243,6 @@ export class GameWorld {
       p.needsUpdate = true;
     }
     if (this.gateGlow) (this.gateGlow.material as THREE.MeshBasicMaterial).opacity = 0.35 + Math.sin(t * 2) * 0.15;
-    this.guide?.update(dt, 0, t);
 
     if (this.mode === 'showcase') this.showcaseCamera(t);
     else if (this.mode === 'intro') this.introCamera(this.modeTime);
@@ -1325,7 +1349,10 @@ export class GameWorld {
       cam.copy(pivot).addScaledVector(dir, dist);
       if (inRects(roomish, cam.x, cam.z) && cam.y < WALL_H - 0.3) break;
     }
-    this.camera.position.lerp(cam, Math.min(1, dt * 10));
+    if (this.snapCamera) {
+      this.camera.position.copy(cam);
+      this.snapCamera = false;
+    } else this.camera.position.lerp(cam, Math.min(1, dt * 10));
     this.camera.lookAt(pivot);
 
     const zone = zoneAt(this.localPos.z);
@@ -1387,10 +1414,15 @@ export class GameWorld {
   private lineup: BoyAvatar[] = [];
 
   /** Design review: every door open, camera parked in the chosen room (or close to the characters). */
-  setTour(view: ZoneId | 'characters' | 'wallmap') {
+  setTour(view: ZoneId | 'characters' | 'wallmap' | 'parchment') {
     this.mode = 'tour';
     for (const z of ZONE_ORDER) this.doorOpen.set(z, 1);
     if (this.gateGlow) this.gateGlow.visible = false;
+    if (view === 'parchment') {
+      this.tourView = { pos: new THREE.Vector3(4.2, 2.6, -1.5), look: new THREE.Vector3(8, 2.55, -1.5) };
+      this.placeKeyLight('library');
+      return;
+    }
     if (view === 'wallmap') {
       this.tourView = { pos: new THREE.Vector3(-4.9, 2.4, 1.45), look: new THREE.Vector3(-8, 2.3, 1.45) };
       this.placeKeyLight('library');
@@ -1439,6 +1471,33 @@ export class GameWorld {
 
   get isCutscene() {
     return this.mode === 'cutscene';
+  }
+
+  private snapCamera = false;
+
+  /** Moves the local player to the entrance of a room (server-decided group transition or reconnect). */
+  transferTo(zone: ZoneId, slot: number) {
+    this.cut = undefined;
+    if (this.mode === 'cutscene') this.mode = 'play';
+    const c = zoneCenter(zone);
+    const z = zone === 'library' ? SPAWN.z : c + 5.2;
+    const x = ((slot % 5) - 2) * 0.9;
+    if (this.canStand(x, z)) this.localPos.set(x, 0, z);
+    else this.localPos.set(0, 0, z);
+    this.localYaw = Math.PI;
+    this.camYaw = 0;
+    this.snapCamera = true;
+    this.lastSentKey = '';
+    this.lastSent = 0;
+    if (this.currentZone !== zone) {
+      this.currentZone = zone;
+      this.placeKeyLight(zone);
+      this.cb.onZoneChange?.(zone);
+    }
+  }
+
+  get localZone(): ZoneId {
+    return zoneAt(this.localPos.z);
   }
 
   private updateRemotes(dt: number, t: number) {

@@ -10,7 +10,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const scenario = JSON.parse(fs.readFileSync(path.join(root, 'server/PortalX.Server/Content/scenarios/last-portal.he.json'), 'utf8'));
 
 const GUARD = 'שומר הפורטל';
-const GUIDE = 'יהודה';
+// All narration is by the portal guardian (no guide character on screen).
+const GUIDE = GUARD;
 
 const lines = [
   // opening cinematic (timed in play.component.ts INTRO_LINES)
@@ -19,12 +20,7 @@ const lines = [
   ['intro_03', GUARD, 'אם הפורטל ייסגר, הסוד שהוא שומר יאבד לעולם. רק קבוצה שפועלת יחד, בשיתוף ובאמון, יכולה לפתוח אותו מחדש.'],
   ['intro_04', GUARD, 'עליכם לעבור בחדרי האחוזה, לפענח את החידות, לאסוף שלושה חפצים ולגלות את מילת הסוד.'],
   ['intro_05', GUARD, 'זכרו: כל אחד מכם רואה משהו שהאחרים אינם רואים. דברו ושתפו — ויחד תצליחו. השער נפתח... בהצלחה!'],
-  ['mission', GUARD, 'המשימה התחילה. היכנסו לספרייה, והקשיבו ליהודה המדריך.'],
-  // guide dialogue
-  ['guide_01', GUIDE, 'שלום! אני יהודה, ואני מכיר את האחוזה הזאת היטב. כל חדר כאן נעול בחידה, וכל חידה שתפתרו תפתח את הדלת לחדר הבא.'],
-  ['guide_02', GUIDE, 'לחצו על חפצים מסומנים כדי לבדוק אותם. חפצים שאפשר לאסוף ייכנסו לתיק המשותף של הקבוצה, וכל אחד מכם יוכל להשתמש בהם.'],
-  ['guide_03', GUIDE, 'בכל חידה שתפתרו תקבלו אות זהב. שמרו עליהן — בסוף הדרך הן יפתחו את הפורטל.'],
-  ['guide_04', GUIDE, 'ואם נתקעתם — אפשר לבקש רמז. יש שלוש דרגות רמזים, מרמז עדין ועד רמז כמעט מפורש. בהצלחה, ושתפו הרבה!'],
+  ['mission', GUARD, 'המשימה התחילה. חפשו בספרייה את הקלף ואת ספר המפתח.'],
   // zone entries
   ['zone_library', GUIDE, 'זו הספרייה העתיקה. חפשו ספר שנראה שונה מכל השאר, וקלף עם סמלים מוזרים.'],
   ['zone_symbols', GUIDE, 'חדר הסמלים! על הקירות תלויים לוחות אבן. קראו את כולם לפני שאתם מסובבים את המנגנון.'],

@@ -50,9 +50,9 @@ public class GameEngineTests
         Assert.Contains("symbols", engine.UnlockedZones(room, Catalog.Get("last-portal")));
         Assert.Equal("solved", engine.SubmitAnswer(room, ps[2].Id, "p2-sequence", J(new[] { "sun", "crown", "leaf", "star" }), t).Code);
         Assert.Equal("solved", engine.SubmitAnswer(room, ps[0].Id, "p3-sound", J(new[] { "gimel", "aleph", "dalet", "aleph", "bet" }), t).Code);
-        Assert.True(engine.PickUp(room, ps[2].Id, "crystal", t).Ok);
+        Assert.Contains("crystal", GameEngine.World(room).Inventory); // reward goes straight to the bag
         Assert.Equal("solved", engine.SubmitAnswer(room, ps[3].Id, "p4-split", J("749"), t).Code);
-        Assert.True(engine.PickUp(room, ps[1].Id, "gear", t).Ok);
+        Assert.Contains("gear", GameEngine.World(room).Inventory);
         Assert.True(engine.Combine(room, ps[0].Id, "handle", "gear", t).Ok);
         Assert.True(engine.PlaceItem(room, ps[1].Id, "p5-items", "crystal", t).Ok);
         Assert.Equal("solved", engine.PlaceItem(room, ps[2].Id, "p5-items", "mechanism", t).Code);
@@ -208,6 +208,42 @@ public class GameEngineTests
         Assert.True(r.Ok, r.Message);
         Assert.Equal(4, r.Data!["key"]!.AsArray().Count);
         Assert.Equal("not-in-room", engine.GetPersonalClues(room, Guid.NewGuid(), "p1-cipher", T0).Code);
+    }
+
+    [Fact]
+    public void Leaving_a_solved_room_collects_items_left_behind_and_moves_the_active_zone()
+    {
+        var (engine, room, ps) = Setup();
+        StartPlaying(engine, room, ps);
+        Assert.Equal("library", Snapshots.ActiveZone(engine, room).Zone);
+        Assert.Null(Snapshots.ActiveZone(engine, room).Since);
+
+        var r = engine.SubmitAnswer(room, ps[0].Id, "p1-cipher", J("שער"), T0.AddMinutes(2)); // handle never picked up
+        Assert.Contains(r.Notices, n => n.Kind == "item-collected" && n.Message.Contains("ידית ברזל"));
+        Assert.Contains("handle", GameEngine.World(room).Inventory);
+        Assert.DoesNotContain("handle", GameEngine.World(room).WorldItems);
+
+        var active = Snapshots.ActiveZone(engine, room);
+        Assert.Equal("symbols", active.Zone);
+        Assert.Equal(T0.AddMinutes(2), active.Since);
+        var snap = Snapshots.Build(engine, room, null, T0.AddMinutes(2));
+        Assert.Equal("symbols", snap.ActiveZone);
+        Assert.Equal(Snapshots.TransitionDelayMs, snap.TransitionDelayMs);
+        Assert.Equal(ps[0].Id, snap.Puzzles.First(p => p.Id == "p1-cipher").SolvedBy);
+    }
+
+    [Fact]
+    public void Simultaneous_correct_answers_produce_a_single_winner_and_one_success()
+    {
+        var (engine, room, ps) = Setup();
+        StartPlaying(engine, room, ps);
+        var first = engine.SubmitAnswer(room, ps[1].Id, "p1-cipher", J("שער"), T0);
+        var second = engine.SubmitAnswer(room, ps[2].Id, "p1-cipher", J("שער"), T0);
+        Assert.Equal("solved", first.Code);
+        Assert.Equal("already-solved", second.Code);
+        Assert.Empty(second.Notices);
+        Assert.Equal(ps[1].Id, room.Puzzles.First(p => p.PuzzleId == "p1-cipher").SolvedByPlayerId);
+        Assert.Single(GameEngine.World(room).Letters);
     }
 
     [Fact]

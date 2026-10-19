@@ -7,7 +7,6 @@ import { IconComponent } from '../ui/icon.component';
 import { PanelId } from '../world/layout';
 
 const PANEL_PUZZLE: Record<PanelId, string | null> = {
-  guide: null,
   'cipher-key': 'p1-cipher',
   'cipher-message': 'p1-cipher',
   'cipher-lock': 'p1-cipher',
@@ -42,15 +41,6 @@ const HEB_LETTERS = 'אבגדהוזחטיכלמנסעפצקרשת'.split('');
         </header>
 
         @switch (panel()) {
-          @case ('guide') {
-            <div class="guide">
-              <img src="img/char-scholar.jpg" alt="יהודה המדריך" />
-              <div>
-                <p class="speech">{{ guideText() }}</p>
-                <button class="btn small" (click)="nextGuide()">{{ guideStep() < guideLines.length - 1 ? 'המשך ‹' : 'תודה, יהודה!' }}</button>
-              </div>
-            </div>
-          }
           @case ('cipher-key') {
             <p class="muted">{{ data()?.keyTitle }}</p>
             @if (keyInfo(); as k) {
@@ -261,8 +251,6 @@ const HEB_LETTERS = 'אבגדהוזחטיכלמנסעפצקרשת'.split('');
     .instructions { line-height: 1.65; color: #e9e2cf; border-inline-start: 3px solid var(--gold); padding-inline-start: .8rem; }
     .muted.small, .small { font-size: .88rem; }
     .row { display:flex; gap:.6rem; align-items:center; margin-top:.6rem; }
-    .guide { display:flex; gap:1rem; align-items:flex-start; } .guide img { width: 110px; border-radius: 12px; border:1px solid var(--line); }
-    .speech { font-size: 1.15rem; line-height:1.7; background: rgba(255,255,255,.05); padding: .8rem 1rem; border-radius: 12px; }
     .key-table { display:grid; grid-template-columns: repeat(4, 1fr); gap:.6rem; }
     .kcell { display:flex; align-items:center; justify-content:center; gap:.4rem; background: #e8d3a3; color:#3b2410; border-radius: 10px; padding:.6rem; }
     .kcell b { font-size: 2rem; font-family: var(--font-title); }
@@ -344,7 +332,6 @@ export class PuzzlePanelComponent implements OnInit, OnDestroy {
   keyInfo = signal<{ key: { symbol: string; letter: string }[]; parts: number; total: number } | null>(null);
   playing = signal(false);
   litBell = signal<string | null>(null);
-  guideStep = signal(0);
   now = signal(Date.now());
   private timer?: ReturnType<typeof setInterval>;
 
@@ -352,7 +339,7 @@ export class PuzzlePanelComponent implements OnInit, OnDestroy {
   starLine = this.starPts.map((p) => `${p[0] + 8},${p[1] + 8}`).join(' ');
 
   puzzle = computed<PuzzleContent | undefined>(() => {
-    const id = this.panel() === 'guide' ? this.currentPuzzleId() : PANEL_PUZZLE[this.panel()];
+    const id = PANEL_PUZZLE[this.panel()];
     return this.game.scenario()?.puzzles.find((p) => p.id === id);
   });
   state = computed(() => this.game.snapshot()?.puzzles.find((p) => p.id === this.puzzle()?.id));
@@ -368,7 +355,6 @@ export class PuzzlePanelComponent implements OnInit, OnDestroy {
   cooling = computed(() => this.cooldownLeft() > 0);
   title = computed(() => {
     switch (this.panel()) {
-      case 'guide': return 'יהודה המדריך';
       case 'map': return 'מפת האחוזה';
       case 'cipher-key': return 'ספר המפתח';
       case 'cipher-message': return 'הקלף הישן';
@@ -382,19 +368,11 @@ export class PuzzlePanelComponent implements OnInit, OnDestroy {
   plaqueText = computed(() => (this.data()?.plaques ?? []).find((p: any) => p.id === this.ref())?.text ?? '');
   hintLabel = computed(() => ['בקשת רמז עדין', 'בקשת רמז ממוקד', 'בקשת רמז כמעט מפורש'][this.state()?.hintsRevealed ?? 0] ?? 'רמז');
 
-  guideLines = [
-    'שלום! אני יהודה, ואני מכיר את האחוזה הזאת היטב. כל חדר כאן נעול בחידה, וכל חידה שתפתרו תפתח את הדלת לחדר הבא.',
-    'לחצו על חפצים מסומנים כדי לבדוק אותם. חפצים שאפשר לאסוף ייכנסו לתיק המשותף של הקבוצה, וכל אחד מכם יוכל להשתמש בהם.',
-    'בכל חידה שתפתרו תקבלו אות זהב. שמרו עליהן — בסוף הדרך הן יפתחו את הפורטל.',
-    'ואם נתקעתם — אפשר לבקש רמז. יש שלוש דרגות רמזים, מרמז עדין ועד רמז כמעט מפורש. בהצלחה, ושתפו הרבה!',
-  ];
-  guideText = computed(() => this.guideLines[this.guideStep()]);
 
   ngOnInit() {
     this.timer = setInterval(() => this.now.set(Date.now()), 500);
     if (this.panel() === 'mirror') this.loadClues();
     if (this.panel() === 'cipher-key') this.loadKey();
-    if (this.panel() === 'guide') this.audio.speak('guide_01', this.guideLines[0], 'יהודה', true);
     this.audio.sfx('open');
   }
 
@@ -429,12 +407,6 @@ export class PuzzlePanelComponent implements OnInit, OnDestroy {
   }
   bellLabel(id: string) {
     return (this.data()?.bells ?? []).find((b: any) => b.id === id)?.label ?? '?';
-  }
-
-  nextGuide() {
-    if (this.guideStep() >= this.guideLines.length - 1) return this.close.emit();
-    this.guideStep.update((s) => s + 1);
-    this.audio.speak(`guide_0${this.guideStep() + 1}`, this.guideText(), 'יהודה', true);
   }
 
   addLetter(l: string) {

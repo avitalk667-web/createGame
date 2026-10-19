@@ -20,6 +20,7 @@ import { GameWorld } from '../world/world';
       <div class="views" role="group" aria-label="בחירת תצוגה">
         <button class="btn small" [class.primary]="view() === 'characters'" (click)="go('characters')">הדמויות</button>
         <button class="btn small" [class.primary]="view() === 'wallmap'" (click)="go('wallmap')">מפת הקיר</button>
+        <button class="btn small" [class.primary]="view() === 'parchment'" (click)="go('parchment')">הקלף</button>
         @for (z of zones; track z.id) {
           <button class="btn small" [class.primary]="view() === z.id" (click)="go(z.id)">{{ z.name }}</button>
         }
@@ -39,7 +40,7 @@ export class GalleryPage implements AfterViewInit, OnDestroy {
   private api = inject(ApiService);
   private ngZone = inject(NgZone);
   private world?: GameWorld;
-  view = signal<ZoneId | 'characters' | 'wallmap'>('characters');
+  view = signal<ZoneId | 'characters' | 'wallmap' | 'parchment'>('characters');
   zones: { id: ZoneId; name: string }[] = [
     { id: 'library', name: 'הספרייה' },
     { id: 'symbols', name: 'חדר הסמלים' },
@@ -62,7 +63,7 @@ export class GalleryPage implements AfterViewInit, OnDestroy {
     });
   }
 
-  go(v: ZoneId | 'characters' | 'wallmap') {
+  go(v: ZoneId | 'characters' | 'wallmap' | 'parchment') {
     this.view.set(v);
     this.world?.setTour(v);
   }

@@ -59,7 +59,9 @@ export class GameService {
 
     hub.on('state', (s: RoomSnapshot) => this.zone.run(() => this.applySnapshot(s)));
     hub.on('notice', (n: GameNotice) => this.zone.run(() => this.notices$.next(n)));
-    hub.on('chat', (m: ChatMessage) => this.zone.run(() => this.chat.update((c) => [...c.slice(-39), m])));
+    hub.on('chat', (m: ChatMessage) =>
+      this.zone.run(() => this.chat.update((c) => (c.some((x) => x.id === m.id) ? c : [...c.slice(-39), m]))),
+    );
     hub.on('moved', (id: string, x: number, y: number, z: number, ry: number, zoneId: string) => {
       this.positions.set(id, { x, y, z, ry, zone: zoneId, t: performance.now() });
     });

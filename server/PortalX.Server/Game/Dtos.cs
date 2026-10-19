@@ -20,14 +20,19 @@ public sealed record RoomSnapshot(
     DateTime? IntroStartedAt, DateTime? StartedAt, DateTime? EndedAt, DateTime ServerNow, int IntroSeconds,
     IReadOnlyList<string> UnlockedZones, IReadOnlyList<PuzzleStateDto> Puzzles,
     IReadOnlyList<string> Inventory, IReadOnlyList<string> WorldItems, IReadOnlyList<string> PlacedItems,
-    IReadOnlyList<GoldenLetter> Letters, ResultDto? Result);
+    IReadOnlyList<GoldenLetter> Letters, ResultDto? Result,
+    string ActiveZone, DateTime? ActiveZoneSince, int TransitionDelayMs);
 
 public static class Snapshots
 {
+    /// <summary>Time between a solve and the group being moved into the next room (success message + door scene).</summary>
+    public const int TransitionDelayMs = 4500;
+
     public static RoomSnapshot Build(GameEngine engine, GameRoom room, GameResult? result, DateTime now)
     {
         var scenario = engine.Catalog.Get(room.ScenarioId);
         var world = GameEngine.World(room);
+        var active = ActiveZone(engine, room);
         var players = GameEngine.ActivePlayers(room).OrderBy(p => p.Seat).Select(p => new PlayerDto(
             p.Id, p.Nickname, p.CharacterId, JsonNode.Parse(p.AppearanceJson), p.Seat, p.IsReady, p.IsConnected,
             p.Id == room.HostPlayerId)).ToList();
@@ -45,7 +50,22 @@ public static class Snapshots
             engine.UnlockedZones(room, scenario).ToList(), puzzles,
             world.Inventory, world.WorldItems, world.PlacedItems, world.Letters,
             result == null ? null : new ResultDto(result.DurationSeconds, result.PlayersCount, result.HintsUsed,
-                result.WrongAttempts, result.PuzzlesSolved, result.PuzzlesTotal, JsonNode.Parse(result.AchievementsJson)));
+                result.WrongAttempts, result.PuzzlesSolved, result.PuzzlesTotal, JsonNode.Parse(result.AchievementsJson)),
+            active.Zone, active.Since, TransitionDelayMs);
+    }
+
+    /// <summary>
+    /// The room the whole group belongs in: the furthest unlocked zone. The server decides it (and when it changed),
+    /// so every client moves the group to the same room at the same moment, and reconnecting players land there too.
+    /// </summary>
+    public static (string Zone, DateTime? Since) ActiveZone(GameEngine engine, GameRoom room)
+    {
+        var scenario = engine.Catalog.Get(room.ScenarioId);
+        var unlocked = engine.UnlockedZones(room, scenario);
+        var zone = scenario.Zones.Where(z => unlocked.Contains(z.Id)).OrderBy(z => z.Order).Last();
+        var opener = scenario.Puzzles.FirstOrDefault(p => p.UnlocksZone == zone.Id);
+        var since = opener == null ? null : room.Puzzles.FirstOrDefault(s => s.PuzzleId == opener.Id)?.SolvedAt;
+        return (zone.Id, since);
     }
 
     /// <summary>Scenario content safe for clients: solutions, personal clues and unrevealed hints are removed (spec §19).</summary>

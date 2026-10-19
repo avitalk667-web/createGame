@@ -145,7 +145,6 @@ public class HubIntegrationTests : IClassFixture<HubIntegrationTests.Factory>
         var tune = await Ok(host.Conn.InvokeAsync<JsonElement>("GetTune", "p3-sound"));
         var seq = tune.GetProperty("data").GetProperty("sequence").EnumerateArray().Select(e => e.GetString()).ToArray();
         await Ok(host.Conn.InvokeAsync<JsonElement>("SubmitAnswer", "p3-sound", JsonSerializer.SerializeToElement(seq), "a-6"));
-        await Ok(uri.Conn.InvokeAsync<JsonElement>("PickUp", "crystal", "a-7"));
 
         // Each player sees a different mirror clue.
         var clueIdx = new List<int>();
@@ -158,7 +157,8 @@ public class HubIntegrationTests : IClassFixture<HubIntegrationTests.Factory>
         }
         Assert.Equal(3, clueIdx.Distinct().Count());
         await Ok(moshe.Conn.InvokeAsync<JsonElement>("SubmitAnswer", "p4-split", JsonSerializer.SerializeToElement("749"), "a-8"));
-        await Ok(dovid.Conn.InvokeAsync<JsonElement>("PickUp", "gear", "a-9"));
+        // everyone is told the same active room (server-decided move)
+        await WaitFor(() => all.All(c => c.LastState?.GetProperty("activeZone").GetString() == "items"), "all clients in the items room");
         await Ok(host.Conn.InvokeAsync<JsonElement>("Combine", "handle", "gear", "a-10"));
         await Ok(dovid.Conn.InvokeAsync<JsonElement>("PlaceItem", "p5-items", "crystal", "a-11"));
         await Ok(uri.Conn.InvokeAsync<JsonElement>("PlaceItem", "p5-items", "mechanism", "a-12"));

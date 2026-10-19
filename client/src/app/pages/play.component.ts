@@ -4,7 +4,7 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AudioService } from '../core/audio.service';
 import { GameService } from '../core/game.service';
-import { GameNotice } from '../core/models';
+import { ChatMessage, GameNotice, RoomSnapshot } from '../core/models';
 import { SettingsService } from '../core/settings.service';
 import { ChatComponent } from '../ui/chat.component';
 import { IconComponent } from '../ui/icon.component';
@@ -72,6 +72,7 @@ const INTRO_LINES: [number, string][] = [
         </div>
         <div class="tools">
           <button class="btn small" (click)="panel.set({ id: 'map' })" aria-label="מפת האחוזה"><px-icon name="map" [size]="18" /> מפה</button>
+          <button class="btn small" (click)="showHelp.set(!showHelp())">עזרה</button>
           <button class="btn small" (click)="showSettings.set(true)">הגדרות</button>
           <button class="btn small ghost" (click)="confirmLeave()">יציאה</button>
         </div>
@@ -123,10 +124,29 @@ const INTRO_LINES: [number, string][] = [
         </div>
       </footer>
 
-      @if (showChat()) {
-        <section class="chat-pop card" aria-label="צ׳אט הקבוצה">
+      @if (showChat() && !(panel() && narrow())) {
+        <section class="chat-pop card" [class.dock]="!!panel()" [class.pulse]="chatPulse()" aria-label="צ׳אט הקבוצה">
           <header><b>צ׳אט הקבוצה</b><button class="btn small ghost" (click)="showChat.set(false)" aria-label="סגירת הצ׳אט">✕</button></header>
           <px-chat />
+        </section>
+      }
+
+      @if (chatStrip(); as m) {
+        <button class="chat-strip" (click)="panel.set(null); showChat.set(true)" aria-live="polite">
+          <b>{{ m.nickname }}:</b> {{ m.emote ?? m.text }} <small>· לחצו לפתיחת הצ׳אט</small>
+        </button>
+      }
+
+      @if (showHelp()) {
+        <section class="help card" aria-label="איך משחקים">
+          <header><b>איך משחקים</b><button class="btn small ghost" (click)="showHelp.set(false)" aria-label="סגירת העזרה">✕</button></header>
+          <ul>
+            <li>תנועה: החיצים או W A S D · סיבוב המצלמה: גרירה עם העכבר או האצבע</li>
+            <li>לחצו על חפצים מסומנים כדי לבדוק אותם: הקלף על הקיר, הספר שעל הדוכן, הדלת הנעולה</li>
+            <li>חלק מהרמזים מופיעים רק לחלק מהשחקנים — שתפו בצ׳אט מה אתם רואים</li>
+            <li>נתקעתם? כפתור „רמזים”. כשחידה נפתרת, כל הקבוצה עוברת יחד לחדר הבא</li>
+          </ul>
+          <button class="btn small primary" (click)="showHelp.set(false)">הבנתי</button>
         </section>
       }
 
@@ -143,6 +163,21 @@ const INTRO_LINES: [number, string][] = [
         <h2 class="gold-title">{{ c.title }}</h2>
         @if (c.letter) { <div class="new-letter"><span>אות זהב חדשה</span><b>{{ c.letter }}</b></div> }
       </div>
+    }
+
+    @if (celebration(); as c) {
+      <div class="celebrate" role="alert" aria-live="assertive">
+        <div class="confetti" aria-hidden="true">@for (i of confetti; track i) { <i [style.--i]="i"></i> }</div>
+        <div class="card-c">
+          <span class="emoji" aria-hidden="true">🎉</span>
+          <h2>{{ c.name }} פתר את החידה!</h2>
+          <p>„{{ c.title }}”@if (c.letter) { · אות זהב: <b class="gold-letter">{{ c.letter }}</b> }</p>
+          @if (c.next) { <small>עוד רגע עוברים יחד אל {{ c.next }}...</small> }
+        </div>
+      </div>
+    }
+    @if (transfer(); as t) {
+      <div class="transfer" role="status"><span>{{ t }}</span></div>
     }
 
     <div class="toasts" aria-live="polite">
@@ -219,6 +254,32 @@ const INTRO_LINES: [number, string][] = [
     .toast.hint { border-color: var(--blue); }
     .joy { position:fixed; bottom: 90px; left: 20px; z-index: 11; }
     .act { position:fixed; bottom: 110px; right: 20px; z-index: 11; width: 86px; height: 86px; border-radius: 50%; }
+    .celebrate { position:fixed; inset:0; z-index: 70; pointer-events:none; display:flex; justify-content:center; align-items:flex-start; padding-top: 16vh; }
+    .celebrate .card-c { pointer-events:auto; text-align:center; background: linear-gradient(180deg, rgba(40,30,8,.95), rgba(14,20,44,.95)); border: 2px solid var(--gold-2);
+      border-radius: 20px; padding: 1rem 2rem 1.2rem; box-shadow: 0 0 60px rgba(224,185,92,.45); animation: popIn .5s cubic-bezier(.2,1.4,.4,1) both; max-width: calc(100% - 32px); }
+    .celebrate .emoji { font-size: 3rem; display:block; animation: wiggle 1s ease .4s 2; }
+    .celebrate h2 { font-size: clamp(1.6rem, 4.5vw, 2.6rem); margin: .2rem 0; color: var(--gold-2); }
+    .celebrate p { margin: .2rem 0; font-size: 1.1rem; } .celebrate small { color: var(--muted); }
+    .gold-letter { font-family: var(--font-title); color:#1d1405; background: linear-gradient(180deg,#ffe39a,#e0a93f); border-radius: 6px; padding: 0 .4rem; }
+    .confetti { position:absolute; inset:0; overflow:hidden; }
+    .confetti i { position:absolute; top:-12px; left: calc(var(--i) * 4.1%); width: 9px; height: 14px; border-radius: 2px;
+      background: hsl(calc(var(--i) * 37), 85%, 62%); animation: fall 2.6s linear calc(var(--i) * 45ms) both; }
+    @keyframes fall { to { transform: translateY(105vh) rotate(calc(var(--i) * 70deg)); opacity: .2 } }
+    @keyframes popIn { from { opacity:0; transform: scale(.6) } to { opacity:1; transform: scale(1) } }
+    @keyframes wiggle { 50% { transform: rotate(-14deg) scale(1.2) } }
+    .transfer { position:fixed; inset:0; z-index: 65; background: radial-gradient(circle, rgba(10,16,40,.75), #03050c); display:grid; place-items:center;
+      color: var(--gold-2); font-size: 1.4rem; font-family: var(--font-title); animation: fadeInOut 1.1s ease both; }
+    @keyframes fadeInOut { 0% { opacity:0 } 25%, 70% { opacity:1 } 100% { opacity:0 } }
+    .chat-pop { animation: chatIn .28s ease both; }
+    @keyframes chatIn { from { opacity:0; transform: translateY(14px) scale(.97) } to { opacity:1; transform:none } }
+    .chat-pop.pulse { box-shadow: 0 0 0 2px var(--gold-2), var(--shadow); }
+    .chat-pop.dock { z-index: 60; top: 72px; bottom: auto; height: min(52vh, 380px); width: min(320px, calc((100vw - 790px) / 2 - 12px)); }
+    .chat-strip { position:fixed; top: 6px; left: 0; right: 0; margin-inline: auto; width: fit-content; z-index: 61; max-width: min(620px, calc(100% - 24px)); white-space: nowrap; overflow:hidden; text-overflow: ellipsis;
+      background: rgba(14,20,44,.96); color: var(--text); border: 1px solid var(--gold); border-radius: 999px; padding: .4rem 1rem; font-family: inherit; cursor:pointer; animation: chatIn .25s ease both; }
+    .chat-strip b { color: var(--gold-2); } .chat-strip small { color: var(--muted); }
+    .help { position:fixed; bottom: 90px; left: 0; right: 0; margin-inline: auto; z-index: 11; width: min(520px, calc(100% - 24px)); padding: .7rem 1rem; animation: chatIn .3s ease both; }
+    .help header { display:flex; justify-content:space-between; align-items:center; color: var(--gold-2); }
+    .help ul { margin: .4rem 0 .6rem; padding-inline-start: 1.1rem; line-height: 1.7; font-size: .95rem; }
     .cut-banner { position:fixed; top: calc(9vh + 14px); left: 50%; transform: translateX(-50%); z-index: 15; text-align:center; animation: bannerIn .6s ease both; width: min(640px, calc(100% - 32px)); }
     @keyframes bannerIn { from { opacity:0; transform: translate(-50%, -12px) } to { opacity:1; transform: translate(-50%, 0) } }
     .cut-banner h2 { font-size: clamp(1.8rem, 5vw, 3rem); font-weight: 900; margin: .2rem 0; }
@@ -262,6 +323,13 @@ export class PlayComponent implements AfterViewInit, OnDestroy {
   showResult = signal(false);
   pingText = signal<string | null>(null);
   cutscene = signal<{ title: string; letter?: string; puzzle?: string } | null>(null);
+  celebration = signal<{ name: string; title: string; letter?: string; next?: string } | null>(null);
+  transfer = signal<string | null>(null);
+  showHelp = signal(false);
+  chatPulse = signal(false);
+  chatStrip = signal<ChatMessage | null>(null);
+  narrow = signal(matchMedia('(max-width: 1279px)').matches);
+  confetti = Array.from({ length: 24 }, (_, i) => i);
   unread = signal(0);
   tick = signal(0);
 
@@ -299,6 +367,10 @@ export class PlayComponent implements AfterViewInit, OnDestroy {
   private lastPhase: string | null = null;
   private introFinishSent = false;
   private seenChat = 0;
+  private seenChatIds: Set<string> | null = null;
+  private announced = new Set<string>();
+  private activeZoneApplied: string | null = null;
+  private progressTimers: ReturnType<typeof setTimeout>[] = [];
 
   ringBell = (id: string) => this.world?.ringBell(id);
 
@@ -315,6 +387,7 @@ export class PlayComponent implements AfterViewInit, OnDestroy {
         this.world!.applySnapshot(s);
         this.world!.setPlayers(s.players, this.game.playerId(), this.game.positions);
         this.onPhase(s.phase);
+        this.handleProgress(s);
       });
     });
 
@@ -332,13 +405,33 @@ export class PlayComponent implements AfterViewInit, OnDestroy {
     });
 
     effect(() => {
-      const n = this.game.chat().length;
+      const list = this.game.chat();
       untracked(() => {
-        if (!this.showChat() && n > this.seenChat) this.unread.update((u) => u + (n - this.seenChat));
-        if (this.showChat()) this.unread.set(0);
-        this.seenChat = n;
+        if (this.seenChatIds === null) {
+          this.seenChatIds = new Set(list.map((m) => m.id));
+          this.seenChat = list.length;
+          return;
+        }
+        const fresh = list.filter((m) => !this.seenChatIds!.has(m.id));
+        fresh.forEach((m) => this.seenChatIds!.add(m.id));
+        this.seenChat = list.length;
+        if (!fresh.length) return;
+        // every new message opens the team chat for everyone (one panel, no duplicates)
+        this.showChat.set(true);
+        this.unread.set(0);
+        this.chatPulse.set(true);
+        setTimeout(() => this.chatPulse.set(false), 900);
+        if (this.panel() && this.narrow()) {
+          const last = fresh[fresh.length - 1];
+          this.chatStrip.set(last);
+          setTimeout(() => this.chatStrip() === last && this.chatStrip.set(null), 6000);
+        }
       });
     });
+    const mq = matchMedia('(max-width: 1279px)');
+    const onMq = () => this.narrow.set(mq.matches);
+    mq.addEventListener('change', onMq);
+    this.destroyRef.onDestroy(() => mq.removeEventListener('change', onMq));
     effect(() => {
       if (this.showChat()) untracked(() => this.unread.set(0));
     });
@@ -413,7 +506,9 @@ export class PlayComponent implements AfterViewInit, OnDestroy {
       this.audio.setMusic('explore');
       if (prev === 'intro') {
         this.audio.speak('mission', undefined, undefined, true);
-        this.toast('המשימה התחילה! בדקו את הספרייה ודברו עם יהודה המדריך.', 'zone-unlocked');
+        this.toast('המשימה התחילה! חפשו בספרייה את הקלף ואת ספר המפתח.', 'zone-unlocked');
+        this.showHelp.set(true);
+        setTimeout(() => this.showHelp.set(false), 20000);
       }
       this.canvas().nativeElement.focus();
     } else if (phase === 'completed') {
@@ -459,15 +554,16 @@ export class PlayComponent implements AfterViewInit, OnDestroy {
     const mine = n.playerId === this.game.playerId();
     switch (n.kind) {
       case 'puzzle-solved':
-        this.audio.sfx('success');
-        // a solved room is followed by the transition scene, which shows the same news
-        if (!this.game.scenario()?.puzzles.find((p) => p.id === n.puzzleId)?.unlocksZone) this.toast(n.message, n.kind);
+        // the "X solved the puzzle!" announcement is driven by the server state (handleProgress), once per puzzle
         this.audio.speak(n.voiceLine, n.message.split('! ').slice(1).join('! ') || n.message, 'שומר הפורטל');
         break;
       case 'zone-unlocked':
         this.audio.sfx('door');
-        this.playCutscene(n.zone);
-        this.audio.speak(n.voiceLine, undefined, 'יהודה');
+        this.audio.speak(n.voiceLine, undefined, 'שומר הפורטל');
+        break;
+      case 'item-collected':
+        this.audio.sfx('pickup');
+        this.toast(n.message, n.kind);
         break;
       case 'letter':
         this.audio.sfx('letter'); // shown in the HUD and in the transition banner
@@ -480,7 +576,7 @@ export class PlayComponent implements AfterViewInit, OnDestroy {
       case 'hint':
         this.audio.sfx('hint');
         this.toast(n.message, n.kind);
-        this.audio.speak(n.voiceLine, n.message.split(': ').slice(1).join(': '), 'יהודה');
+        this.audio.speak(n.voiceLine, n.message.split(': ').slice(1).join(': '), 'שומר הפורטל');
         break;
       case 'item-picked':
       case 'item-combined':
@@ -501,21 +597,78 @@ export class PlayComponent implements AfterViewInit, OnDestroy {
     }
   }
 
-  /** Transition after a solved room: door cutscene for everyone, with the new golden letter. */
-  private playCutscene(zone: string | undefined) {
-    if (!zone) return;
-    this.panel.set(null);
-    const s = this.game.snapshot();
-    const last = s?.letters[s.letters.length - 1];
-    const solved = [...(s?.puzzles ?? [])].filter((p) => p.status === 'solved').sort((a, b) => (b.solvedAt ?? '').localeCompare(a.solvedAt ?? ''))[0];
-    const by = this.game.playerName(solved?.solvedBy);
-    this.cutscene.set({
-      title: `נפתחה הדרך אל ${this.zoneName(zone)}`,
-      letter: last?.letter,
-      puzzle: by ? `${by} והקבוצה פתרו את „${this.game.scenario()?.puzzles.find((p) => p.id === solved?.id)?.title ?? ''}”` : undefined,
+  /**
+   * Progress driven by the server state, so every player sees the same thing exactly once:
+   *  - a "X solved the puzzle!" celebration for each newly solved puzzle (keyed by round + puzzle),
+   *  - the move of the whole group into the server's active room at activeZoneSince + transitionDelayMs.
+   * Reconnecting players skip old celebrations and are placed straight into the active room.
+   */
+  private handleProgress(s: RoomSnapshot) {
+    if (s.phase !== 'playing' && s.phase !== 'completed') {
+      this.activeZoneApplied = null;
+      this.clearProgressTimers();
+      return;
+    }
+    const now = this.game.serverNow();
+    for (const p of s.puzzles) {
+      if (p.status !== 'solved') continue;
+      const key = `${s.round}:${p.id}`;
+      if (this.announced.has(key)) continue;
+      this.announced.add(key);
+      if (p.solvedAt && now - Date.parse(p.solvedAt) < 8000) this.celebrate(s, p.id);
+    }
+    if (s.phase !== 'playing' || !this.world || s.activeZone === this.activeZoneApplied) return;
+
+    const first = this.activeZoneApplied === null;
+    const target = s.activeZone as ZoneId;
+    this.activeZoneApplied = target;
+    this.clearProgressTimers();
+    const moveAt = s.activeZoneSince ? Date.parse(s.activeZoneSince) + s.transitionDelayMs : 0;
+    const wait = moveAt - now;
+    if (first && (wait <= 0 || !s.activeZoneSince)) {
+      // fresh page or reconnect: be in the right room immediately
+      if (this.world.localZone !== target) this.world.transferTo(target, this.mySlot(s));
+      return;
+    }
+    if (wait > 1200) {
+      this.panel.set(null);
+      this.progressTimers.push(setTimeout(() => this.world?.playDoorCutscene(target), Math.max(0, wait - 3400)));
+      this.progressTimers.push(setTimeout(() => this.moveGroup(target), wait));
+    } else this.moveGroup(target);
+  }
+
+  private celebrate(s: RoomSnapshot, puzzleId: string) {
+    const state = s.puzzles.find((p) => p.id === puzzleId);
+    const content = this.game.scenario()?.puzzles.find((p) => p.id === puzzleId);
+    const next = content?.unlocksZone ? this.zoneName(content.unlocksZone) : undefined;
+    this.audio.sfx('success');
+    setTimeout(() => this.audio.sfx('letter'), 600);
+    this.celebration.set({
+      name: this.game.playerName(state?.solvedBy) || 'הקבוצה',
+      title: content?.title ?? '',
+      letter: content?.rewardLetter,
+      next,
     });
-    setTimeout(() => this.world?.playDoorCutscene(zone), 1200);
-    setTimeout(() => this.cutscene.set(null), 6500);
+    setTimeout(() => this.celebration.set(null), 3600);
+  }
+
+  private moveGroup(zone: ZoneId) {
+    this.panel.set(null);
+    this.transfer.set(`עוברים אל ${this.zoneName(zone)}...`);
+    setTimeout(() => {
+      const s = this.game.snapshot();
+      if (s && this.world) this.world.transferTo(zone, this.mySlot(s));
+    }, 320);
+    setTimeout(() => this.transfer.set(null), 1100);
+  }
+
+  private mySlot(s: RoomSnapshot) {
+    return Math.max(0, [...s.players].sort((a, b) => a.seat - b.seat).findIndex((p) => p.id === this.game.playerId()));
+  }
+
+  private clearProgressTimers() {
+    this.progressTimers.forEach(clearTimeout);
+    this.progressTimers = [];
   }
 
   toast(text: string, kind = 'info') {
@@ -575,6 +728,7 @@ export class PlayComponent implements AfterViewInit, OnDestroy {
 
   ngOnDestroy() {
     clearInterval(this.ticker);
+    this.clearProgressTimers();
     this.clearIntro();
     this.audio.stopVoice();
     this.world?.dispose();

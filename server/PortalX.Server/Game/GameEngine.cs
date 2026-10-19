@@ -443,8 +443,24 @@ public sealed class GameEngine(ScenarioCatalog catalog, GameOptions options)
         var world = World(room);
         Contribute(world, player.Id);
         if (puzzle.RewardLetter != null) world.Letters.Add(new GoldenLetter(puzzle.RewardLetter, puzzle.Zone));
-        if (puzzle.RewardItem != null && !world.Inventory.Contains(puzzle.RewardItem) && !world.WorldItems.Contains(puzzle.RewardItem))
-            world.WorldItems.Add(puzzle.RewardItem);
+        // The group moves on automatically after a solve, so rewards — and anything still lying in the room
+        // being left — go straight into the shared bag instead of requiring a walk back.
+        var collected = new List<string>();
+        if (puzzle.RewardItem != null && !world.Inventory.Contains(puzzle.RewardItem))
+        {
+            world.WorldItems.Remove(puzzle.RewardItem);
+            world.Inventory.Add(puzzle.RewardItem);
+            collected.Add(puzzle.RewardItem);
+        }
+        if (puzzle.UnlocksZone != null)
+        {
+            foreach (var left in scenario.Items.Where(i => i.Zone == puzzle.Zone && world.WorldItems.Contains(i.Id)).ToList())
+            {
+                world.WorldItems.Remove(left.Id);
+                world.Inventory.Add(left.Id);
+                collected.Add(left.Id);
+            }
+        }
         SaveWorld(room, world, now);
 
         var notices = new List<GameNotice>
@@ -453,6 +469,9 @@ public sealed class GameEngine(ScenarioCatalog catalog, GameOptions options)
         };
         if (puzzle.RewardLetter != null)
             notices.Add(new("letter", $"קיבלתם אות זהב: {puzzle.RewardLetter}", PuzzleId: puzzle.Id, Zone: puzzle.Zone));
+        if (collected.Count > 0)
+            notices.Add(new("item-collected", "נכנס לתיק המשותף: " + string.Join(", ", collected.Select(id => scenario.Item(id)?.Name ?? id)),
+                PuzzleId: puzzle.Id, ItemId: collected[0]));
         if (puzzle.UnlocksZone != null)
         {
             var zone = scenario.Zones.First(z => z.Id == puzzle.UnlocksZone);
