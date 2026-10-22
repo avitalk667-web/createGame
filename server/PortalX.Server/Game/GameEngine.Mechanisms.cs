@@ -92,6 +92,7 @@ public sealed partial class GameEngine
         var slotIds = puzzle.PublicData["slots"]!.AsArray().Select(n => n!["id"]!.GetValue<string>()).ToList();
         var accepts = puzzle.PublicData["accepts"]!.AsArray().Select(n => n!.GetValue<string>()).ToHashSet();
         var activateMode = puzzle.PublicData["mode"]?.GetValue<string>() == "activate";
+        var checkEach = puzzle.PublicData["checkEach"]?.GetValue<bool>() == true;
         var solution = puzzle.Solution["slots"]!.AsObject();
         bool Correct() => slotIds.All(id => mech.Slots.TryGetValue(id, out var it) && solution[id]!.GetValue<string>() == it);
 
@@ -105,12 +106,23 @@ public sealed partial class GameEngine
                 if (mech.Slots.ContainsKey(slot)) return ActionOutcome.Fail("slot-taken", "המקום הזה כבר תפוס. הרימו קודם את מה שמונח בו.");
                 if (!world.Inventory.Contains(itemId)) return ActionOutcome.Fail("item-missing", "החפץ הזה אינו בתיק. הרימו אותו קודם.");
                 if (!accepts.Contains(itemId)) return ActionOutcome.Fail("not-fitting", "החפץ הזה לא שייך למתקן הזה.");
+                var item = scenario.Item(itemId)!;
+                var notices = new List<GameNotice>();
+                // checked one by one (the lamp on the workbench): a wrong place is refused with clear feedback,
+                // a right place snaps in and scores at once (spec 6, 7)
+                if (checkEach)
+                {
+                    if (solution[slot]!.GetValue<string>() != itemId)
+                        return ActionOutcome.Fail("wrong-place", $"זה לא המקום של {item.Name}. הרימו אותו ונסו מקום אחר.");
+                    notices.Add(new("item-placed", $"{player.Nickname} הניח את {item.Name} במקום הנכון", player.Id.ToString(), puzzle.Id, ItemId: itemId));
+                    Award(world, scenario, $"placement:{puzzle.Id}:{slot}", player, scenario.Scoring?.Placement ?? 0, "placement",
+                        $"{item.Name} הונח במקום הנכון", puzzle.Zone, puzzle.Id, now, notices);
+                }
+                else notices.Add(new("item-placed", $"{player.Nickname} הניח {item.Name}", player.Id.ToString(), puzzle.Id, ItemId: itemId));
                 world.Inventory.Remove(itemId);
                 mech.Slots[slot] = itemId;
                 mech.SlotBy[slot] = player.Id.ToString();
                 Contribute(world, player.Id);
-                var item = scenario.Item(itemId)!;
-                var notices = new List<GameNotice> { new("item-placed", $"{player.Nickname} הניח {item.Name}", player.Id.ToString(), puzzle.Id, ItemId: itemId) };
                 var full = mech.Slots.Count == slotIds.Count;
                 if (full && puzzle.Solution["backs"] is JsonObject backs)
                     mech.Backs = mech.Slots.ToDictionary(kv => kv.Key, kv => backs[kv.Value]?.GetValue<string>() ?? "");
@@ -145,10 +157,25 @@ public sealed partial class GameEngine
             }
             case "activate":
             {
-                if (!activateMode) return ActionOutcome.Fail("wrong-action", "המתקן הזה פועל מעצמו כשהכול במקומו.");
+                // "Check assembly": says what is missing, or completes the mechanism when everything is in place
+                if (!activateMode && !checkEach) return ActionOutcome.Fail("wrong-action", "המתקן הזה פועל מעצמו כשהכול במקומו.");
+                var missing = slotIds.Count - mech.Slots.Count;
+                if (missing > 0) return ActionOutcome.Fail("not-ready", missing == 1 ? "חסר עוד חלק אחד." : $"חסרים עוד {missing} חלקים.");
                 if (!mech.Ready || !Correct()) return ActionOutcome.Fail("not-ready", puzzle.Failure);
                 state.Attempts++;
                 return Solve(room, scenario, puzzle, state, player, now);
+            }
+            case "reset":
+            {
+                // "Return parts": only this assembly goes back to the start; nothing else in the room changes
+                if (mech.Slots.Count == 0) return new ActionOutcome(true, "noop", "כל החלקים כבר בתיק.", [], false);
+                foreach (var it in mech.Slots.Values) world.Inventory.Add(it);
+                mech.Slots.Clear();
+                mech.SlotBy.Clear();
+                mech.Ready = false;
+                mech.Backs.Clear();
+                SaveWorld(room, world, now);
+                return ActionOutcome.Done("החלקים חזרו למקומות ההתחלה שלהם");
             }
             default:
                 return ActionOutcome.Fail("bad-action", "פעולה לא מוכרת.");

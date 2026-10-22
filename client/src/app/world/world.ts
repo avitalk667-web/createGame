@@ -120,7 +120,7 @@ export class GameWorld {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality !== 'low', powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality === 'high' ? 2 : quality === 'medium' ? 1.5 : 1));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.22;
+    this.renderer.toneMappingExposure = 1.35;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.scene.background = new THREE.Color('#070b1c');
     this.scene.fog = new THREE.FogExp2('#0a1026', 0.012);
@@ -160,7 +160,7 @@ export class GameWorld {
       this.scene.add(m);
       this.hitTargets.set(def.id, m);
     }
-    this.scene.add(new THREE.HemisphereLight('#7d8bc5', '#2a1d10', 0.85));
+    this.scene.add(new THREE.HemisphereLight('#8a98d2', '#3a2a16', 1.05));
     if (this.quality !== 'low') {
       this.renderer.shadowMap.enabled = true;
       this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -180,7 +180,7 @@ export class GameWorld {
         m.castShadow = !flat && !material.transparent && !(material instanceof THREE.MeshBasicMaterial) && !(material instanceof THREE.ShaderMaterial);
       });
     }
-    this.scene.add(new THREE.AmbientLight('#8890b0', 0.12));
+    this.scene.add(new THREE.AmbientLight('#8890b0', 0.25));
   }
 
   private std(color: string, opts: THREE.MeshStandardMaterialParameters = {}) {

@@ -19,6 +19,9 @@ export interface PlayerDto {
   isReady: boolean;
   isConnected: boolean;
   isHost: boolean;
+  /** connected · away (disconnected, the seat is reserved until seatHeldUntil) · released (seat given up; record kept) */
+  seatStatus?: 'connected' | 'away' | 'released';
+  seatHeldUntil?: string | null;
 }
 
 export interface PuzzleStateDto {
@@ -84,6 +87,12 @@ export interface RoomSnapshot {
   clues?: Record<string, string> | null;
   /** Personal and group score (only games with scoring). */
   score?: ScoreDto | null;
+  /** A room that just opened and waits for the group's "Continue". */
+  pendingZone?: string | null;
+  pendingSince?: string | null;
+  continueFallbackSeconds?: number;
+  seatsTaken?: number;
+  seatHoldMinutes?: number;
   /** When the server unlocked it; clients move the group at activeZoneSince + transitionDelayMs. */
   activeZoneSince?: string;
   transitionDelayMs: number;
@@ -172,6 +181,8 @@ export interface ZoneContent {
   order: number;
   icon: string;
   entryLine: string;
+  /** Short story shown when the group enters the room. */
+  story?: string | null;
 }
 
 export interface ItemContent {

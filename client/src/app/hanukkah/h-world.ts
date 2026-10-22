@@ -15,7 +15,7 @@ import {
   hCenter, hInRects, hObstacles, hWalkable, hWorldPos, hZoneAt,
 } from './h-layout';
 
-export type HMode = 'intro' | 'play' | 'outro' | 'cutscene';
+export type HMode = 'intro' | 'play' | 'outro' | 'cutscene' | 'bench';
 
 export interface HWorldCallbacks {
   onHover?(def: HInteractable | null): void;
@@ -23,6 +23,9 @@ export interface HWorldCallbacks {
   onTooFar?(def: HInteractable): void;
   onZoneChange?(zone: HZone): void;
   onMove?(x: number, y: number, z: number, ry: number, zone: string): void;
+  /** A lamp part was dropped on the bench: on an assembly zone (`slot`) or off them (`slot` null); `from` is where it was. */
+  onBenchDrop?(item: string, slot: string | null, from: string | null): void;
+  onBenchExit?(): void;
 }
 
 const DOOR_W = 2.4;
@@ -31,7 +34,59 @@ const INTERACT_DISTANCE = 4.2;
 const SPAWN = new THREE.Vector3(0, 0, 4.6);
 const MAZE_CELL = 0.3;
 
+// the lamp bench in room 2, relative to the room's centre: five assembly zones (1 = the bottom part) and a tray in front
+const BENCH_SLOTS = ['s1', 's2', 's3', 's4', 's5'];
+const BENCH_PAD: Record<string, [number, number]> = { s1: [1.6, -1.45], s2: [0.8, -1.45], s3: [0, -1.45], s4: [-0.8, -1.45], s5: [-1.6, -1.45] };
+const BENCH_TRAY: Record<string, [number, number]> = {
+  'lamp-cover': [1.5, -0.85], 'lamp-wick': [0.75, -0.85], 'lamp-base': [0, -0.85], 'lamp-glass': [-0.75, -0.85], 'lamp-tank': [-1.5, -0.85],
+};
+const BENCH_TOP = 1.0;
+/** Height of each part's centre above the bench when it rests on it, and inside the assembled lamp. */
+const BENCH_SCALE = 1.1;
+const BENCH_REST: Record<string, number> = { 'lamp-base': 0.045, 'lamp-tank': 0.135, 'lamp-wick': 0.09, 'lamp-glass': 0.125, 'lamp-cover': 0.07 };
+const BENCH_STACK: Record<string, number> = { 'lamp-base': 0.045, 'lamp-tank': 0.22, 'lamp-wick': 0.4, 'lamp-glass': 0.42, 'lamp-cover': 0.61 };
+
 interface Flicker { light: THREE.PointLight; base: number; seed: number }
+
+/** The easel drawing in room 2: the lamp's silhouette with its five levels numbered from the bottom (no names). */
+function lampDrawingTexture() {
+  const w = 512;
+  const h = 700;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#ead9ae';
+  g.fillRect(0, 0, w, h);
+  g.strokeStyle = 'rgba(80,50,20,.6)';
+  g.lineWidth = 8;
+  g.strokeRect(10, 10, w - 20, h - 20);
+  g.fillStyle = '#3a2410';
+  g.textAlign = 'center';
+  g.direction = 'rtl';
+  g.font = 'bold 40px Frank Ruhl Libre, serif';
+  g.fillText('מנורת השמן', w / 2, 66);
+  g.strokeStyle = '#3a2410';
+  g.lineWidth = 5;
+  const cx = w / 2 - 30;
+  // 1 base, 2 tank, 3 wick, 4 glass, 5 cover — drawn bottom to top
+  g.beginPath(); g.ellipse(cx, 610, 120, 22, 0, 0, Math.PI * 2); g.stroke();
+  g.strokeRect(cx - 120, 575, 240, 35);
+  g.beginPath(); g.arc(cx, 495, 80, 0, Math.PI * 2); g.stroke();
+  g.beginPath(); g.moveTo(cx, 415); g.lineTo(cx, 330); g.stroke();
+  g.strokeRect(cx - 62, 230, 124, 180);
+  g.beginPath(); g.moveTo(cx - 80, 228); g.lineTo(cx, 120); g.lineTo(cx + 80, 228); g.closePath(); g.stroke();
+  g.font = 'bold 34px Heebo, sans-serif';
+  g.fillStyle = '#7a4a10';
+  ([[1, 600], [2, 500], [3, 360], [4, 280], [5, 185]] as const).forEach(([n, y]) => {
+    g.beginPath(); g.moveTo(cx + 130, y - 10); g.lineTo(cx + 175, y - 10); g.stroke();
+    g.beginPath(); g.arc(cx + 200, y - 10, 22, 0, Math.PI * 2); g.stroke();
+    g.fillText(String(n), cx + 200, y + 2);
+  });
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
 
 /** Emoji/letter on a transparent canvas, for symbols drawn on props. */
 function glyphTexture(text: string, color = '#ffd36b', size = 128, font = 'Segoe UI Emoji, Noto Color Emoji, Frank Ruhl Libre, serif') {
@@ -152,9 +207,28 @@ export class HanukkahWorld {
   private outroLit = 0;
 
   // mechanisms
-  private lampSlots: THREE.Object3D[] = [];
   private lampGlow?: THREE.PointLight;
+  private lampFlame?: THREE.Mesh;
+  private lampBeam?: THREE.Mesh;
+  private wallPanel?: THREE.Object3D;
   private keySymbol?: THREE.Mesh;
+  // the lamp bench (room 2): parts follow the server state; the local player drags them while at the bench
+  private benchPads = new Map<string, THREE.Mesh>();
+  private benchParts = new Map<string, THREE.Object3D>();
+  private benchSlots: Record<string, string> = {};
+  private benchInv = new Set<string>();
+  private benchGuess = new Map<string, string | null>();
+  private benchShake = new Map<string, number>();
+  private benchDrag?: { id: string; from: string | null; pointerId: number; pos: THREE.Vector3 };
+  private benchHover: string | null = null;
+  private benchPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -(BENCH_TOP + 0.18));
+  private lampSeq = -1;
+  private firstApply = true;
+  // short-lived effects (items flying to a player, keys turning, door glows) and the hover/sparkle feedback
+  private effects: ((t: number, dt: number) => boolean)[] = [];
+  private hoverRing?: THREE.Mesh;
+  private sparkles?: THREE.Points;
+  private time = 0;
   private mazeKey?: THREE.Object3D;
   private mazeKeyTarget = new THREE.Vector3();
   private mazeGates = new Map<string, THREE.Mesh>();
@@ -197,7 +271,7 @@ export class HanukkahWorld {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality !== 'low', powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality === 'high' ? 2 : quality === 'medium' ? 1.5 : 1));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.45;
+    this.renderer.toneMappingExposure = 1.55;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.scene.background = new THREE.Color('#060a1a');
     this.scene.fog = new THREE.FogExp2('#0a1026', 0.014);
@@ -232,8 +306,12 @@ export class HanukkahWorld {
       this.scene.add(m);
       this.hitTargets.set(def.id, m);
     }
-    this.scene.add(new THREE.HemisphereLight('#9aa6d8', '#3a2a16', 1.15));
-    this.scene.add(new THREE.AmbientLight('#a0a8c8', 0.3));
+    // brighter but still mysterious: a soft sky/ground fill, no near-black corners (spec 10)
+    this.scene.add(new THREE.HemisphereLight('#a8b4e6', '#4a3620', 1.35));
+    this.scene.add(new THREE.AmbientLight('#b0b6d0', 0.45));
+    this.buildLightPool();
+    this.assignLights('library');
+    this.buildFeedback();
     if (this.quality !== 'low') {
       this.renderer.shadowMap.enabled = true;
       this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -267,12 +345,42 @@ export class HanukkahWorld {
     return m;
   }
 
+  /**
+   * Local lights are described per room and served by a small fixed pool that follows the player
+   * (spec 10, 12): every room can be well lit, while the renderer only ever handles a few lights.
+   */
   private addLight(x: number, y: number, z: number, color: string, intensity: number, distance: number, flicker = true) {
-    const l = new THREE.PointLight(color, intensity, distance, 1.6);
-    l.position.set(x, y, z);
-    this.scene.add(l);
-    if (flicker) this.flickers.push({ light: l, base: intensity, seed: Math.random() * 100 });
-    return l;
+    this.lightSpecs.push({ zone: hZoneAt(z), x, y, z, color, intensity, distance, flicker, seed: Math.random() * 100 });
+  }
+
+  private lightSpecs: { zone: HZone; x: number; y: number; z: number; color: string; intensity: number; distance: number; flicker: boolean; seed: number }[] = [];
+  private lightPool: { light: THREE.PointLight; spec: HanukkahWorld['lightSpecs'][number] | null }[] = [];
+  private static readonly POOL = 10;
+
+  private buildLightPool() {
+    for (let i = 0; i < HanukkahWorld.POOL; i++) {
+      const light = new THREE.PointLight('#ffffff', 0, 10, 1.6);
+      this.scene.add(light);
+      this.lightPool.push({ light, spec: null });
+    }
+  }
+
+  /** The room's own lights (strongest first) plus the brightest one of the next room, seen through its door. */
+  private assignLights(zone: HZone) {
+    const next = H_ZONES[H_ZONES.indexOf(zone) + 1];
+    const here = this.lightSpecs.filter((s) => s.zone === zone).sort((a, b) => b.intensity - a.intensity).slice(0, HanukkahWorld.POOL - 3);
+    const ahead = this.lightSpecs.filter((s) => s.zone === next).sort((a, b) => b.intensity - a.intensity).slice(0, HanukkahWorld.POOL - here.length);
+    const chosen = [...here, ...ahead];
+    this.lightPool.forEach((p, i) => {
+      const s = chosen[i] ?? null;
+      p.spec = s;
+      p.light.intensity = s ? s.intensity : 0;
+      if (s) {
+        p.light.color.set(s.color);
+        p.light.distance = s.distance;
+        p.light.position.set(s.x, s.y, s.z);
+      }
+    });
   }
 
   private candle(x: number, y: number, z: number, light = false) {
@@ -336,6 +444,8 @@ export class HanukkahWorld {
     this.wallWithGap(c - H_HALF_D, 0, wallMat, last ? 0 : DOOR_W);
     this.wallWithGap(c + H_HALF_D, Math.PI, wallMat, i === 0 ? 0 : DOOR_W);
     for (const bx of [-4, 0, 4]) this.box(0.3, 0.3, H_HALF_D * 2, this.std('#3a2a1c'), bx, H_WALL - 0.18, c);
+    // a warm fill over the area where the puzzles are, so nothing important sinks into shadow
+    this.addLight(0, H_WALL - 0.9, c - 1.4, '#ffe2b8', 11, 22, false);
 
     // brass chandelier
     if (zone !== 'mosaic') {
@@ -352,12 +462,12 @@ export class HanukkahWorld {
         const a = (k / 8) * Math.PI * 2;
         this.candle(Math.cos(a) * 0.8, g.position.y + 0.04, g.position.z + Math.sin(a) * 0.8);
       }
-      if (this.quality !== 'low') this.addLight(0, g.position.y - 0.4, g.position.z, '#ffc48a', 13, 16);
+      this.addLight(0, g.position.y - 0.4, g.position.z, '#ffc48a', 13, 17);
     }
     // a wall sconce on each side
     for (const sx of [-1, 1]) {
       this.box(0.14, 0.4, 0.14, this.std('#2a2018', { metalness: 0.5 }), sx * (H_HALF_W - 0.1), 2.6, c + 3);
-      this.candle(sx * (H_HALF_W - 0.25), 2.8, c + 3, this.quality === 'high');
+      this.candle(sx * (H_HALF_W - 0.25), 2.8, c + 3, true);
     }
 
     // corridor and door to the next room, with the room number on it
@@ -406,6 +516,7 @@ export class HanukkahWorld {
   }
 
   private placeKeyLight(zone: HZone) {
+    this.assignLights(zone);
     if (!this.keyLight) return;
     const c = hCenter(zone);
     this.keyLight.position.set(1.2, H_WALL - 0.6, c + 2.5);
@@ -542,6 +653,7 @@ export class HanukkahWorld {
     this.halo(obj);
     const y0 = obj.position.y;
     this.animated.push((t) => {
+      if (obj.userData['flying']) return;
       obj.position.y = y0 + Math.sin(t * 2 + y0) * 0.05;
       obj.rotation.y = t * 0.8;
     });
@@ -601,29 +713,67 @@ export class HanukkahWorld {
   private buildWorkshop() {
     const c = hCenter('workshop');
     this.desk(c, 5.2, 1.6, -1.4, '#6a4a2a');
-    // five assembly zones on the bench, numbered from the bottom part (right) to the top (left as seen from the room)
-    for (let k = 0; k < 5; k++) {
-      const x = 1.6 - k * 0.8;
-      const pad = new THREE.Mesh(new THREE.CircleGeometry(0.24, 24), new THREE.MeshBasicMaterial({ map: glyphTexture(String(k + 1), '#e2c27a', 128, 'Heebo, sans-serif'), transparent: true, opacity: 0.85 }));
-      pad.rotation.x = -Math.PI / 2;
-      pad.position.set(x, 1.006, c - 1.4);
-      this.scene.add(pad);
-      const slot = new THREE.Group();
-      slot.position.set(x, 1.02, c - 1.4);
-      this.scene.add(slot);
-      this.lampSlots.push(slot);
+    // five separate assembly zones on the bench (1 = the bottom of the lamp); parts are dragged onto them (spec 7)
+    BENCH_SLOTS.forEach((slot, k) => {
+      const [x, z] = BENCH_PAD[slot];
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.27, 32), new THREE.MeshBasicMaterial({ color: '#e2c27a', transparent: true, opacity: 0.55 }));
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(x, BENCH_TOP + 0.007, c + z);
+      const num = new THREE.Mesh(new THREE.CircleGeometry(0.19, 24), new THREE.MeshBasicMaterial({ map: glyphTexture(String(k + 1), '#e2c27a', 128, 'Heebo, sans-serif'), transparent: true, opacity: 0.6 }));
+      num.rotation.x = -Math.PI / 2;
+      num.position.set(x, BENCH_TOP + 0.006, c + z);
+      this.scene.add(ring, num);
+      this.benchPads.set(slot, ring);
+    });
+    // the parts themselves: separate objects, shown on the bench once the group has picked them up
+    for (const id of Object.keys(BENCH_TRAY)) {
+      const part = this.itemModel(id);
+      part.scale.setScalar(BENCH_SCALE);
+      part.visible = false;
+      part.userData['benchItem'] = id;
+      // a generous invisible grip, so thin parts (the wick) are easy to take with a finger too
+      part.add(new THREE.Mesh(new THREE.SphereGeometry(0.19, 10, 8), new THREE.MeshBasicMaterial({ visible: false })));
+      this.scene.add(part);
+      this.benchParts.set(id, part);
     }
-    // the assembled lamp lights up and projects a key symbol on the back wall
+    // an easel with a clear drawing of the assembled lamp
+    const easel = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.5), this.std('#ffffff', { map: lampDrawingTexture(), roughness: 0.8 }));
+    easel.position.set(-3.3, 1.75, c - 1.9);
+    easel.rotation.set(-0.15, 0.35, 0);
+    this.box(0.06, 1.6, 0.06, this.std('#3a2414'), -3.3, 0.8, c - 2.05).rotation.z = 0.06;
+    this.scene.add(easel);
+    // the assembled lamp lights up, its beam hits the wall, the key symbol appears and the hidden panel slides open
+    const [lx, lz] = BENCH_PAD['s3'];
     this.lampGlow = new THREE.PointLight('#ffcf7a', 0, 9, 1.4);
-    this.lampGlow.position.set(0, 2.0, c - 1.6);
+    this.lampGlow.position.set(lx, BENCH_TOP + 0.55, c + lz);
     this.scene.add(this.lampGlow);
+    this.lampFlame = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.12, 10), new THREE.MeshBasicMaterial({ color: '#ffcf6a', transparent: true, opacity: 0 }));
+    this.lampFlame.position.set(lx, BENCH_TOP + 0.5, c + lz);
+    this.scene.add(this.lampFlame);
+    this.lampBeam = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.45, 1, 20, 1, true), new THREE.MeshBasicMaterial({
+      color: '#ffd98a', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    }));
+    const from = new THREE.Vector3(lx, BENCH_TOP + 0.65, c + lz);
+    const to = new THREE.Vector3(-2.6, 2.3, c - H_HALF_D + 0.1);
+    this.lampBeam.scale.set(1, from.distanceTo(to), 1);
+    this.lampBeam.position.copy(from).lerp(to, 0.5);
+    this.lampBeam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize());
+    this.scene.add(this.lampBeam);
     this.keySymbol = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.4), new THREE.MeshBasicMaterial({ map: glyphTexture('🗝️'), transparent: true, opacity: 0, depthWrite: false }));
-    this.keySymbol.position.set(0, 3.2, c - H_HALF_D + 0.05);
+    this.keySymbol.position.set(-2.6, 2.3, c - H_HALF_D + 0.05);
     this.scene.add(this.keySymbol);
-    this.scroll(-2.0, 1.02, c - 1.6, 0.2);
+    // hidden compartment in the wall: a dark niche with the key, behind a sliding wooden panel
+    this.box(0.9, 0.7, 0.05, this.std('#120c08'), 1.8, 1.6, c - H_HALF_D + 0.03);
+    const hiddenKey = this.keyMesh('#c9a060', 0.6);
+    hiddenKey.position.set(1.65, 1.6, c - H_HALF_D + 0.12);
+    this.scene.add(hiddenKey);
+    this.wallPanel = this.box(0.95, 0.75, 0.08, this.wood('#5e3a1e'), 1.8, 1.6, c - H_HALF_D + 0.12);
+    this.openTargets.set(this.wallPanel, { axis: 'x', kind: 'pos', from: 1.8, to: 2.85, on: false });
+    this.addLight(1.8, 2.4, c - H_HALF_D + 1.2, '#ffd9a8', 3, 4, false);
+    this.scroll(-2.35, 1.02, c - 1.95, 0.2);
     // oil bottle, tools wall, drawers, shelves
     const bottle = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.3, 14), new THREE.MeshStandardMaterial({ color: '#b8a040', transparent: true, opacity: 0.7, roughness: 0.1 }));
-    bottle.position.set(1.9, 1.15, c - 1.7);
+    bottle.position.set(2.35, 1.15, c - 1.95);
     this.scene.add(bottle);
     this.box(0.1, 1.6, 2.4, this.wood('#3a2414'), -7.85, 2.2, c + 0.5);
     for (let k = 0; k < 6; k++) this.box(0.06, 0.4 + (k % 3) * 0.1, 0.06, this.std('#7a7a80', { metalness: 0.8 }), -7.7, 2.0, c - 0.5 + k * 0.4);
@@ -1047,25 +1197,32 @@ export class HanukkahWorld {
 
   /** Shows the server state: open doors, items, mechanisms and the hanukkiah's lit candles. */
   applySnapshot(s: RoomSnapshot, scenario: ScenarioContent | null) {
+    const live = !this.firstApply;
+    const newlyOpen = [...this.doors.keys()].filter((z) => s.unlockedZones.includes(z) && !this.unlocked.has(z));
     this.unlocked = new Set(s.unlockedZones);
     this.rects = hWalkable(this.unlocked);
     for (const [zone] of this.doors) this.doorOpen.set(zone, this.unlocked.has(zone) ? 1 : 0);
+    if (live) newlyOpen.forEach((z) => this.doorGlow(z));
+    const before = this.worldItems;
     this.worldItems = new Set(s.worldItems);
     const solved = (id: string) => s.puzzles.find((p) => p.id === id)?.status === 'solved';
-    for (const [id, mesh] of this.itemMeshes) mesh.visible = this.worldItems.has(id);
+    for (const [id, mesh] of this.itemMeshes) {
+      // an item that was just picked up flies to the player who took it, then disappears into the bag
+      if (live && before.has(id) && !this.worldItems.has(id) && mesh.visible) this.flyAway(mesh);
+      else if (!mesh.userData['flying']) mesh.visible = this.worldItems.has(id);
+    }
     const m = s.mechanisms ?? {};
 
     this.setOpen(this.drawerFront, solved('h1-riddle'));
-    this.fillSlots(this.lampSlots, ['s1', 's2', 's3', 's4', 's5'], m['h2-lamp'], (slot, item) => {
-      const k = ['s1', 's2', 's3', 's4', 's5'].indexOf(slot);
-      const o = this.itemModel(item);
-      o.scale.setScalar(1.3);
-      o.position.y = 0.06 + k * 0.02;
-      return o;
-    });
+    // the lamp bench: parts on the assembly zones, the rest in the group's bag (laid out on the tray at the bench)
+    this.benchSlots = { ...(m['h2-lamp']?.slots ?? {}) };
+    this.benchInv = new Set(s.inventory);
+    this.benchGuess.clear();
     const lampLit = solved('h2-lamp');
-    if (this.lampGlow) this.lampGlow.intensity = lampLit ? 9 : 0;
-    if (this.keySymbol) (this.keySymbol.material as THREE.MeshBasicMaterial).opacity = lampLit ? 0.9 : 0;
+    // the lamp's success sequence plays once, live; on arrival (late join, reconnect) it is shown finished
+    if (!lampLit) this.lampSeq = -1;
+    else if (this.lampSeq < 0) this.lampSeq = this.firstApply ? 99 : 0;
+    if (!lampLit) this.setOpen(this.wallPanel, false);
 
     const maze = m['h3-maze'];
     if (maze?.key?.length === 2) this.mazeKeyTarget.set(this.mazeOrigin.x + maze.key[1] * MAZE_CELL, this.mazeOrigin.y + 0.05, this.mazeOrigin.z + maze.key[0] * MAZE_CELL);
@@ -1109,6 +1266,7 @@ export class HanukkahWorld {
     if (this.mode !== 'outro') for (const h of this.hanukkiot) h.setLit(Math.min(done, 8), done > 0);
     this.gateTarget = s.phase === 'completed' ? 1.4 : this.unlocked.has('hall') ? 0.5 : 0.2;
     this.setOpen(this.chestLid, s.phase === 'completed');
+    this.firstApply = false;
   }
 
   private fillSlots(holders: THREE.Object3D[], ids: string[], mech: MechanismState | undefined, make: (slot: string, item: string) => THREE.Object3D) {
@@ -1123,9 +1281,338 @@ export class HanukkahWorld {
     });
   }
 
+  /** Opens or closes a lid/drawer/panel. Opening live first turns a key in its lock (spec 8). */
   private setOpen(obj: THREE.Object3D | undefined, on: boolean) {
     const t = obj && this.openTargets.get(obj);
-    if (t) t.on = on;
+    if (!t || !obj || t.on === on || obj.userData['opening']) return;
+    if (!on || this.firstApply || obj === this.wallPanel || obj === this.chestLid) {
+      t.on = on;
+      return;
+    }
+    obj.userData['opening'] = true;
+    const at = obj.getWorldPosition(new THREE.Vector3());
+    const toCam = this.camera.position.clone().sub(at).setY(0).normalize();
+    const key = this.keyMesh('#d9b060', 0.5);
+    key.position.copy(at).addScaledVector(toCam, 0.32);
+    key.lookAt(at.x, key.position.y, at.z);
+    key.rotateY(Math.PI / 2);
+    this.scene.add(key);
+    let k = 0;
+    this.effects.push((_t, dt) => {
+      k += dt;
+      key.position.addScaledVector(toCam, k < 0.35 ? -dt * 0.25 : 0);
+      if (k > 0.35) key.rotation.x = Math.min(Math.PI / 2, (k - 0.35) * 3.2);
+      if (k > 1.0) {
+        t.on = true;
+        obj.userData['opening'] = false;
+        this.removeFx(key);
+        return false;
+      }
+      return true;
+    });
+  }
+
+  // ======================================================================= feedback (spec 8)
+
+  /** A pulsing ring under the object the pointer is on, and a few sparkles around items waiting to be found. */
+  private buildFeedback() {
+    this.hoverRing = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.5, 40), new THREE.MeshBasicMaterial({
+      color: '#ffe6a0', transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    }));
+    this.hoverRing.rotation.x = -Math.PI / 2;
+    this.scene.add(this.hoverRing);
+    const n = this.quality === 'low' ? 24 : 60;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+    this.sparkles = new THREE.Points(geo, new THREE.PointsMaterial({
+      map: glowSpriteTexture('#fff2c0'), size: 0.09, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: '#ffe6a0',
+    }));
+    this.sparkles.frustumCulled = false;
+    this.scene.add(this.sparkles);
+  }
+
+  private updateFeedback(t: number, dt: number) {
+    this.time = t;
+    this.effects = this.effects.filter((fx) => fx(t, dt));
+    if (this.hoverRing) {
+      const def = this.mode === 'play' ? this.hovered : null;
+      const mat = this.hoverRing.material as THREE.MeshBasicMaterial;
+      mat.opacity = THREE.MathUtils.lerp(mat.opacity, def ? 0.55 + Math.sin(t * 5) * 0.2 : 0, Math.min(1, dt * 10));
+      if (def) {
+        const [x, y, z] = hWorldPos(def);
+        this.hoverRing.position.set(x, Math.max(0.02, y - def.radius * 0.6), z);
+        this.hoverRing.scale.setScalar(Math.max(0.6, def.radius * 1.4) * (1 + Math.sin(t * 5) * 0.05));
+      }
+    }
+    if (this.sparkles) {
+      const pos = this.sparkles.geometry.attributes['position'] as THREE.BufferAttribute;
+      const near = [...this.itemMeshes.values()].filter((m) => m.visible && !m.userData['flying'] && Math.abs(m.position.z - this.localPos.z) < 9).slice(0, 6);
+      for (let i = 0; i < pos.count; i++) {
+        const host = near[i % Math.max(1, near.length)];
+        if (!host) {
+          pos.setXYZ(i, 0, -50, 0);
+          continue;
+        }
+        const a = t * 0.9 + i * 2.39;
+        const r = 0.28 + (i % 3) * 0.08;
+        pos.setXYZ(i, host.position.x + Math.cos(a) * r, host.position.y + ((t * 0.35 + i * 0.137) % 1) * 0.6 - 0.2, host.position.z + Math.sin(a) * r);
+      }
+      pos.needsUpdate = true;
+    }
+  }
+
+  /** The picked item flies to the nearest player (the one who took it) and shrinks into their bag. */
+  private flyAway(mesh: THREE.Object3D) {
+    const avatars = [this.local, ...[...this.remotes.values()].map((r) => r.avatar)].filter(Boolean) as BoyAvatar[];
+    const to = avatars.reduce<BoyAvatar | null>((best, a) => (!best || a.root.position.distanceTo(mesh.position) < best.root.position.distanceTo(mesh.position) ? a : best), null);
+    to?.reach(this.time);
+    const start = mesh.position.clone();
+    const scale = mesh.scale.x;
+    mesh.userData['flying'] = true;
+    let k = 0;
+    this.effects.push((_t, dt) => {
+      k = Math.min(1, k + dt / 0.8);
+      const goal = to ? to.root.position.clone().setY(1.0) : start.clone().setY(start.y + 1);
+      mesh.position.lerpVectors(start, goal, THREE.MathUtils.smoothstep(k, 0, 1));
+      mesh.position.y += Math.sin(k * Math.PI) * 0.6;
+      mesh.scale.setScalar(scale * (1 - k * 0.8));
+      if (k < 1) return true;
+      mesh.visible = false;
+      mesh.position.copy(start);
+      mesh.scale.setScalar(scale);
+      mesh.userData['flying'] = false;
+      mesh.visible = this.worldItems.has([...this.itemMeshes].find(([, m]) => m === mesh)?.[0] ?? '');
+      return false;
+    });
+  }
+
+  /** A warm glow fills the doorway of a room that just opened. */
+  private doorGlow(zone: HZone) {
+    const door = this.doors.get(zone);
+    if (!door) return;
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(DOOR_W * 1.1, DOOR_H * 1.05), new THREE.MeshBasicMaterial({
+      color: '#ffd98a', transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    }));
+    glow.position.set(door.position.x, DOOR_H / 2, door.position.z + 0.2);
+    this.scene.add(glow);
+    let k = 0;
+    this.effects.push((_t, dt) => {
+      k += dt;
+      (glow.material as THREE.MeshBasicMaterial).opacity = Math.sin(Math.min(1, k / 5) * Math.PI) * 0.55;
+      if (k < 5) return true;
+      this.removeFx(glow);
+      return false;
+    });
+  }
+
+  private removeFx(obj: THREE.Object3D) {
+    this.scene.remove(obj);
+    obj.traverse((o) => {
+      const m = o as THREE.Mesh;
+      m.geometry?.dispose?.();
+      (m.material as THREE.Material | undefined)?.dispose?.();
+    });
+  }
+
+  // ======================================================================= lamp bench (room 2, spec 7)
+
+  get isBench() {
+    return this.mode === 'bench';
+  }
+
+  /** Steps up to the workbench: the camera looks down at it and the parts can be dragged with the mouse or a finger. */
+  enterBench() {
+    if (this.mode !== 'play') return;
+    this.mode = 'bench';
+    this.modeTime = 0;
+    this.keys.clear();
+    this.hovered = null;
+    this.cb.onHover?.(null);
+  }
+
+  exitBench() {
+    if (this.mode !== 'bench') return;
+    this.benchDrag = undefined;
+    this.benchHover = null;
+    this.mode = 'play';
+    this.snapCamera = false;
+    this.canvas.style.cursor = 'grab';
+  }
+
+  /** The server refused a drop: the part shakes and goes back to where it was. */
+  benchRejected(item: string) {
+    this.benchGuess.delete(item);
+    this.benchShake.set(item, this.time);
+  }
+
+  private slotOf(item: string) {
+    return Object.keys(this.benchSlots).find((k) => this.benchSlots[k] === item) ?? null;
+  }
+
+  private benchCamera(dt: number, t: number) {
+    const c = hCenter('workshop');
+    const look = new THREE.Vector3(0, BENCH_TOP, c - 1.15);
+    // far enough that the whole bench (±2 m) fits, also on a narrow phone screen
+    const tanH = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * this.camera.aspect;
+    const d = Math.max(2.9, 2.2 / Math.max(0.2, tanH));
+    const goal = look.clone().add(new THREE.Vector3(0, 0.78, 0.63).multiplyScalar(d));
+    // once the lamp is lit, the camera rises with its beam to the wall: the key symbol and the opening panel
+    if (this.lampSeq > 0 && this.lampSeq < 50) {
+      const k = THREE.MathUtils.smoothstep((this.lampSeq - 2.6) / 1.6, 0, 1);
+      look.lerp(new THREE.Vector3(-0.3, 1.75, c - H_HALF_D), k);
+      goal.lerp(new THREE.Vector3(0.2, 2.5, c + 1.4), k);
+    }
+    this.camera.position.lerp(goal, Math.min(1, dt * 4));
+    this.camera.lookAt(look);
+    if (this.local) {
+      this.local.root.position.lerp(new THREE.Vector3(3.3, 0, c - 1.2), Math.min(1, dt * 5));
+      this.local.root.rotation.y = -Math.PI / 2;
+      this.local.update(dt, 0, t);
+    }
+  }
+
+  private updateBench(dt: number, t: number) {
+    const c = hCenter('workshop');
+    const benchOn = this.mode === 'bench';
+    const solvedSeq = this.lampSeq >= 0;
+    if (solvedSeq) this.lampSeq += dt;
+    const seq = this.lampSeq;
+    for (const [id, part] of this.benchParts) {
+      const order = Object.keys(BENCH_STACK).indexOf(id);
+      const guess = this.benchGuess.has(id) ? this.benchGuess.get(id)! : undefined;
+      const slot = guess !== undefined ? guess : this.slotOf(id);
+      const inBag = this.benchInv.has(id);
+      let goal: THREE.Vector3 | null = null;
+      if (this.benchDrag?.id === id) goal = this.benchDrag.pos;
+      else if (solvedSeq) {
+        // the five parts lift off their zones one after another and join into one lamp on the middle zone
+        const [px, pz] = BENCH_PAD[BENCH_SLOTS[order]];
+        const [sx, sz] = BENCH_PAD['s3'];
+        const m = THREE.MathUtils.smoothstep(seq - order * 0.35, 0, 1);
+        goal = new THREE.Vector3(
+          THREE.MathUtils.lerp(px, sx, m),
+          BENCH_TOP + THREE.MathUtils.lerp(BENCH_REST[id], BENCH_STACK[id], m) + Math.sin(m * Math.PI) * 0.35,
+          c + THREE.MathUtils.lerp(pz, sz, m),
+        );
+        if (seq > 50) goal.set(sx, BENCH_TOP + BENCH_STACK[id], c + sz);
+      } else if (slot) {
+        const [px, pz] = BENCH_PAD[slot];
+        goal = new THREE.Vector3(px, BENCH_TOP + BENCH_REST[id], c + pz);
+      } else if (inBag && benchOn) {
+        const [tx, tz] = BENCH_TRAY[id];
+        goal = new THREE.Vector3(tx, BENCH_TOP + BENCH_REST[id], c + tz);
+      }
+      if (!goal) {
+        part.visible = false;
+        continue;
+      }
+      if (!part.visible) {
+        // appears on the tray by rising out of the bag
+        part.position.copy(goal).setY(goal.y - 0.3);
+        part.visible = true;
+      }
+      const fast = solvedSeq || this.benchDrag?.id === id;
+      part.position.lerp(goal, Math.min(1, dt * (fast ? 14 : 9)));
+      const shook = this.benchShake.get(id);
+      if (shook !== undefined) {
+        const age = t - shook;
+        if (age > 0.6) this.benchShake.delete(id);
+        else part.position.x += Math.sin(age * 45) * 0.04 * (1 - age / 0.6);
+      }
+      part.rotation.y = this.benchDrag?.id === id ? Math.sin(t * 3) * 0.2 : 0;
+    }
+    // assembly zones: glow where the dragged part would land, gold where a part already sits
+    for (const [slot, ring] of this.benchPads) {
+      const mat = ring.material as THREE.MeshBasicMaterial;
+      const hot = this.benchHover === slot;
+      mat.color.set(hot ? '#9fe0ff' : this.benchSlots[slot] ? '#ffd36b' : '#e2c27a');
+      mat.opacity = hot ? 0.95 : benchOn ? 0.5 + Math.sin(t * 3 + slot.charCodeAt(1)) * 0.15 : 0.45;
+      ring.scale.setScalar(hot ? 1.15 : 1);
+    }
+    // success: the lamp lights, its beam reaches the wall, the key symbol appears and the wall panel slides open
+    const ramp = (from: number, len: number) => (solvedSeq ? THREE.MathUtils.clamp((seq - from) / len, 0, 1) : 0);
+    const lit = ramp(2.2, 1.0);
+    if (this.lampGlow) this.lampGlow.intensity = lit * (8 + Math.sin(t * 9) * 0.6);
+    if (this.lampFlame) {
+      (this.lampFlame.material as THREE.MeshBasicMaterial).opacity = lit;
+      this.lampFlame.scale.set(1, 1 + Math.sin(t * 13) * 0.15, 1);
+    }
+    if (this.lampBeam) (this.lampBeam.material as THREE.MeshBasicMaterial).opacity = ramp(3.0, 1.0) * (0.18 + Math.sin(t * 2) * 0.03);
+    if (this.keySymbol) (this.keySymbol.material as THREE.MeshBasicMaterial).opacity = ramp(3.6, 1.0) * 0.9;
+    if (solvedSeq && seq > 4.6) {
+      const tgt = this.wallPanel && this.openTargets.get(this.wallPanel);
+      if (tgt) tgt.on = true;
+    }
+  }
+
+  private benchPick(): string | null {
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const parts = [...this.benchParts.values()].filter((p) => p.visible);
+    const hit = this.raycaster.intersectObjects(parts, true)[0];
+    let o: THREE.Object3D | null = hit?.object ?? null;
+    while (o && !o.userData['benchItem']) o = o.parent;
+    return (o?.userData['benchItem'] as string) ?? null;
+  }
+
+  private benchPointer(e: PointerEvent) {
+    const rect = this.canvas.getBoundingClientRect();
+    this.pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+  }
+
+  private benchDown(e: PointerEvent) {
+    if (this.lampSeq >= 0) return;
+    this.benchPointer(e);
+    const id = this.benchPick();
+    if (!id) return;
+    const part = this.benchParts.get(id)!;
+    this.benchDrag = { id, from: this.slotOf(id), pointerId: e.pointerId, pos: part.position.clone().setY(BENCH_TOP + 0.3) };
+    this.canvas.style.cursor = 'grabbing';
+    this.local?.reach(this.time);
+  }
+
+  private benchMove(e: PointerEvent) {
+    this.benchPointer(e);
+    const d = this.benchDrag;
+    if (!d || d.pointerId !== e.pointerId) {
+      this.canvas.style.cursor = this.lampSeq < 0 && this.benchPick() ? 'grab' : 'default';
+      return;
+    }
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const p = new THREE.Vector3();
+    if (!this.raycaster.ray.intersectPlane(this.benchPlane, p)) return;
+    const c = hCenter('workshop');
+    p.x = THREE.MathUtils.clamp(p.x, -2.4, 2.4);
+    p.z = THREE.MathUtils.clamp(p.z, c - 2.1, c - 0.65);
+    d.pos.set(p.x, BENCH_TOP + 0.3, p.z);
+    let best: string | null = null;
+    let bestD = 0.42;
+    for (const slot of BENCH_SLOTS) {
+      const [x, z] = BENCH_PAD[slot];
+      const dist = Math.hypot(p.x - x, p.z - (c + z));
+      if (dist < bestD) {
+        bestD = dist;
+        best = slot;
+      }
+    }
+    this.benchHover = best;
+  }
+
+  private benchUp(e: PointerEvent) {
+    const d = this.benchDrag;
+    if (!d || d.pointerId !== e.pointerId) return;
+    this.benchDrag = undefined;
+    const slot = this.benchHover;
+    this.benchHover = null;
+    this.canvas.style.cursor = 'grab';
+    // a part already sitting on that zone keeps it; the dropped part goes back
+    if (slot && this.benchSlots[slot] && this.benchSlots[slot] !== d.id) {
+      this.benchRejected(d.id);
+      this.cb.onBenchDrop?.(d.id, slot, d.from);
+      return;
+    }
+    if (slot === d.from) return;
+    this.benchGuess.set(d.id, slot);
+    this.cb.onBenchDrop?.(d.id, slot, d.from);
   }
 
   setPlayers(players: PlayerDto[], myId: string | null, positions: Map<string, RemotePosition & { t: number }>) {
@@ -1216,6 +1703,9 @@ export class HanukkahWorld {
   private tick(dt: number, t: number) {
     this.modeTime += dt;
     for (const f of this.flickers) f.light.intensity = f.base * (0.85 + 0.15 * Math.sin(t * 9 + f.seed) * Math.sin(t * 5.3 + f.seed * 2));
+    for (const { light, spec } of this.lightPool)
+      if (spec?.flicker) light.intensity = spec.intensity * (0.88 + 0.12 * Math.sin(t * 9 + spec.seed) * Math.sin(t * 5.3 + spec.seed * 2));
+    this.updateFeedback(t, dt);
     for (const a of this.animated) a(t, dt);
     for (const h of this.hanukkiot) h.update(t);
     for (const [zone, door] of this.doors) {
@@ -1246,7 +1736,9 @@ export class HanukkahWorld {
     if (this.mode === 'intro') this.introCamera(this.modeTime);
     else if (this.mode === 'outro') this.outroCamera(this.modeTime, t);
     else if (this.mode === 'cutscene' && this.cut) this.cutsceneCamera(dt, t);
+    else if (this.mode === 'bench') this.benchCamera(dt, t);
     else this.playUpdate(dt, t);
+    this.updateBench(dt, t);
 
     this.updateRemotes(dt, t);
     if (this.composer) this.composer.render();
@@ -1440,6 +1932,10 @@ export class HanukkahWorld {
 
   private onKeyDown = (e: KeyboardEvent) => {
     if ((e.target as HTMLElement)?.closest?.('input, textarea, select')) return;
+    if (this.mode === 'bench') {
+      if (e.code === 'Escape') this.cb.onBenchExit?.();
+      return;
+    }
     this.keys.add(e.code);
     // E uses the object under the pointer, or else the nearest one in reach (keyboard-only play)
     if (e.code === 'KeyE' && this.mode === 'play') {
@@ -1456,10 +1952,12 @@ export class HanukkahWorld {
     window.addEventListener('blur', this.onBlur);
     const c = this.canvas;
     c.addEventListener('pointerdown', (e) => {
-      this.drag = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId };
       c.setPointerCapture(e.pointerId);
+      if (this.mode === 'bench') return this.benchDown(e);
+      this.drag = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId };
     });
     c.addEventListener('pointermove', (e) => {
+      if (this.mode === 'bench') return this.benchMove(e);
       const rect = c.getBoundingClientRect();
       this.pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
       if (this.drag && this.drag.id === e.pointerId) {
@@ -1475,6 +1973,7 @@ export class HanukkahWorld {
       }
     });
     c.addEventListener('pointerup', (e) => {
+      if (this.mode === 'bench') return this.benchUp(e);
       const d = this.drag;
       this.drag = undefined;
       if (d && !d.moved && this.mode === 'play') {
@@ -1516,7 +2015,10 @@ export class HanukkahWorld {
     const [x, , z] = hWorldPos(def);
     const d = Math.hypot(x - this.localPos.x, z - this.localPos.z);
     if (d > INTERACT_DISTANCE + def.radius) this.cb.onTooFar?.(def);
-    else this.cb.onInteract?.(def);
+    else {
+      this.local?.reach(this.time);
+      this.cb.onInteract?.(def);
+    }
   }
 
   /** Uses the nearest object in reach (mobile action button / keyboard). */
@@ -1533,7 +2035,10 @@ export class HanukkahWorld {
         best = def;
       }
     }
-    if (best && bestD < INTERACT_DISTANCE) this.cb.onInteract?.(best);
+    if (best && bestD < INTERACT_DISTANCE) {
+      this.local?.reach(this.time);
+      this.cb.onInteract?.(best);
+    }
     return best && bestD < INTERACT_DISTANCE ? best : null;
   }
 

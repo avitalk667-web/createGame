@@ -20,22 +20,33 @@ public sealed class GameHub(RoomService rooms, RoomRuntime runtime, PortalDbCont
     private Guid? RoomId => Context.Items.TryGetValue("room", out var v) ? (Guid?)v : null;
     private static string Group(Guid roomId) => "room:" + roomId;
 
+    /// <summary>Connects with the player token this tab received when it joined.</summary>
     public async Task<HubResult> Connect(string token)
     {
         if (!Allow("connect", 10, 60)) return TooFast();
         var player = await rooms.FindPlayerByTokenAsync(token ?? "");
         if (player == null) return new HubResult(false, "bad-token", "לא מצאנו את השחקן. הצטרפו מחדש בעזרת קוד החדר.");
+        return await ConnectAs(player);
+    }
 
-        var exec = await rooms.ExecuteAsync(player.RoomId, player.Id, "connect", null, null, room =>
-        {
-            var p = GameEngine.FindPlayer(room, player.Id);
-            if (p == null) return ActionOutcome.Fail("not-in-room", "השחקן הוסר מהחדר.");
-            var wasConnected = p.IsConnected;
-            p.IsConnected = true;
-            p.ConnectionId = Context.ConnectionId;
-            p.LastSeenAt = DateTime.UtcNow;
-            return new ActionOutcome(true, "ok", "", wasConnected ? [] : [new GameNotice("player-connected", $"{p.Nickname} התחבר", p.Id.ToString())], true);
-        });
+    /// <summary>
+    /// Returns to a game after the tab or browser was closed: the seat token is read from this game's HttpOnly
+    /// cookie (set when the player joined), never from page script, and only for the requested game.
+    /// </summary>
+    public async Task<HubResult> ConnectSeat(string roomId)
+    {
+        if (!Allow("connect", 10, 60)) return TooFast();
+        if (!Guid.TryParse(roomId, out var rid)) return new HubResult(false, "bad-token", "לא מצאנו את השחקן. הצטרפו מחדש בעזרת קוד החדר.");
+        var token = Context.GetHttpContext()?.Request.Cookies[RoomService.SeatCookie(rid)];
+        var player = string.IsNullOrEmpty(token) ? null : await rooms.FindPlayerByTokenAsync(token);
+        if (player == null || player.RoomId != rid) return new HubResult(false, "bad-token", "לא מצאנו את השחקן. הצטרפו מחדש בעזרת קוד החדר.");
+        return await ConnectAs(player);
+    }
+
+    private async Task<HubResult> ConnectAs(PlayerSession player)
+    {
+        var exec = await rooms.ExecuteAsync(player.RoomId, player.Id, "connect", null, null,
+            room => rooms.Engine.Reconnect(room, player.Id, Context.ConnectionId, DateTime.UtcNow));
         if (!exec.Outcome.Ok) return new HubResult(false, exec.Outcome.Code, exec.Outcome.Message);
 
         Context.Items["player"] = player.Id;
@@ -67,7 +78,24 @@ public sealed class GameHub(RoomService rooms, RoomRuntime runtime, PortalDbCont
         return rooms.Engine.PlayAgain(room, pid, DateTime.UtcNow);
     });
 
+    /// <summary>Leaving on purpose (after the player confirmed): in the game this frees the seat.</summary>
     public Task<HubResult> Leave() => Run("leave", null, (room, pid) => rooms.Engine.Leave(room, pid, DateTime.UtcNow));
+
+    /// <summary>The group moves into the room that just opened (host, or anyone when the host is away or after a while).</summary>
+    public Task<HubResult> Continue() => Run("continue", null, (room, pid) => rooms.Engine.Continue(room, pid, DateTime.UtcNow));
+
+    public Task<HubResult> ClaimHost() => Run("claim-host", null, (room, pid) => rooms.Engine.ClaimHost(room, pid, DateTime.UtcNow));
+
+    public Task<HubResult> TransferHost(string playerId) =>
+        Guid.TryParse(playerId, out var target)
+            ? Run("transfer-host", null, (room, pid) => rooms.Engine.TransferHost(room, pid, target, DateTime.UtcNow))
+            : Task.FromResult(new HubResult(false, "no-player", "המשתתף לא נמצא."));
+
+    /// <summary>The host frees the reserved seat of a participant who is not connected (score and history stay).</summary>
+    public Task<HubResult> ReleaseSeat(string playerId) =>
+        Guid.TryParse(playerId, out var target)
+            ? Run("release-seat", null, (room, pid) => rooms.Engine.ReleaseSeatOf(room, pid, target, DateTime.UtcNow))
+            : Task.FromResult(new HubResult(false, "no-player", "המשתתף לא נמצא."));
 
     public async Task<HubResult> RegenerateCode()
     {
@@ -167,15 +195,9 @@ public sealed class GameHub(RoomService rooms, RoomRuntime runtime, PortalDbCont
         {
             try
             {
-                var exec = await rooms.ExecuteAsync(rid, pid, "disconnect", null, null, room =>
-                {
-                    var p = GameEngine.FindPlayer(room, pid);
-                    if (p == null || p.ConnectionId != Context.ConnectionId) return new ActionOutcome(true, "noop", "", [], false);
-                    p.IsConnected = false;
-                    p.ConnectionId = null;
-                    p.LastSeenAt = DateTime.UtcNow;
-                    return new ActionOutcome(true, "ok", "", [new GameNotice("player-disconnected", $"{p.Nickname} התנתק — ממתינים שיחזור", p.Id.ToString())], true);
-                });
+                // closing a tab is not leaving: the seat is reserved and nothing is deleted
+                var exec = await rooms.ExecuteAsync(rid, pid, "disconnect", null, null,
+                    room => rooms.Engine.Disconnect(room, pid, Context.ConnectionId, DateTime.UtcNow));
                 if (exec.Outcome.StateChanged) await Broadcast(exec);
             }
             catch (Exception ex)

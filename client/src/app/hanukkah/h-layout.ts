@@ -82,8 +82,8 @@ export const H_INTERACTABLES: HInteractable[] = [
   { id: 'part-glass', zone: 'workshop', label: 'זכוכית', verb: 'הרמה', kind: 'item', itemId: 'lamp-glass', pos: [4.6, 0.3, 4.4], radius: 0.45 },
   { id: 'part-cover', zone: 'workshop', label: 'מכסה', verb: 'הרמה', kind: 'item', itemId: 'lamp-cover', pos: [2.4, 2.35, -6.4], radius: 0.45 },
   { id: 'workbench', zone: 'workshop', label: 'שולחן העבודה — אזורי ההרכבה', verb: 'הנחה', kind: 'panel', panel: 'lamp', pos: [0, 1.0, -1.4], radius: 1.1 },
-  { id: 'r2-scroll', zone: 'workshop', label: 'מגילה עם איור המנורה', verb: 'קריאה', kind: 'clue', clueId: 'r2-scroll', pos: [-2.0, 1.05, -1.6], radius: 0.45 },
-  { id: 'oil-bottle', zone: 'workshop', label: 'בקבוק שמן', verb: 'בדיקה', kind: 'decor', text: 'בקבוק שמן זית. ריחו חזק.', pos: [1.9, 1.1, -1.7], radius: 0.4 },
+  { id: 'r2-scroll', zone: 'workshop', label: 'מגילה עם איור המנורה', verb: 'קריאה', kind: 'clue', clueId: 'r2-scroll', pos: [-2.35, 1.05, -1.95], radius: 0.45 },
+  { id: 'oil-bottle', zone: 'workshop', label: 'בקבוק שמן', verb: 'בדיקה', kind: 'decor', text: 'בקבוק שמן זית. ריחו חזק.', pos: [2.35, 1.1, -1.95], radius: 0.4 },
   { id: 'tools', zone: 'workshop', label: 'כלי עבודה', verb: 'בדיקה', kind: 'decor', text: 'פטישים, צבתות ומברגים קטנים של אומן מנורות.', pos: [-6.9, 2.0, 0.5], radius: 0.8 },
   { id: 'shelf-2', zone: 'workshop', label: 'מדף עם חפצים', verb: 'בדיקה', kind: 'decor', text: 'כדים, קופסאות וכלים ישנים — רק קישוט.', pos: [6.9, 2.4, 1.5], radius: 0.8 },
 

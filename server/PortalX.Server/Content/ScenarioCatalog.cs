@@ -35,7 +35,7 @@ public sealed class ScenarioContent
     public ItemContent? Item(string id) => Items.FirstOrDefault(i => i.Id == id);
 }
 
-public sealed record ZoneContent(string Id, string Name, int Order, string Icon, string EntryLine);
+public sealed record ZoneContent(string Id, string Name, int Order, string Icon, string EntryLine, string? Story = null);
 
 public sealed record ItemContent(string Id, string Name, string Description, string Zone, bool SpawnedAtStart);
 
@@ -52,6 +52,8 @@ public sealed class ScoringRules
     public int Mechanism { get; init; } = 20;
     public int Placement { get; init; } = 10;
     public int Answer { get; init; } = 25;
+    /// <summary>First pickup of an important item (spec 6).</summary>
+    public int Pickup { get; init; } = 10;
     /// <summary>"Complex stage" events, e.g. each maze symbol reached in the right order (spec: up to 25).</summary>
     public int Stage { get; init; } = 5;
     public Dictionary<string, int> Room { get; init; } = new() { ["easy"] = 100, ["medium"] = 150, ["hard"] = 250 };

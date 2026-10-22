@@ -155,16 +155,40 @@ api.MapGet("/rooms/{code}", async (string code, RoomService rooms, ScenarioCatal
     var room = await rooms.FindByCodeAsync(code);
     if (room == null) return Results.NotFound(new ApiError("no-room", "לא מצאנו חדר עם הקוד הזה. בדקו שהקוד נכון."));
     var scenario = catalog.Get(room.ScenarioId);
-    var count = room.Players.Count(p => !p.IsRemoved);
+    var taken = rooms.Engine.SeatsTaken(room, DateTime.UtcNow);
     return Results.Ok(new
     {
         code = room.Code, scenarioId = room.ScenarioId, scenarioName = scenario.Name,
-        phase = room.Phase.ToString().ToLowerInvariant(), playerCount = count, maxPlayers = scenario.MaxPlayers,
-        canJoin = room.Phase == PortalX.Server.Domain.RoomPhase.Lobby && count < scenario.MaxPlayers,
+        phase = room.Phase.ToString().ToLowerInvariant(), playerCount = taken, maxPlayers = scenario.MaxPlayers,
+        // open until the game is finished, also in the middle of it, while a seat is free (spec 3)
+        canJoin = GameEngine.IsOpenForJoining(room) && taken < scenario.MaxPlayers,
     });
 }).RequireRateLimiting("join");
 
-api.MapPost("/rooms/{code}/players", async (string code, JoinRequest req, RoomService rooms, Microsoft.AspNetCore.SignalR.IHubContext<GameHub> hub) =>
+// "Is there already a seat for me in this game?" — read from this game's HttpOnly seat cookie, so a player who
+// closed the tab or the browser returns to the same participant instead of joining again (spec 4).
+api.MapGet("/rooms/{code}/seat", async (string code, HttpRequest http, RoomService rooms) =>
+{
+    var room = await rooms.FindByCodeAsync(code);
+    if (room == null) return Results.NotFound(new ApiError("no-room", "לא מצאנו חדר עם הקוד הזה. בדקו שהקוד נכון."));
+    var token = http.Cookies[RoomService.SeatCookie(room.Id)];
+    var player = string.IsNullOrEmpty(token) ? null : room.Players.FirstOrDefault(p => !p.IsRemoved && p.TokenHash == RoomService.Hash(token));
+    if (player == null) return Results.Ok(new { seat = (object?)null });
+    var now = DateTime.UtcNow;
+    var state = rooms.Engine.Seat(player, now);
+    var max = rooms.Engine.Catalog.Get(room.ScenarioId).MaxPlayers;
+    var canReturn = state != GameEngine.SeatState.Released || rooms.Engine.SeatsTaken(room, now, player.Id) < max;
+    return Results.Ok(new
+    {
+        seat = new
+        {
+            roomId = room.Id, playerId = player.Id, nickname = player.Nickname, characterId = player.CharacterId,
+            status = state.ToString().ToLowerInvariant(), canReturn, isHost = room.HostPlayerId == player.Id,
+        },
+    });
+}).RequireRateLimiting("join");
+
+api.MapPost("/rooms/{code}/players", async (string code, JoinRequest req, HttpContext http, RoomService rooms, Microsoft.AspNetCore.SignalR.IHubContext<GameHub> hub) =>
 {
     var room = await rooms.FindByCodeAsync(code);
     if (room == null) return Results.NotFound(new ApiError("no-room", "לא מצאנו חדר עם הקוד הזה. בדקו שהקוד נכון."));
@@ -181,6 +205,8 @@ api.MapPost("/rooms/{code}/players", async (string code, JoinRequest req, RoomSe
     if (!exec.Outcome.Ok || created == null) return Results.BadRequest(new ApiError(exec.Outcome.Code, exec.Outcome.Message));
     if (exec.Snapshot != null) await hub.Clients.Group("room:" + room.Id).SendAsync("state", exec.Snapshot);
     foreach (var n in exec.Outcome.Notices) await hub.Clients.Group("room:" + room.Id).SendAsync("notice", n);
+    // the seat survives closing the tab or the browser (HttpOnly, this game only)
+    http.Response.Cookies.Append(RoomService.SeatCookie(room.Id), token, RoomService.SeatCookieOptions(http.Request));
     return Results.Ok(new { playerId = created.Id, token, roomId = room.Id });
 }).RequireRateLimiting("join");
 

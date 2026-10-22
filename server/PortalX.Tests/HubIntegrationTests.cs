@@ -165,7 +165,11 @@ public class HubIntegrationTests
         }
         Assert.Equal(3, clueIdx.Distinct().Count());
         await Ok(moshe.Conn.InvokeAsync<JsonElement>("SubmitAnswer", "p4-split", JsonSerializer.SerializeToElement("749"), "a-8"));
-        // everyone is told the same active room (server-decided move)
+        // the group stays to read; it moves together only when the host presses "Continue"
+        await WaitFor(() => all.All(c => c.LastState?.GetProperty("pendingZone").GetString() == "items"), "the next room waiting");
+        Assert.Equal("library", host.LastState!.Value.GetProperty("activeZone").GetString());
+        Assert.Equal("not-host", (await moshe.Conn.InvokeAsync<JsonElement>("Continue")).GetProperty("code").GetString());
+        await Ok(host.Conn.InvokeAsync<JsonElement>("Continue"));
         await WaitFor(() => all.All(c => c.LastState?.GetProperty("activeZone").GetString() == "items"), "all clients in the items room");
         await Ok(host.Conn.InvokeAsync<JsonElement>("Combine", "handle", "gear", "a-10"));
         await Ok(dovid.Conn.InvokeAsync<JsonElement>("PlaceItem", "p5-items", "crystal", "a-11"));
@@ -257,6 +261,8 @@ public class HubIntegrationTests
         Assert.Equal("solved", solved.GetProperty("code").GetString());
 
         await WaitFor(() => guest.Notices.Any(n => n.GetProperty("kind").GetString() == "zone-unlocked"));
+        await Ok(host.Conn.InvokeAsync<JsonElement>("Continue")); // the group moves on when the host continues
+        await WaitFor(() => guest.LastState?.GetProperty("activeZone").GetString() == "workshop");
         Assert.Contains(guest.Notices, n => n.GetProperty("kind").GetString() == "team-solved" && n.GetProperty("message").GetString() == "הקבוצה פתרה את החידה!");
         Assert.Contains(guest.Notices, n => n.GetProperty("kind").GetString() == "clue" && n.GetProperty("message").GetString() == "דוד גילה רמז!");
         Assert.Contains(host.Notices, n => n.GetProperty("kind").GetString() == "score" && n.GetProperty("points").GetInt32() == 25);
@@ -290,6 +296,95 @@ public class HubIntegrationTests
         Assert.Equal(10, Points(again.GetProperty("snapshot").GetProperty("score"), guest.PlayerId));
         Assert.Equal("workshop", again.GetProperty("snapshot").GetProperty("activeZone").GetString());
         await back.DisposeAsync();
+        await host.DisposeAsync();
+    }
+
+    /// <summary>
+    /// Spec 13ב: a player closes the tab (or the browser) and returns with the game code — the seat cookie brings
+    /// back the same participant; the count does not grow; the cookie works only for its own game and owner.
+    /// </summary>
+    [Fact]
+    public async Task Returning_after_closing_the_tab_is_the_same_participant()
+    {
+        var buyer = _factory.CreateClient();
+        var (code, hostClaim) = await TestPurchase.PaidRoomAsync(buyer, _factory.Services, "hanukkah-oil");
+        var host = await JoinAsync(buyer, code, "ישראל", "explorer", hostClaim);
+
+        // the guest's browser: its HttpClient keeps cookies like a browser does
+        var browser = _factory.CreateClient();
+        var join = await browser.PostAsJsonAsync($"/api/rooms/{code}/players", new { nickname = "דוד", characterId = "scholar", appearance = "{}" });
+        join.EnsureSuccessStatusCode();
+        var setCookie = join.Headers.GetValues("Set-Cookie").Single();
+        Assert.Contains("httponly", setCookie.ToLowerInvariant());
+        var joined = await join.Content.ReadFromJsonAsync<JsonElement>(Json);
+        var guestId = joined.GetProperty("playerId").GetString();
+        var roomId = joined.GetProperty("roomId").GetString()!;
+        var cookie = setCookie.Split(';')[0];
+
+        // the tab is closed (nothing kept in the page); the join page asks "do I have a seat here?"
+        var seat = await browser.GetFromJsonAsync<JsonElement>($"/api/rooms/{code}/seat");
+        Assert.Equal(guestId, seat.GetProperty("seat").GetProperty("playerId").GetString());
+        Assert.Equal("דוד", seat.GetProperty("seat").GetProperty("nickname").GetString());
+        Assert.True(seat.GetProperty("seat").GetProperty("canReturn").GetBoolean());
+
+        HubConnection Seated(string cookieHeader) => new HubConnectionBuilder()
+            .WithUrl(new Uri(_factory.Server.BaseAddress, "/hubs/game"), o =>
+            {
+                o.Transports = HttpTransportType.LongPolling;
+                o.HttpMessageHandlerFactory = _ => _factory.Server.CreateHandler();
+                o.Headers["Cookie"] = cookieHeader;
+            }).Build();
+
+        await using (var back = Seated(cookie))
+        {
+            await back.StartAsync();
+            var r = await back.InvokeAsync<JsonElement>("ConnectSeat", roomId);
+            Assert.True(r.GetProperty("ok").GetBoolean(), r.ToString());
+            Assert.Equal(guestId, r.GetProperty("data").GetProperty("playerId").GetString());
+            var players = r.GetProperty("snapshot").GetProperty("players");
+            Assert.Equal(2, players.GetArrayLength());                                    // no duplicate
+            Assert.Single(players.EnumerateArray(), p => p.GetProperty("nickname").GetString() == "דוד");
+        }
+
+        // someone else's browser has no seat, a forged cookie gets nothing, and the cookie does not open another game
+        var other = _factory.CreateClient();
+        var noSeat = await other.GetFromJsonAsync<JsonElement>($"/api/rooms/{code}/seat");
+        Assert.True(!noSeat.TryGetProperty("seat", out var s0) || s0.ValueKind == JsonValueKind.Null); // null fields are omitted
+        await using (var forged = Seated($"px_seat_{Guid.Parse(roomId):N}=not-a-real-token"))
+        {
+            await forged.StartAsync();
+            Assert.Equal("bad-token", (await forged.InvokeAsync<JsonElement>("ConnectSeat", roomId)).GetProperty("code").GetString());
+        }
+        await using (var wrongGame = Seated(cookie.Replace(Guid.Parse(roomId).ToString("N"), Guid.NewGuid().ToString("N"))))
+        {
+            await wrongGame.StartAsync();
+            Assert.Equal("bad-token", (await wrongGame.InvokeAsync<JsonElement>("ConnectSeat", Guid.NewGuid().ToString())).GetProperty("code").GetString());
+        }
+        await host.DisposeAsync();
+    }
+
+    /// <summary>Spec 13ב.7: a newcomer can join a game that is already in progress and lands in the current room.</summary>
+    [Fact]
+    public async Task A_new_player_can_join_a_game_in_progress()
+    {
+        var http = _factory.CreateClient();
+        var (code, hostClaim) = await TestPurchase.PaidRoomAsync(http, _factory.Services, "hanukkah-oil");
+        var host = await JoinAsync(http, code, "ישראל", "explorer", hostClaim);
+        await Ok(host.Conn.InvokeAsync<JsonElement>("StartGame"));
+        await Ok(host.Conn.InvokeAsync<JsonElement>("FinishIntro", true));
+        await Ok(host.Conn.InvokeAsync<JsonElement>("SubmitAnswer", "h1-riddle", JsonSerializer.SerializeToElement("פך השמן"), "j1"));
+        await Ok(host.Conn.InvokeAsync<JsonElement>("Continue"));
+
+        var info = await http.GetFromJsonAsync<JsonElement>($"/api/rooms/{code}");
+        Assert.Equal("playing", info.GetProperty("phase").GetString());
+        Assert.True(info.GetProperty("canJoin").GetBoolean());
+        var late = await JoinAsync(_factory.CreateClient(), code, "שמואל", "navigator");
+        var s = late.LastState!.Value;
+        Assert.Equal("playing", s.GetProperty("phase").GetString());
+        Assert.Equal("workshop", s.GetProperty("activeZone").GetString());
+        Assert.Contains("antique-key", s.GetProperty("inventory").EnumerateArray().Select(x => x.GetString()));
+        Assert.Contains(s.GetProperty("puzzles").EnumerateArray(), p => p.GetProperty("id").GetString() == "h1-riddle" && p.GetProperty("status").GetString() == "solved");
+        await late.DisposeAsync();
         await host.DisposeAsync();
     }
 

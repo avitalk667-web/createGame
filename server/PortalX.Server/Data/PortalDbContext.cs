@@ -44,6 +44,8 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).ValueGeneratedNever();
             e.HasIndex(x => x.TokenHash).IsUnique();
+            // one record per seat in a game: a returning participant can never be stored twice
+            e.HasIndex(x => new { x.RoomId, x.Seat }).IsUnique();
             e.Property(x => x.AppearanceJson).HasColumnType("jsonb");
         });
 

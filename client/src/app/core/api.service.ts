@@ -83,6 +83,12 @@ export class ApiService {
     return this.request<{ result: string; returnUrl: string }>('POST', `/api/sandbox/checkout/${encodeURIComponent(session)}`, { outcome });
   }
 
+  /** A seat this browser already holds in the game (from its HttpOnly cookie) — to come back as the same participant. */
+  seat(code: string) {
+    return this.request<{ seat?: { roomId: string; playerId: string; nickname: string; characterId: string; status: string; canReturn: boolean; isHost: boolean } | null }>(
+      'GET', `/api/rooms/${encodeURIComponent(code)}/seat`);
+  }
+
   room(code: string) {
     return this.request<RoomInfo>('GET', `/api/rooms/${encodeURIComponent(code)}`);
   }
@@ -102,7 +108,8 @@ export interface StoredSession {
   code: string;
   roomId: string;
   playerId: string;
-  token: string;
+  /** The token this tab received when it joined; absent when the tab returned through the seat cookie. */
+  token?: string;
 }
 
 const SESSION_KEY = 'portalx.session';

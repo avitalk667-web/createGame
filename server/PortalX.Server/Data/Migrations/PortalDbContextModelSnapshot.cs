@@ -516,6 +516,9 @@ namespace PortalX.Server.Data.Migrations
                     b.Property<string>("ConnectionId")
                         .HasColumnType("text");
 
+                    b.Property<DateTime?>("DisconnectedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<bool>("IsConnected")
                         .HasColumnType("boolean");
 
@@ -541,15 +544,19 @@ namespace PortalX.Server.Data.Migrations
                     b.Property<int>("Seat")
                         .HasColumnType("integer");
 
+                    b.Property<DateTime?>("SeatReleasedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasColumnType("text");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("RoomId");
-
                     b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("RoomId", "Seat")
                         .IsUnique();
 
                     b.ToTable("Players");

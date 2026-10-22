@@ -328,6 +328,13 @@ export class BoyAvatar {
     });
   }
 
+  private reachUntil = 0;
+
+  /** A short reach forward with the right hand (picking something up, pulling a lever). */
+  reach(time: number) {
+    this.reachUntil = time + 0.9;
+  }
+
   /** Walk cycle driven by movement speed (m/s). */
   update(dt: number, speed: number, time: number) {
     const moving = speed > 0.15;
@@ -336,7 +343,8 @@ export class BoyAvatar {
     this.legL.rotation.x = THREE.MathUtils.lerp(this.legL.rotation.x, swing, 0.3);
     this.legR.rotation.x = THREE.MathUtils.lerp(this.legR.rotation.x, -swing, 0.3);
     this.armL.rotation.x = THREE.MathUtils.lerp(this.armL.rotation.x, -swing * 0.8, 0.3);
-    this.armR.rotation.x = THREE.MathUtils.lerp(this.armR.rotation.x, swing * 0.8, 0.3);
+    const reaching = time < this.reachUntil;
+    this.armR.rotation.x = THREE.MathUtils.lerp(this.armR.rotation.x, reaching ? -1.35 : swing * 0.8, reaching ? 0.25 : 0.3);
     this.body.position.y = moving ? Math.abs(Math.cos(this.phase)) * 0.05 : Math.sin(time * 2) * 0.008;
     this.head.rotation.z = moving ? 0 : Math.sin(time * 0.8) * 0.03;
     this.head.rotation.y = moving ? 0 : Math.sin(time * 0.37) * 0.12;

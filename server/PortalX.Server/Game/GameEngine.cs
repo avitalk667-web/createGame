@@ -16,6 +16,10 @@ public sealed class GameOptions
     public int WrongAttemptsBeforeCooldown { get; set; } = 3;
     public int CooldownSeconds { get; set; } = 20;
     public int FastFinishMinutes { get; set; } = 25;
+    /// <summary>How long a disconnected player's seat stays reserved (spec 4ד).</summary>
+    public int SeatHoldMinutes { get; set; } = 30;
+    /// <summary>After a room opens, anyone may press "Continue" once this has passed (the host can at once).</summary>
+    public int ContinueFallbackSeconds { get; set; } = 90;
 }
 
 /// <summary>A message the server announces to the whole group after an action.</summary>
@@ -69,9 +73,13 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
     {
         player = null;
         var scenario = catalog.Get(room.ScenarioId);
-        if (room.Phase != RoomPhase.Lobby) return ActionOutcome.Fail("game-started", "המשחק בחדר הזה כבר התחיל. אפשר להצטרף לחדר חדש.");
+        // players may join until the game is finished, also in the middle of it (spec 3)
+        if (!IsOpenForJoining(room)) return ActionOutcome.Fail("game-ended", "המשחק הזה כבר הסתיים. אי אפשר להצטרף אליו.");
         var active = ActivePlayers(room).ToList();
-        if (active.Count >= scenario.MaxPlayers) return ActionOutcome.Fail("room-full", $"החדר מלא — אפשר עד {scenario.MaxPlayers} משתתפים.");
+        // a disconnected player's reserved seat counts; an expired reservation does not
+        if (SeatsTaken(room, now) >= scenario.MaxPlayers)
+            return ActionOutcome.Fail("room-full", $"המשחק מלא — כל {scenario.MaxPlayers} המקומות תפוסים או שמורים לשחקנים שהתנתקו.");
+        ReleaseExpiredSeats(room, now);
 
         var nameError = ValidateNickname(nickname);
         if (nameError != null) return ActionOutcome.Fail("bad-nickname", nameError);
@@ -96,7 +104,8 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
         if (claimsHost || room.HostPlayerId == null || active.All(p => p.Id != room.HostPlayerId))
             room.HostPlayerId = player.Id;
         room.UpdatedAt = now;
-        return ActionOutcome.Done($"{clean} הצטרף לחדר", new GameNotice("player-joined", $"{clean} הצטרף לחדר", player.Id.ToString()));
+        var where = room.Phase == RoomPhase.Lobby ? "לחדר" : "למשחק";
+        return ActionOutcome.Done($"{clean} הצטרף {where}", new GameNotice("player-joined", $"{clean} הצטרף {where}", player.Id.ToString()));
     }
 
     public ActionOutcome UpdateProfile(GameRoom room, Guid playerId, string characterId, string appearanceJson)
@@ -117,24 +126,6 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
         if (room.Phase != RoomPhase.Lobby) return ActionOutcome.Fail("game-started", "המשחק כבר התחיל.");
         p.IsReady = ready;
         return ActionOutcome.Done(ready ? "מוכן!" : "לא מוכן");
-    }
-
-    public ActionOutcome Leave(GameRoom room, Guid playerId, DateTime now)
-    {
-        var p = FindPlayer(room, playerId);
-        if (p == null) return NotInRoom();
-        if (room.Phase != RoomPhase.Lobby)
-        {
-            p.IsConnected = false;
-            return ActionOutcome.Done($"{p.Nickname} יצא מהמשחק", new GameNotice("player-left", $"{p.Nickname} יצא מהמשחק", p.Id.ToString()));
-        }
-        p.IsRemoved = true;
-        p.IsConnected = false;
-        p.IsReady = false;
-        if (room.HostPlayerId == p.Id)
-            room.HostPlayerId = ActivePlayers(room).OrderBy(x => x.Seat).FirstOrDefault()?.Id;
-        room.UpdatedAt = now;
-        return ActionOutcome.Done($"{p.Nickname} יצא מהחדר", new GameNotice("player-left", $"{p.Nickname} יצא מהחדר", p.Id.ToString()));
     }
 
     /// <summary>Checks the start conditions (spec §4 step 3) without changing anything.</summary>
@@ -181,6 +172,10 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
         room.UpdatedAt = now;
         var scenario = catalog.Get(room.ScenarioId);
         var first = scenario.Zones.OrderBy(z => z.Order).First();
+        var startWorld = World(room);
+        startWorld.CurrentZone = first.Id;
+        startWorld.CurrentZoneSince = now;
+        SaveWorld(room, startWorld, now);
         return ActionOutcome.Done("המשימה התחילה",
             new GameNotice("game-started", $"המשימה התחילה! אתם ב{first.Name}.", VoiceLine: first.EntryLine, Zone: first.Id));
     }
@@ -326,9 +321,15 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
         world.WorldItems.Remove(itemId);
         world.Inventory.Add(itemId);
         Contribute(world, playerId);
+        var notices = new List<GameNotice>();
+        var points = scenario.Scoring?.Pickup ?? 0;
+        // the first pickup the server confirms scores once; picking it up again later never does (spec 6)
+        var scored = points > 0 && !(world.Score?.Log.Any(e => e.Key == $"pickup:{itemId}") ?? false);
+        notices.Add(new GameNotice("item-picked", scored ? $"{p.Nickname} אסף את {item.Name} וקיבל {points} נקודות" : $"{p.Nickname} מצא {item.Name}!",
+            p.Id.ToString(), ItemId: itemId, VoiceLine: "item_found"));
+        Award(world, scenario, $"pickup:{itemId}", p, points, "pickup", $"איסוף {item.Name}", item.Zone, null, now, notices);
         SaveWorld(room, world, now);
-        return ActionOutcome.Done($"אספתם: {item.Name}",
-            new GameNotice("item-picked", $"{p.Nickname} מצא {item.Name}!", p.Id.ToString(), ItemId: itemId, VoiceLine: "item_found"));
+        return ActionOutcome.Done($"אספתם: {item.Name}", notices.ToArray());
     }
 
     public ActionOutcome Combine(GameRoom room, Guid playerId, string a, string b, DateTime now)
@@ -496,6 +497,9 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
             var zone = scenario.Zones.First(z => z.Id == puzzle.UnlocksZone);
             notices.Add(new("zone-unlocked", scenario.Scoring != null ? $"החדר הבא נפתח! {zone.Name}" : $"נפתחה הדרך אל {zone.Name}",
                 Zone: zone.Id, VoiceLine: zone.EntryLine));
+            // the group stays here to read; it moves on together with "Continue" (spec 2, 9)
+            world.PendingZone = zone.Id;
+            world.PendingSince = now;
             foreach (var next in scenario.Puzzles.Where(p => p.Zone == zone.Id && p.RequiresPuzzle == null))
             {
                 var ns = room.Puzzles.First(x => x.PuzzleId == next.Id);
@@ -552,6 +556,7 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
             WorldItems = scenario.Items.Where(i => i.SpawnedAtStart).Select(i => i.Id).ToList(),
             Mechanisms = scenario.Puzzles.Where(p => MechanismTypes.Contains(p.Type)).ToDictionary(p => p.Id, NewMechanism),
             Score = scenario.Scoring != null ? new ScoreBoard() : null,
+            CurrentZone = first,
         };
         room.WorldJson = JsonSerializer.Serialize(world, ScenarioCatalog.JsonOptions);
     }

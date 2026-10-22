@@ -31,6 +31,22 @@ public sealed class RoomService(PortalDbContext db, GameEngine engine, ILogger<R
 
     public static string NormalizeCode(string code) => (code ?? "").Trim().ToUpperInvariant().Replace("-", "").Replace(" ", "");
 
+    /// <summary>
+    /// The HttpOnly cookie that lets a participant return to the same seat after closing the tab or the browser.
+    /// One cookie per game, holding that game's player token; page script cannot read it.
+    /// </summary>
+    public static string SeatCookie(Guid roomId) => "px_seat_" + roomId.ToString("N");
+
+    public static CookieOptions SeatCookieOptions(HttpRequest request) => new()
+    {
+        HttpOnly = true,
+        Secure = request.IsHttps,
+        SameSite = SameSiteMode.Lax,
+        Path = "/",
+        MaxAge = TimeSpan.FromDays(3),
+        IsEssential = true,
+    };
+
     public async Task<(GameRoom room, string hostClaim)> CreateRoomAsync(string scenarioId, Action<GameRoom>? configure = null)
     {
         var hostClaim = NewToken();

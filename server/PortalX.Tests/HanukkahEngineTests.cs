@@ -52,17 +52,21 @@ public class HanukkahEngineTests
     {
         string[] parts = ["lamp-base", "lamp-tank", "lamp-wick", "lamp-glass", "lamp-cover"];
         foreach (var part in parts) Assert.True(e.PickUp(r, ps[0].Id, part, T0).Ok);
-        // the wrong order: everything placed but the lamp cannot be lit
-        string[] wrong = ["lamp-tank", "lamp-base", "lamp-wick", "lamp-glass", "lamp-cover"];
-        for (var i = 0; i < 5; i++) Assert.True(Op(e, r, ps[i % 2], "h2-lamp", new { op = "place", slot = $"s{i + 1}", item = wrong[i] }).Ok);
-        Assert.False(W(r).Mechanisms["h2-lamp"].Ready);
-        Assert.False(Op(e, r, ps[0], "h2-lamp", new { op = "activate" }).Ok);
-        Assert.True(Op(e, r, ps[0], "h2-lamp", new { op = "remove", slot = "s1" }).Ok);
-        Assert.True(Op(e, r, ps[0], "h2-lamp", new { op = "remove", slot = "s2" }).Ok);
+        // a part dropped on the wrong spot is refused with feedback and stays available (spec 7)
+        var wrong = Op(e, r, ps[1], "h2-lamp", new { op = "place", slot = "s1", item = "lamp-tank" });
+        Assert.Equal("wrong-place", wrong.Code);
+        Assert.Contains("lamp-tank", W(r).Inventory);
         Assert.True(Op(e, r, ps[1], "h2-lamp", new { op = "place", slot = "s1", item = "lamp-base" }).Ok);
-        Assert.True(Op(e, r, ps[1], "h2-lamp", new { op = "place", slot = "s2", item = "lamp-tank" }).Ok);
-        Assert.True(W(r).Mechanisms["h2-lamp"].Ready); // base → tank → wick → glass → cover
-        Assert.Equal("solved", Op(e, r, ps[0], "h2-lamp", new { op = "activate" }).Code);
+        Assert.True(Op(e, r, ps[0], "h2-lamp", new { op = "place", slot = "s2", item = "lamp-tank" }).Ok);
+        Assert.True(Op(e, r, ps[1], "h2-lamp", new { op = "place", slot = "s3", item = "lamp-wick" }).Ok);
+        Assert.Equal("not-ready", Op(e, r, ps[0], "h2-lamp", new { op = "activate" }).Code); // "check assembly": parts missing
+        // "Return parts" puts only this assembly back; points already earned are not given again
+        Assert.True(Op(e, r, ps[0], "h2-lamp", new { op = "reset" }).Ok);
+        Assert.Empty(W(r).Mechanisms["h2-lamp"].Slots);
+        Assert.Equal(5, parts.Count(W(r).Inventory.Contains));
+        string[] order = ["lamp-base", "lamp-tank", "lamp-wick", "lamp-glass", "lamp-cover"]; // base → tank → wick → glass → cover
+        for (var i = 0; i < 4; i++) Assert.True(Op(e, r, ps[0], "h2-lamp", new { op = "place", slot = $"s{i + 1}", item = order[i] }).Ok);
+        Assert.Equal("solved", Op(e, r, ps[1], "h2-lamp", new { op = "place", slot = "s5", item = "lamp-cover" }).Code);
         Assert.Contains("menorah-symbol", W(r).Inventory);
     }
 
@@ -234,9 +238,9 @@ public class HanukkahEngineTests
         var before0 = Personal(r, ps[0]);
         var before1 = Personal(r, ps[1]);
         Room2(e, r, ps);
-        // final lamp: ps[1] placed s1, s2; s3–s5 were placed alternately starting from index 2 → ps[0], ps[1], ps[0]
-        Assert.Equal(before1 + 2 * 10 + 10, Personal(r, ps[1]));          // s1, s2, s4
-        Assert.Equal(before0 + 2 * 10 + 20, Personal(r, ps[0]));          // s3, s5 + lighting the lamp
+        // each spot scores once, for whoever first placed the right part there (placing it again after "Return parts" does not)
+        Assert.Equal(before0 + 5 * 10 + 10 + 10, Personal(r, ps[0]));     // five pickups, s2, s4
+        Assert.Equal(before1 + 10 + 10 + 10 + 20, Personal(r, ps[1]));    // s1, s3, s5 + the lamp lights up
         var p0 = Personal(r, ps[0]);
         Room3(e, r, ps);
         Assert.Equal(p0 + 3 * 5 + 20, Personal(r, ps[0]));                // three symbols in order + the maze

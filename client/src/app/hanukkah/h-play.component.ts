@@ -9,6 +9,8 @@ import { SettingsService } from '../core/settings.service';
 import { ChatComponent } from '../ui/chat.component';
 import { JoystickComponent } from '../ui/joystick.component';
 import { SettingsPanelComponent } from '../ui/settings-panel.component';
+import { LeaveDialogComponent } from '../ui/leave-dialog.component';
+import { RoomOverlaysComponent } from '../ui/room-overlays.component';
 import { H_ZONES, HInteractable, HPanel, HZone } from './h-layout';
 import { HPanelComponent, ITEM_EMOJI } from './h-panel.component';
 import { HResultComponent } from './h-result.component';
@@ -24,7 +26,7 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
 /** The Hanukkah game: opening scene, eight rooms, puzzles, scores, chat, finale and results. */
 @Component({
   selector: 'px-h-play',
-  imports: [ChatComponent, JoystickComponent, SettingsPanelComponent, HPanelComponent, HResultComponent],
+  imports: [ChatComponent, JoystickComponent, SettingsPanelComponent, HPanelComponent, HResultComponent, RoomOverlaysComponent, LeaveDialogComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="stage">
@@ -96,6 +98,31 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
         }
       </aside>
 
+      @if (bench()) {
+        <section class="bench card" role="region" aria-label="הרכבת מנורת השמן">
+          <header>
+            <b>{{ lampPuzzle()?.title }}</b>
+            <button class="btn small ghost" (click)="exitBench()" aria-label="חזרה לחדר">✕ חזרה לחדר</button>
+          </header>
+          @if (lampState()?.status === 'solved') {
+            <p class="b-ok">המנורה הורכבה ונדלקה! מאחורי לוח הקיר נחשף המפתח.</p>
+          } @else {
+            <p class="b-ins">{{ lampPuzzle()?.instructions }}</p>
+            @if (!benchHasParts()) { <p class="muted small">אין חלקים על השולחן — חפשו את חלקי המנורה בחדר והרימו אותם.</p> }
+            @if (benchMsg(); as m) { <p class="b-msg" [class.bad]="!m.ok" role="status">{{ m.text }}</p> }
+            @for (h of lampState()?.hints ?? []; track $index) { <p class="b-hint">💡 {{ h }}</p> }
+            <div class="b-actions">
+              <button class="btn primary" (click)="checkLamp()" [disabled]="benchBusy()">בדוק הרכבה</button>
+              <button class="btn" (click)="resetLamp()" [disabled]="benchBusy()">החזר חלקים</button>
+              @if (benchMsg() && !benchMsg()!.ok) { <button class="btn" (click)="benchMsg.set(null)">נסה שוב</button> }
+              @if ((lampState()?.hintsRevealed ?? 0) < (lampPuzzle()?.hintCount ?? 0)) {
+                <button class="btn small ghost" (click)="lampHint()" [disabled]="benchBusy()">💡 רמז (−{{ game.scenario()?.scoring?.hintPenalty ?? 10 }})</button>
+              }
+            </div>
+          }
+        </section>
+      }
+
       @if (hover(); as h) { <div class="hover-label">{{ h.label }} <small>· {{ h.verb }}</small></div> }
 
       <footer class="hud-bottom">
@@ -131,7 +158,7 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
         </section>
       }
 
-      @if (touch) {
+      @if (touch && !bench()) {
         <px-joystick class="joy" (changed)="world?.setJoystick($event.x, $event.y)" />
         <button class="btn primary act" (click)="interactNearest()">פעולה</button>
       }
@@ -155,10 +182,17 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
           <p class="what">{{ c.what }}</p>
           @if (c.points) { <p class="pts">+{{ c.points }} נקודות אישיות על החידה</p> }
           @if (c.next) { <small>המטרה הבאה: {{ c.next }}</small> }
+          <button class="btn small" (click)="celebration.set(null)">המשך</button>
         </div>
       </div>
     }
     @if (transfer(); as t) { <div class="transfer" role="status"><span>{{ t }}</span></div> }
+    <px-room-overlays [holdSeconds]="game.snapshot()?.pendingZone === 'maze' ? 15 : 7" />
+    @if (phase() === 'playing' && game.hostAway()) {
+      <div class="host-away" role="status">המארח אינו מחובר כרגע.
+        <button class="btn small" (click)="claimHost()">אני אהיה המארח</button></div>
+    }
+    @if (showLeave()) { <px-leave-dialog (later)="leave.emit()" (forGood)="leaveForGood.emit()" (cancel)="showLeave.set(false)" /> }
 
     <div class="toasts" aria-live="polite">
       @for (t of toasts(); track t.id) { <div class="toast" [class]="t.kind">{{ t.text }}</div> }
@@ -186,6 +220,11 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
     :host { display:block; position:fixed; inset:0; overflow:hidden; }
     .stage { position:absolute; inset:0; } canvas { width:100%; height:100%; display:block; outline:none; touch-action:none; cursor:grab; }
     .loading { position:absolute; inset:0; display:grid; place-items:center; font-size:1.4rem; color: var(--gold-2); background: var(--bg); }
+    .bench { position:fixed; z-index:20; inset-inline:0; margin-inline:auto; bottom:12px; width:min(680px, calc(100% - 24px)); display:flex; flex-direction:column; gap:.4rem;
+      background: linear-gradient(180deg, rgba(40,30,8,.92), rgba(14,20,44,.94)); border:1px solid var(--gold); }
+    .bench header { display:flex; justify-content:space-between; align-items:center; gap:.6rem; } .bench header b { font-family: var(--font-title); color: var(--gold-2); font-size:1.2rem; }
+    .b-ins { margin:0; line-height:1.6; } .b-msg { margin:0; color:#9be3b4; } .b-msg.bad { color:#ffb4a3; } .b-ok { margin:0; color:#9be3b4; font-size:1.1rem; }
+    .b-hint { margin:0; color:#cfe2ff; } .b-actions { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; }
     .letterbox { position:fixed; inset-inline:0; height:9vh; background:#000; z-index:5; } .letterbox.top { top:0 } .letterbox.bottom { bottom:0 }
     .title-card { position:fixed; inset:0; display:grid; place-content:center; text-align:center; z-index:6; pointer-events:none; animation: fadein 2s ease; }
     .title-card h1 { font-size: clamp(3rem, 12vw, 7rem); font-weight:900; } .title-card p { font-family: var(--font-title); font-size: clamp(1.2rem, 4vw, 2rem); color: var(--gold-2); text-shadow: 0 2px 10px #000; }
@@ -245,6 +284,8 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
     .success { position:fixed; inset:0; display:grid; place-content:center; text-align:center; z-index:20; animation: fadein 1.2s ease; gap:.6rem; }
     .success h1 { font-size: clamp(3rem, 11vw, 6rem); font-weight:900; } .success p { font-size:1.4rem; text-shadow: 0 2px 10px #000; }
     .small { font-size:.85rem; }
+    .host-away { position:fixed; top:58px; left:0; right:0; margin-inline:auto; width:fit-content; z-index:12; background: rgba(122,58,18,.92); color:#fff;
+      border-radius:999px; padding:.3rem .5rem .3rem 1rem; display:flex; gap:.6rem; align-items:center; }
     @media (max-width: 760px) {
       .objectives { top:auto; bottom:150px; width:calc(100% - 20px); max-height:30vh; overflow:auto; } .objectives.collapsed { width:auto; }
       .score { top:58px; width:170px; font-size:.85rem; } .hover-label { display:none; } .inventory { max-width: calc(100% - 150px); }
@@ -258,6 +299,8 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
   private ngZone = inject(NgZone);
   private destroyRef = inject(DestroyRef);
   leave = output<void>();
+  leaveForGood = output<void>();
+  showLeave = signal(false);
 
   private canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('c');
   world?: HanukkahWorld;
@@ -280,6 +323,16 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
   unread = signal(0);
   celebration = signal<{ name: string; verb: string; what: string; points: number; next?: string; puzzleId: string } | null>(null);
   transfer = signal<string | null>(null);
+  bench = signal(false);
+  benchBusy = signal(false);
+  benchMsg = signal<{ ok: boolean; text: string } | null>(null);
+  lampPuzzle = computed(() => this.game.scenario()?.puzzles.find((p) => p.id === 'h2-lamp'));
+  lampState = computed(() => this.game.snapshot()?.puzzles.find((p) => p.id === 'h2-lamp'));
+  benchHasParts = computed(() => {
+    const s = this.game.snapshot();
+    const accepts: string[] = this.lampPuzzle()?.publicData?.accepts ?? [];
+    return accepts.some((i) => s?.inventory.includes(i)) || Object.keys(s?.mechanisms?.['h2-lamp']?.slots ?? {}).length > 0;
+  });
   tick = signal(0);
 
   phase = computed(() => this.game.snapshot()?.phase ?? 'lobby');
@@ -315,6 +368,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
   private seenChatIds: Set<string> | null = null;
   private announced = new Set<string>();
   private activeZoneApplied: string | null = null;
+  private pendingShown: string | null = null;
   private progressTimers: ReturnType<typeof setTimeout>[] = [];
   private pointsByPuzzle = new Map<string, number>();
 
@@ -385,6 +439,8 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
         onTooFar: (d) => this.ngZone.run(() => this.toast(`התקרבו אל ${d.label} כדי ל${d.verb === 'הרמה' ? 'הרים' : 'השתמש'}`, 'info')),
         onZoneChange: (z) => this.ngZone.run(() => this.zone.set(z)),
         onMove: (x, y, z, ry, zone) => this.game.move(x, y, z, ry, zone),
+        onBenchDrop: (item, slot, from) => this.ngZone.run(() => this.benchDrop(item, slot, from)),
+        onBenchExit: () => this.ngZone.run(() => this.exitBench()),
       }));
       this.world.sensitivity = this.settings.settings().lookSensitivity;
       if (this.game.scenario()) this.buildWorld();
@@ -434,6 +490,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
       }
       this.canvas().nativeElement.focus();
     } else if (phase === 'completed') {
+      this.exitBench();
       this.panel.set(null);
       this.note.set(null);
       this.world.setMode('outro');
@@ -542,7 +599,19 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
       const key = `${s.round}:${p.id}`;
       if (this.announced.has(key)) continue;
       this.announced.add(key);
-      if (p.solvedAt && now - Date.parse(p.solvedAt) < 8000) this.celebrate(s, p.id);
+      if (!p.solvedAt || now - Date.parse(p.solvedAt) >= 8000) continue;
+      // the lamp first assembles and lights up on the bench; its message follows once the light reaches the wall
+      if (p.id === 'h2-lamp') this.progressTimers.push(setTimeout(() => this.celebrate(this.game.snapshot() ?? s, p.id), 8000));
+      else this.celebrate(s, p.id);
+    }
+    // a room just opened: the door opens and the camera shows it; the group moves on with "Continue"
+    if (s.phase === 'playing' && s.pendingZone && s.pendingZone !== this.pendingShown && this.world) {
+      this.pendingShown = s.pendingZone;
+      this.panel.set(null);
+      // after the lamp, the group first watches it light up on the bench, then the camera turns to the door
+      const lamp = s.pendingZone === 'maze';
+      this.progressTimers.push(setTimeout(() => this.exitBench(), lamp ? 9000 : 1500));
+      this.progressTimers.push(setTimeout(() => this.world?.playDoorCutscene(s.pendingZone!), lamp ? 9200 : 1800));
     }
     if (s.phase !== 'playing' || !this.world || s.activeZone === this.activeZoneApplied) return;
     const first = this.activeZoneApplied === null;
@@ -579,7 +648,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
       next,
       puzzleId,
     });
-    setTimeout(() => this.celebration()?.puzzleId === puzzleId && this.celebration.set(null), 4200);
+    setTimeout(() => this.celebration()?.puzzleId === puzzleId && this.celebration.set(null), 8000);
   }
 
   private moveGroup(zone: HZone) {
@@ -629,7 +698,8 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
         this.note.set({ title: def.label, text: def.text ?? '' });
         return;
       case 'panel':
-        this.panel.set({ id: def.panel!, ref: def.ref });
+        if (def.panel === 'lamp') this.openBench();
+        else this.panel.set({ id: def.panel!, ref: def.ref });
         return;
     }
   }
@@ -650,7 +720,8 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
       .filter((x) => x.zone === this.zone())
       .sort((a, b) => a.order - b.order)
       .find((x) => s?.puzzles.find((y) => y.id === x.id)?.status === 'active');
-    if (p && PUZZLE_PANEL[p.id]) this.panel.set({ id: PUZZLE_PANEL[p.id] });
+    if (p?.id === 'h2-lamp') this.openBench();
+    else if (p && PUZZLE_PANEL[p.id]) this.panel.set({ id: PUZZLE_PANEL[p.id] });
     else this.toast('אין בחדר הזה חידה פתוחה.', 'info');
   }
 
@@ -670,8 +741,92 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     return this.game.scenario()?.items.find((i) => i.id === id)?.name ?? id;
   }
 
+  // ---- the lamp bench in room 2: the parts are dragged on the table itself (spec 7)
+
+  openBench() {
+    if (!this.world || this.world.isCutscene) return;
+    this.panel.set(null);
+    this.note.set(null);
+    this.benchMsg.set(null);
+    this.world.enterBench();
+    this.bench.set(this.world.isBench);
+  }
+
+  exitBench() {
+    if (!this.bench()) return;
+    this.world?.exitBench();
+    this.bench.set(false);
+    this.canvas().nativeElement.focus();
+  }
+
+  private async lampOp(action: object) {
+    this.benchBusy.set(true);
+    try {
+      return await this.game.operate('h2-lamp', action);
+    } finally {
+      this.benchBusy.set(false);
+    }
+  }
+
+  async benchDrop(item: string, slot: string | null, from: string | null) {
+    const mech = this.game.snapshot()?.mechanisms?.['h2-lamp'];
+    if (slot && mech?.slots?.[slot] && mech.slots[slot] !== item) {
+      this.audio.sfx('wrong');
+      this.benchMsg.set({ ok: false, text: 'המקום הזה כבר תפוס. הרימו קודם את החלק שמונח בו.' });
+      return;
+    }
+    if (from) {
+      const r = await this.lampOp({ op: 'remove', slot: from });
+      if (!r.ok) {
+        this.world?.benchRejected(item);
+        this.benchMsg.set({ ok: false, text: r.message });
+        return;
+      }
+    }
+    if (!slot) {
+      this.audio.sfx('click');
+      return;
+    }
+    const r = await this.lampOp({ op: 'place', slot, item });
+    if (r.ok) {
+      this.audio.sfx('pickup');
+      this.benchMsg.set(r.message ? { ok: true, text: r.message } : null);
+    } else {
+      this.audio.sfx('wrong');
+      this.world?.benchRejected(item);
+      this.benchMsg.set({ ok: false, text: r.message });
+    }
+  }
+
+  async checkLamp() {
+    const r = await this.lampOp({ op: 'activate' });
+    this.benchMsg.set({ ok: r.ok, text: r.ok ? 'המנורה מורכבת נכון!' : r.message });
+    if (!r.ok) this.audio.sfx('wrong');
+  }
+
+  async resetLamp() {
+    const r = await this.lampOp({ op: 'reset' });
+    this.benchMsg.set({ ok: r.ok, text: r.message });
+    if (r.ok) this.audio.sfx('click');
+  }
+
+  async lampHint() {
+    this.benchBusy.set(true);
+    try {
+      const r = await this.game.requestHint('h2-lamp');
+      if (!r.ok) this.benchMsg.set({ ok: false, text: r.message });
+    } finally {
+      this.benchBusy.set(false);
+    }
+  }
+
   confirmLeave() {
-    if (confirm('לצאת מהמשחק? אפשר לחזור לאותו משחק מאותה לשונית.')) this.leave.emit();
+    this.showLeave.set(true);
+  }
+
+  async claimHost() {
+    const r = await this.game.claimHost();
+    if (!r.ok) this.toast(r.message, 'info');
   }
 
   ngOnDestroy() {

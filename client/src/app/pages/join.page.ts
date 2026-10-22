@@ -23,6 +23,20 @@ import { SKIN_TONES, HAIR_COLORS, BAG_COLORS } from '../world/avatar';
           <p class="error">{{ error() }}</p>
           <a class="btn primary" routerLink="/">חזרה לדף הבית</a>
         </section>
+      } @else if (seat() && !asNew()) {
+        <!-- this browser already has a seat in this game: come back as the same participant (spec 4) -->
+        <section class="card center resume">
+          <span class="chip">חדר {{ room()!.code }} · {{ room()!.scenarioName }}</span>
+          <h1>ברוכים השבים, {{ seat()!.nickname }}!</h1>
+          @if (seat()!.canReturn) {
+            <p>המקום שלך במשחק שמור, עם הדמות והניקוד שלך{{ seat()!.isHost ? ' — ואת/ה עדיין המארח' : '' }}.</p>
+            <button class="btn primary big" (click)="resume()" [disabled]="busy()">חזרה למשחק ‹</button>
+          } @else {
+            <p class="error">המקום שלך כבר אינו פנוי כרגע — כל {{ room()!.maxPlayers }} המקומות תפוסים. אפשר לנסות שוב כשיתפנה מקום. הניקוד שלך נשמר.</p>
+            <button class="btn" (click)="refresh()">בדיקה חוזרת</button>
+          }
+          <button class="btn small ghost" (click)="asNew.set(true)">אני משתתף אחר — הצטרפות כשחקן חדש</button>
+        </section>
       } @else {
         <header>
           <span class="chip">חדר {{ room()!.code }} · {{ room()!.scenarioName }}</span>
@@ -30,7 +44,9 @@ import { SKIN_TONES, HAIR_COLORS, BAG_COLORS } from '../world/avatar';
           <p class="muted">כל הדמויות לובשות כיפה, חולצה לבנה ומכנסיים שחורים. אפשר לגוון בגוון הפנים, בשיער, במשקפיים ובתיק.</p>
         </header>
         @if (!room()!.canJoin) {
-          <p class="error">{{ room()!.phase !== 'lobby' ? 'המשחק בחדר הזה כבר התחיל. בקשו מהמארח לפתוח משחק חוזר או צרו חדר חדש.' : 'החדר מלא.' }}</p>
+          <p class="error">{{ room()!.phase === 'completed' ? 'המשחק הזה כבר הסתיים. אי אפשר להצטרף אליו.' : 'המשחק מלא — כל ' + room()!.maxPlayers + ' המקומות תפוסים או שמורים לשחקנים שהתנתקו.' }}</p>
+        } @else if (room()!.phase !== 'lobby') {
+          <p class="note">המשחק כבר התחיל — תצטרפו ישר לחדר שבו הקבוצה נמצאת עכשיו.</p>
         }
         <div class="layout">
           <section class="chars" role="radiogroup" aria-label="בחירת דמות">
@@ -74,6 +90,9 @@ import { SKIN_TONES, HAIR_COLORS, BAG_COLORS } from '../world/avatar';
     </main>
   `,
   styles: [`
+    .resume { display:flex; flex-direction:column; align-items:center; gap:.8rem; max-width:560px; margin:2rem auto; }
+    .resume h1 { margin:.2rem 0; } .big { font-size:1.2rem; padding:.8em 2em; }
+    .note { background: rgba(106,168,255,.12); border:1px solid var(--blue); border-radius:10px; padding:.5rem .8rem; }
     main { max-width: 1100px; margin: 0 auto; padding: 16px; background: radial-gradient(ellipse at top, #1a2550, transparent 70%); min-height: 100dvh; }
     .back { display:inline-block; margin-bottom: 1rem; text-decoration:none; }
     header h1 { font-size: 2.4rem; margin: .4rem 0; }
@@ -108,6 +127,8 @@ export class JoinPage implements OnInit {
   hairs = HAIR_COLORS;
   bags = BAG_COLORS;
   room = signal<RoomInfo | null>(null);
+  seat = signal<{ roomId: string; playerId: string; nickname: string; characterId: string; status: string; canReturn: boolean; isHost: boolean } | null>(null);
+  asNew = signal(false);
   loading = signal(true);
   busy = signal(false);
   error = signal<string | null>(null);
@@ -125,11 +146,28 @@ export class JoinPage implements OnInit {
     }
     try {
       this.room.set(await this.api.room(code));
+      this.seat.set((await this.api.seat(code)).seat ?? null);
     } catch (e: any) {
       this.error.set(e.message);
     } finally {
       this.loading.set(false);
     }
+  }
+
+  async refresh() {
+    const code = this.code().toUpperCase();
+    this.room.set(await this.api.room(code));
+    this.seat.set((await this.api.seat(code)).seat ?? null);
+  }
+
+  /** Back to the same participant record: this tab connects with the game's HttpOnly seat cookie. */
+  resume() {
+    const s = this.seat();
+    const room = this.room();
+    if (!s || !room) return;
+    sessionStore.set({ code: room.code, roomId: s.roomId, playerId: s.playerId });
+    this.audio.sfx('success');
+    this.router.navigate(['/room', room.code]);
   }
 
   pick(id: CharacterId) {

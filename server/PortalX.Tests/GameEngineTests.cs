@@ -119,7 +119,8 @@ public class GameEngineTests
         Assert.Equal("not-ready", engine4.StartGame(room4, ps4[0].Id, T0).Code); // nobody ready
         foreach (var p in ps4.Skip(1)) engine4.SetReady(room4, p.Id, true);
         Assert.True(engine4.StartGame(room4, ps4[0].Id, T0).Ok);
-        Assert.Equal("game-started", engine4.AddPlayer(room4, "מאוחר", "explorer", "{}", "late", false, T0, out _).Code);
+        // joining in the middle is allowed while the game is not finished (spec 3)
+        Assert.True(engine4.AddPlayer(room4, "מאוחר", "explorer", "{}", "late", false, T0, out _).Ok);
     }
 
     [Fact]
@@ -216,19 +217,25 @@ public class GameEngineTests
         var (engine, room, ps) = Setup();
         StartPlaying(engine, room, ps);
         Assert.Equal("library", Snapshots.ActiveZone(engine, room).Zone);
-        Assert.Null(Snapshots.ActiveZone(engine, room).Since);
+        Assert.Equal(T0.AddSeconds(3), Snapshots.ActiveZone(engine, room).Since); // entered when the opening ended
 
         var r = engine.SubmitAnswer(room, ps[0].Id, "p1-cipher", J("שער"), T0.AddMinutes(2)); // handle never picked up
         Assert.Contains(r.Notices, n => n.Kind == "item-collected" && n.Message.Contains("ידית ברזל"));
         Assert.Contains("handle", GameEngine.World(room).Inventory);
         Assert.DoesNotContain("handle", GameEngine.World(room).WorldItems);
 
+        // the group stays in the library until "Continue"; the next room is announced as waiting
+        Assert.Equal("library", Snapshots.ActiveZone(engine, room).Zone);
+        var waiting = Snapshots.Build(engine, room, null, T0.AddMinutes(2));
+        Assert.Equal("symbols", waiting.PendingZone);
+        Assert.Equal("not-host", engine.Continue(room, ps[1].Id, T0.AddMinutes(2)).Code);
+        Assert.True(engine.Continue(room, ps[0].Id, T0.AddMinutes(3)).Ok);
         var active = Snapshots.ActiveZone(engine, room);
         Assert.Equal("symbols", active.Zone);
-        Assert.Equal(T0.AddMinutes(2), active.Since);
-        var snap = Snapshots.Build(engine, room, null, T0.AddMinutes(2));
+        Assert.Equal(T0.AddMinutes(3), active.Since);
+        var snap = Snapshots.Build(engine, room, null, T0.AddMinutes(3));
         Assert.Equal("symbols", snap.ActiveZone);
-        Assert.Equal(Snapshots.TransitionDelayMs, snap.TransitionDelayMs);
+        Assert.Null(snap.PendingZone);
         Assert.Equal(ps[0].Id, snap.Puzzles.First(p => p.Id == "p1-cipher").SolvedBy);
     }
 

@@ -29,9 +29,9 @@ import { HPlayComponent } from '../hanukkah/h-play.component';
       }
     }
     @if (game.snapshot(); as s) {
-      @if (s.phase === 'lobby') { <px-lobby (leave)="leave()" /> }
-      @else if (s.scenarioId === 'hanukkah-oil') { <px-h-play (leave)="leave()" /> }
-      @else { <px-play (leave)="leave()" /> }
+      @if (s.phase === 'lobby') { <px-lobby (leave)="leave(true)" /> }
+      @else if (s.scenarioId === 'hanukkah-oil') { <px-h-play (leave)="leave(false)" (leaveForGood)="leave(true)" /> }
+      @else { <px-play (leave)="leave(false)" (leaveForGood)="leave(true)" /> }
     }
     @if (game.connection() === 'reconnecting' || game.connection() === 'disconnected') {
       <div class="banner" role="alert">
@@ -78,8 +78,10 @@ export class RoomPage implements OnInit, OnDestroy {
     this.game.connect(session);
   }
 
-  async leave() {
-    await this.game.leave();
+  /** For good: the seat is freed (after confirming). Otherwise only this tab disconnects and the seat is kept. */
+  async leave(forGood: boolean) {
+    if (forGood) await this.game.leave();
+    else await this.game.disconnect();
     this.audio.setMusic('home');
     this.router.navigate(['/']);
   }

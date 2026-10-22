@@ -33,6 +33,17 @@ export class GameService {
 
   readonly me = computed<PlayerDto | undefined>(() => this.snapshot()?.players.find((p) => p.id === this.playerId()));
   readonly isHost = computed(() => !!this.snapshot() && this.snapshot()!.hostPlayerId === this.playerId());
+  /** The host is not connected right now (another connected participant may take the role). */
+  readonly hostAway = computed(() => {
+    const s = this.snapshot();
+    if (!s) return false;
+    const host = s.players.find((p) => p.id === s.hostPlayerId);
+    return !host || !host.isConnected;
+  });
+  readonly hostName = computed(() => {
+    const s = this.snapshot();
+    return s?.players.find((p) => p.id === s.hostPlayerId)?.nickname ?? '';
+  });
   readonly phase = computed(() => this.snapshot()?.phase ?? null);
 
   serverNow() {
@@ -44,7 +55,7 @@ export class GameService {
   }
 
   async connect(session: StoredSession): Promise<boolean> {
-    if (this.hub && this.session?.token === session.token && this.connection() === 'connected') return true;
+    if (this.hub && this.session?.playerId === session.playerId && this.connection() === 'connected') return true;
     await this.disconnect();
     this.session = session;
     this.connection.set('connecting');
@@ -84,14 +95,14 @@ export class GameService {
   private async handshake(): Promise<boolean> {
     if (!this.hub || !this.session) return false;
     try {
-      const r = await this.hub.invoke<HubResult<{ playerId: string; chat: ChatMessage[]; positions: Record<string, RemotePosition> }>>(
-        'Connect',
-        this.session.token,
-      );
+      // with this tab's token, or (after the tab or browser was closed) with the game's HttpOnly seat cookie
+      const r = this.session.token
+        ? await this.hub.invoke<HubResult<{ playerId: string; chat: ChatMessage[]; positions: Record<string, RemotePosition> }>>('Connect', this.session.token)
+        : await this.hub.invoke<HubResult<{ playerId: string; chat: ChatMessage[]; positions: Record<string, RemotePosition> }>>('ConnectSeat', this.session.roomId);
       if (!r.ok) {
         this.connection.set('failed');
         this.connectionError.set(r.message);
-        if (r.code === 'bad-token' || r.code === 'not-in-room') sessionStore.clear();
+        if (r.code === 'bad-token' || r.code === 'not-in-room' || r.code === 'no-seat' || r.code === 'game-ended') sessionStore.clear();
         return false;
       }
       this.playerId.set(r.data!.playerId);
@@ -171,6 +182,11 @@ export class GameService {
   getTune = (puzzleId: string) => this.invoke<{ sequence: string[] }>('GetTune', puzzleId);
   getPersonalClues = (puzzleId: string) =>
     this.invoke<{ clues: { index: number; title: string; text: string; visual: string }[] }>('GetPersonalClues', puzzleId);
+  /** Move the group into the room that just opened. */
+  continueToNext = () => this.invoke('Continue');
+  claimHost = () => this.invoke('ClaimHost');
+  transferHost = (playerId: string) => this.invoke('TransferHost', playerId);
+  releaseSeat = (playerId: string) => this.invoke('ReleaseSeat', playerId);
   sendChat = (text: string | null, emote: string | null) => this.invoke('SendChat', text, emote);
 
   async leave() {

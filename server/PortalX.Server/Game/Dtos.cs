@@ -5,8 +5,9 @@ using PortalX.Server.Domain;
 
 namespace PortalX.Server.Game;
 
+/// <param name="SeatStatus">"connected", "away" (disconnected, seat reserved until SeatHeldUntil) or "released".</param>
 public sealed record PlayerDto(Guid Id, string Nickname, string CharacterId, JsonNode? Appearance, int Seat,
-    bool IsReady, bool IsConnected, bool IsHost);
+    bool IsReady, bool IsConnected, bool IsHost, string SeatStatus = "connected", DateTime? SeatHeldUntil = null);
 
 public sealed record PuzzleStateDto(string Id, string Status, int Attempts, int HintsRevealed, IReadOnlyList<string> Hints,
     DateTime? CooldownUntil, Guid? SolvedBy, DateTime? SolvedAt);
@@ -22,7 +23,8 @@ public sealed record RoomSnapshot(
     IReadOnlyList<string> Inventory, IReadOnlyList<string> WorldItems, IReadOnlyList<string> PlacedItems,
     IReadOnlyList<GoldenLetter> Letters, ResultDto? Result,
     string ActiveZone, DateTime? ActiveZoneSince, int TransitionDelayMs,
-    JsonNode? Mechanisms = null, IReadOnlyDictionary<string, string>? Clues = null, ScoreDto? Score = null);
+    JsonNode? Mechanisms = null, IReadOnlyDictionary<string, string>? Clues = null, ScoreDto? Score = null,
+    string? PendingZone = null, DateTime? PendingSince = null, int ContinueFallbackSeconds = 0, int SeatsTaken = 0, int SeatHoldMinutes = 0);
 
 /// <summary>Scores of the current round: personal ranking (with ties), group total, per-room points and hints.</summary>
 public sealed record ScoreDto(int Group, IReadOnlyDictionary<string, int> Rooms, IReadOnlyDictionary<string, int> HintsByZone, int HintsUsed,
@@ -32,17 +34,20 @@ public sealed record PlayerScoreDto(Guid PlayerId, string Nickname, int Points, 
 
 public static class Snapshots
 {
-    /// <summary>Time between a solve and the group being moved into the next room (success message + door scene).</summary>
-    public const int TransitionDelayMs = 4500;
+    /// <summary>The group now moves when it presses "Continue"; no timed move after a solve.</summary>
+    public const int TransitionDelayMs = 0;
 
     public static RoomSnapshot Build(GameEngine engine, GameRoom room, GameResult? result, DateTime now)
     {
         var scenario = engine.Catalog.Get(room.ScenarioId);
         var world = GameEngine.World(room);
         var active = ActiveZone(engine, room);
-        var players = GameEngine.ActivePlayers(room).OrderBy(p => p.Seat).Select(p => new PlayerDto(
-            p.Id, p.Nickname, p.CharacterId, JsonNode.Parse(p.AppearanceJson), p.Seat, p.IsReady, p.IsConnected,
-            p.Id == room.HostPlayerId)).ToList();
+        var players = GameEngine.ActivePlayers(room).OrderBy(p => p.Seat).Select(p =>
+        {
+            var seat = engine.Seat(p, now);
+            return new PlayerDto(p.Id, p.Nickname, p.CharacterId, JsonNode.Parse(p.AppearanceJson), p.Seat, p.IsReady, p.IsConnected,
+                p.Id == room.HostPlayerId, seat.ToString().ToLowerInvariant(), seat == GameEngine.SeatState.Away ? engine.SeatHeldUntil(p) : null);
+        }).ToList();
         var puzzles = scenario.Puzzles.OrderBy(p => p.Order).Select(pc =>
         {
             var s = room.Puzzles.First(x => x.PuzzleId == pc.Id);
@@ -61,7 +66,8 @@ public static class Snapshots
             active.Zone, active.Since, TransitionDelayMs,
             world.Mechanisms.Count == 0 ? null : MechanismsView(scenario, world),
             scenario.Clues.Count == 0 ? null : world.Clues,
-            scenario.Scoring == null ? null : ScoreView(scenario, room, world));
+            scenario.Scoring == null ? null : ScoreView(scenario, room, world),
+            world.PendingZone, world.PendingSince, engine.Options.ContinueFallbackSeconds, engine.SeatsTaken(room, now), engine.Options.SeatHoldMinutes);
     }
 
     /// <summary>Shared mechanism state; the mosaic also gets the cells its light currently reaches.</summary>
@@ -90,18 +96,10 @@ public static class Snapshots
     }
 
     /// <summary>
-    /// The room the whole group belongs in: the furthest unlocked zone. The server decides it (and when it changed),
-    /// so every client moves the group to the same room at the same moment, and reconnecting players land there too.
+    /// The room the whole group is in. It changes only when the group presses "Continue", so every client moves
+    /// at the same moment, and players who join late or reconnect land there too.
     /// </summary>
-    public static (string Zone, DateTime? Since) ActiveZone(GameEngine engine, GameRoom room)
-    {
-        var scenario = engine.Catalog.Get(room.ScenarioId);
-        var unlocked = engine.UnlockedZones(room, scenario);
-        var zone = scenario.Zones.Where(z => unlocked.Contains(z.Id)).OrderBy(z => z.Order).Last();
-        var opener = scenario.Puzzles.FirstOrDefault(p => p.UnlocksZone == zone.Id);
-        var since = opener == null ? null : room.Puzzles.FirstOrDefault(s => s.PuzzleId == opener.Id)?.SolvedAt;
-        return (zone.Id, since);
-    }
+    public static (string Zone, DateTime? Since) ActiveZone(GameEngine engine, GameRoom room) => engine.CurrentZone(room);
 
     /// <summary>Scenario content safe for clients: solutions, personal clues and unrevealed hints are removed (spec §19).</summary>
     public static JsonObject PublicScenario(ScenarioContent s)

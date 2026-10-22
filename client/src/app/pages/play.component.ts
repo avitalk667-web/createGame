@@ -10,6 +10,8 @@ import { ChatComponent } from '../ui/chat.component';
 import { IconComponent } from '../ui/icon.component';
 import { JoystickComponent } from '../ui/joystick.component';
 import { SettingsPanelComponent } from '../ui/settings-panel.component';
+import { LeaveDialogComponent } from '../ui/leave-dialog.component';
+import { RoomOverlaysComponent } from '../ui/room-overlays.component';
 import { InteractableDef, PanelId, ZONE_ORDER, ZoneId } from '../world/layout';
 import { GameWorld } from '../world/world';
 import { PuzzlePanelComponent } from './puzzle-panel.component';
@@ -25,7 +27,7 @@ const INTRO_LINES: [number, string][] = [
 /** Steps 4–7: opening scene, exploration, finale and result (spec §4). */
 @Component({
   selector: 'px-play',
-  imports: [IconComponent, ChatComponent, JoystickComponent, SettingsPanelComponent, PuzzlePanelComponent, ResultComponent],
+  imports: [IconComponent, ChatComponent, JoystickComponent, SettingsPanelComponent, PuzzlePanelComponent, ResultComponent, RoomOverlaysComponent, LeaveDialogComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="stage" [class.cine]="phase() !== 'playing'">
@@ -179,6 +181,12 @@ const INTRO_LINES: [number, string][] = [
     @if (transfer(); as t) {
       <div class="transfer" role="status"><span>{{ t }}</span></div>
     }
+    <px-room-overlays [holdSeconds]="7" />
+    @if (phase() === 'playing' && game.hostAway()) {
+      <div class="host-away" role="status">המארח אינו מחובר כרגע.
+        <button class="btn small" (click)="claimHost()">אני אהיה המארח</button></div>
+    }
+    @if (showLeave()) { <px-leave-dialog (later)="leave.emit()" (forGood)="leaveForGood.emit()" (cancel)="showLeave.set(false)" /> }
 
     <div class="toasts" aria-live="polite">
       @for (t of toasts(); track t.id) { <div class="toast" [class]="t.kind">{{ t.text }}</div> }
@@ -290,6 +298,8 @@ const INTRO_LINES: [number, string][] = [
     .success { position:fixed; inset:0; display:grid; place-content:center; text-align:center; z-index: 20; animation: fadein 1.2s ease; gap: .6rem; }
     .success h1 { font-size: clamp(3.5rem, 12vw, 7rem); font-weight: 900; } .success p { font-size: 1.4rem; text-shadow: 0 2px 10px #000; }
     .small { font-size: .85rem; }
+    .host-away { position:fixed; top: 58px; left:0; right:0; margin-inline:auto; width:fit-content; z-index:12; background: rgba(122,58,18,.92); color:#fff;
+      border-radius:999px; padding:.3rem .5rem .3rem 1rem; display:flex; gap:.6rem; align-items:center; }
     @media (max-width: 760px) {
       .objectives { top: auto; bottom: 150px; width: calc(100% - 20px); max-height: 32vh; overflow:auto; }
       .objectives.collapsed { width: auto; }
@@ -305,6 +315,8 @@ export class PlayComponent implements AfterViewInit, OnDestroy {
   private ngZone = inject(NgZone);
   private destroyRef = inject(DestroyRef);
   leave = output<void>();
+  leaveForGood = output<void>();
+  showLeave = signal(false);
 
   private canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('c');
   world?: GameWorld;
@@ -370,6 +382,7 @@ export class PlayComponent implements AfterViewInit, OnDestroy {
   private seenChatIds: Set<string> | null = null;
   private announced = new Set<string>();
   private activeZoneApplied: string | null = null;
+  private pendingShown: string | null = null;
   private progressTimers: ReturnType<typeof setTimeout>[] = [];
 
   ringBell = (id: string) => this.world?.ringBell(id);
@@ -619,6 +632,12 @@ export class PlayComponent implements AfterViewInit, OnDestroy {
       this.announced.add(key);
       if (p.solvedAt && now - Date.parse(p.solvedAt) < 8000) this.celebrate(s, p.id);
     }
+    // a room just opened: the door opens and the camera shows it; the group moves on with "Continue"
+    if (s.phase === 'playing' && s.pendingZone && s.pendingZone !== this.pendingShown && this.world) {
+      this.pendingShown = s.pendingZone;
+      this.panel.set(null);
+      this.progressTimers.push(setTimeout(() => this.world?.playDoorCutscene(s.pendingZone!), 1800));
+    }
     if (s.phase !== 'playing' || !this.world || s.activeZone === this.activeZoneApplied) return;
 
     const first = this.activeZoneApplied === null;
@@ -725,7 +744,12 @@ export class PlayComponent implements AfterViewInit, OnDestroy {
   }
 
   confirmLeave() {
-    if (confirm('לצאת מהמשחק? אפשר לחזור לאותו חדר מאותה לשונית.')) this.leave.emit();
+    this.showLeave.set(true);
+  }
+
+  async claimHost() {
+    const r = await this.game.claimHost();
+    if (!r.ok) this.toast(r.message, 'info');
   }
 
   ngOnDestroy() {

@@ -33,16 +33,31 @@ import { IconComponent } from '../ui/icon.component';
         </div>
       </header>
 
+      @if (game.hostAway()) {
+        <div class="host-away card" role="alert">
+          <span>המארח{{ game.hostName() ? ' ' + game.hostName() : '' }} אינו מחובר כרגע. משתתף מחובר יכול לקבל את תפקיד המארח ולהתחיל את המשחק.</span>
+          @if (game.me()?.isConnected) { <button class="btn primary small" (click)="claimHost()">אני אהיה המארח</button> }
+        </div>
+      }
+
       <section class="players" aria-label="המשתתפים בחדר">
         @for (p of s.players; track p.id) {
-          <article class="pl" [class.off]="!p.isConnected" [class.me]="p.id === game.playerId()">
+          <article class="pl" [class.off]="!p.isConnected" [class.released]="p.seatStatus === 'released'" [class.me]="p.id === game.playerId()">
             @if (p.isHost) { <span class="crown" title="המארח"><px-icon name="crownSmall" [size]="22" /></span> }
             <img [src]="char(p.characterId).image" [alt]="char(p.characterId).name" />
             <b>{{ p.nickname }}</b>
             <span class="role">{{ char(p.characterId).name }}</span>
             <span class="state" [class.ready]="p.isReady || p.isHost">
-              @if (!p.isConnected) { מנותק } @else if (p.isHost) { מארח } @else if (p.isReady) { <px-icon name="check" [size]="16" /> מוכן } @else { ממתין }
+              @if (p.seatStatus === 'released') { המקום שוחרר }
+              @else if (!p.isConnected) { {{ p.isHost ? 'המארח ' : '' }}מנותק{{ p.seatHeldUntil ? ' · המקום שמור עד ' + time(p.seatHeldUntil) : '' }} }
+              @else if (p.isHost) { מארח } @else if (p.isReady) { <px-icon name="check" [size]="16" /> מוכן } @else { ממתין }
             </span>
+            @if (game.isHost() && p.id !== game.playerId()) {
+              <div class="host-tools">
+                @if (p.isConnected) { <button class="btn small ghost" (click)="transfer(p.id, p.nickname)">העברת תפקיד המארח</button> }
+                @else if (p.seatStatus === 'away') { <button class="btn small ghost danger" (click)="release(p.id, p.nickname)">פינוי המקום</button> }
+              </div>
+            }
           </article>
         }
         @for (e of emptySlots(); track $index) {
@@ -52,7 +67,7 @@ import { IconComponent } from '../ui/icon.component';
 
       <div class="bottom">
         <section class="card controls">
-          <p class="muted">צריך {{ s.minPlayers }}–{{ s.maxPlayers }} משתתפים. כרגע בחדר: <b>{{ s.players.length }}</b>.</p>
+          <p class="muted">צריך {{ s.minPlayers }}–{{ s.maxPlayers }} משתתפים. מקומות תפוסים: <b>{{ s.seatsTaken ?? s.players.length }}</b> מתוך {{ s.maxPlayers }}.</p>
           @if (game.isHost()) {
             <button class="btn primary big" (click)="start()" [disabled]="!!s.startBlocker || busy()">מתחילים! ‹</button>
             @if (s.startBlocker) { <p class="muted small">{{ s.startBlocker }}</p> }
@@ -64,7 +79,7 @@ import { IconComponent } from '../ui/icon.component';
             <p class="muted small">המארח יתחיל את המשחק כשכולם מוכנים.</p>
           }
           @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
-          <button class="btn small ghost" (click)="leave.emit()">יציאה מהחדר</button>
+          <button class="btn small ghost" (click)="confirmLeave()">יציאה מהחדר</button>
         </section>
         <section class="card chatbox" aria-label="צ׳אט">
           <h2>צ׳אט הקבוצה</h2>
@@ -91,7 +106,9 @@ import { IconComponent } from '../ui/icon.component';
     .pl img { width: 100%; aspect-ratio: 158/195; object-fit: cover; border-radius: 10px; }
     .pl b { font-size: 1.1rem; } .pl .role { color: var(--muted); font-size: .85rem; }
     .pl.me { border-color: var(--gold-2); box-shadow: 0 0 18px rgba(224,185,92,.3); }
-    .pl.off { opacity: .5; }
+    .pl.off { opacity: .55; } .pl.released { opacity: .35; filter: grayscale(.6); }
+    .host-tools { display:flex; flex-direction:column; gap:.2rem; margin-top:.2rem; }
+    .host-away { display:flex; gap:1rem; align-items:center; justify-content:space-between; flex-wrap:wrap; border-color: var(--bad); margin-top:1rem; }
     .pl.empty { justify-content:center; border-style: dashed; color: var(--muted); background: rgba(13,20,48,.5); }
     .crown { position:absolute; top: -12px; color: var(--gold-2); filter: drop-shadow(0 0 6px rgba(224,185,92,.8)); }
     .state { font-size:.85rem; color: var(--muted); display:flex; align-items:center; gap:.2rem; }
@@ -166,6 +183,31 @@ export class LobbyComponent {
 
   share() {
     navigator.share?.({ title: 'PORTAL X — הצטרפו להרפתקה', text: `קוד החדר: ${this.game.snapshot()?.code}`, url: this.inviteLink() }).catch(() => {});
+  }
+
+  time(iso: string) {
+    return new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  async claimHost() {
+    const r = await this.game.claimHost();
+    this.error.set(r.ok ? null : r.message);
+  }
+
+  async transfer(id: string, name: string) {
+    if (!confirm(`להעביר את תפקיד המארח ל־${name}?`)) return;
+    const r = await this.game.transferHost(id);
+    this.error.set(r.ok ? null : r.message);
+  }
+
+  async release(id: string, name: string) {
+    if (!confirm(`לפנות את המקום של ${name}? ${name} לא מחובר כרגע. אם יחזור והמשחק יהיה מלא, הוא לא יוכל להיכנס. הניקוד וההיסטוריה שלו יישמרו.`)) return;
+    const r = await this.game.releaseSeat(id);
+    this.error.set(r.ok ? null : r.message);
+  }
+
+  confirmLeave() {
+    if (confirm('לצאת מהחדר? המקום שלך יתפנה למשתתף אחר. (אם רק סוגרים את הלשונית, המקום נשמר.)')) this.leave.emit();
   }
 
   async toggleReady() {

@@ -73,7 +73,13 @@ public class PlayerSession
     public string? ConnectionId { get; set; }
     public DateTime JoinedAt { get; set; }
     public DateTime LastSeenAt { get; set; }
+    /// <summary>Left the lobby before the game started (the record is not used anymore).</summary>
     public bool IsRemoved { get; set; }
+    /// <summary>When the connection was lost; the seat stays reserved for GameOptions.SeatHoldMinutes after it.</summary>
+    public DateTime? DisconnectedAt { get; set; }
+    /// <summary>The seat was given up (explicit leave, freed by the host, or taken after the hold expired).
+    /// The record, score and history stay; the same player may come back if a seat is free.</summary>
+    public DateTime? SeatReleasedAt { get; set; }
 }
 
 public enum PuzzleStatus { Locked = 0, Active = 1, Solved = 2 }
@@ -128,6 +134,12 @@ public class WorldState
     public List<string> PlacedItems { get; set; } = new();
     public List<GoldenLetter> Letters { get; set; } = new();
     public Dictionary<string, int> Contributions { get; set; } = new();
+    /// <summary>The room the whole group is in, and since when (moves only when the group continues).</summary>
+    public string? CurrentZone { get; set; }
+    public DateTime? CurrentZoneSince { get; set; }
+    /// <summary>A room that was just opened and waits for the group to press "Continue".</summary>
+    public string? PendingZone { get; set; }
+    public DateTime? PendingSince { get; set; }
     /// <summary>Shared state of mechanism puzzles (slots, maze, mosaic), by puzzle id.</summary>
     public Dictionary<string, MechanismState> Mechanisms { get; set; } = new();
     /// <summary>Discovered clue ids → the player who found each first.</summary>
