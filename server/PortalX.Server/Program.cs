@@ -9,6 +9,7 @@ using PortalX.Server.Content;
 using PortalX.Server.Data;
 using PortalX.Server.Game;
 using PortalX.Server.Hubs;
+using PortalX.Server.Payments;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,6 +24,10 @@ builder.Services.AddSingleton<GameEngine>();
 builder.Services.AddSingleton<RoomRuntime>();
 builder.Services.AddSingleton<DatabaseStatus>();
 builder.Services.AddScoped<RoomService>();
+builder.Services.AddSingleton(sp => PaymentGateway.Create(
+    sp.GetRequiredService<IConfiguration>().GetSection("Payments").Get<PaymentOptions>() ?? new PaymentOptions(),
+    sp.GetRequiredService<IHostEnvironment>(), sp.GetRequiredService<ILoggerFactory>().CreateLogger("Payments")));
+builder.Services.AddScoped<PurchaseService>();
 
 builder.Services.ConfigureHttpJsonOptions(o =>
 {
@@ -49,14 +54,15 @@ builder.Services.Configure<ForwardedHeadersOptions>(o =>
     o.KnownProxies.Clear();
 });
 
-// Rate limiting for the public API (spec §19).
+// Rate limiting for the public API (spec §19). Limits per IP per minute, configurable (tests raise them).
+static int Limit(HttpContext ctx, string key, int fallback) => ctx.RequestServices.GetRequiredService<IConfiguration>().GetValue(key, fallback);
 builder.Services.AddRateLimiter(o =>
 {
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     o.AddPolicy("create", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
-        _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1) }));
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:CreatePerMinute", 10), Window = TimeSpan.FromMinutes(1) }));
     o.AddPolicy("join", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
-        _ => new FixedWindowRateLimiterOptions { PermitLimit = 40, Window = TimeSpan.FromMinutes(1) }));
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:JoinPerMinute", 40), Window = TimeSpan.FromMinutes(1) }));
 });
 
 var app = builder.Build();
@@ -107,21 +113,17 @@ api.MapGet("/scenarios/{id}", (string id, ScenarioCatalog catalog) =>
     catalog.Find(id) is { } s ? Results.Content(Snapshots.PublicScenario(s).ToJsonString(ScenarioCatalog.JsonOptions), "application/json; charset=utf-8") : Results.NotFound());
 
 // Shared catalog of purchasable games (spec §1): only published products, price from the server.
-api.MapGet("/products", async (PortalDbContext db, ScenarioCatalog scenarios) =>
+api.MapGet("/products", async (PortalDbContext db, ScenarioCatalog scenarios, PaymentGateway gateway) =>
     (await db.Products.AsNoTracking().Where(p => p.Status == PortalX.Server.Domain.ProductStatus.Published)
-        .OrderBy(p => p.SortOrder).ToListAsync()).Select(p => ProductView.Build(p, scenarios)));
+        .OrderBy(p => p.SortOrder).ToListAsync()).Select(p => ProductView.Build(p, scenarios, gateway)));
 
-api.MapGet("/products/{id}", async (string id, PortalDbContext db, ScenarioCatalog scenarios) =>
+api.MapGet("/products/{id}", async (string id, PortalDbContext db, ScenarioCatalog scenarios, PaymentGateway gateway) =>
     await db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id && p.Status == PortalX.Server.Domain.ProductStatus.Published) is { } p
-        ? Results.Ok(ProductView.Build(p, scenarios))
+        ? Results.Ok(ProductView.Build(p, scenarios, gateway))
         : Results.NotFound(new ApiError("no-product", "המשחק לא נמצא.")));
 
-api.MapPost("/rooms", async (CreateRoomRequest req, RoomService rooms, ScenarioCatalog catalog) =>
-{
-    if (catalog.Find(req.ScenarioId ?? "") == null) return Results.BadRequest(new ApiError("unknown-scenario", "ההרפתקה לא נמצאה."));
-    var (room, hostClaim) = await rooms.CreateRoomAsync(req.ScenarioId!);
-    return Results.Ok(new { code = room.Code, hostClaim });
-}).RequireRateLimiting("create");
+// Group games are opened only through a paid order (POST /api/orders/{id}/game) — no free room creation.
+api.MapPurchaseEndpoints(app.Services.GetRequiredService<PaymentGateway>());
 
 api.MapGet("/rooms/{code}", async (string code, RoomService rooms, ScenarioCatalog catalog) =>
 {
@@ -158,11 +160,12 @@ api.MapPost("/rooms/{code}/players", async (string code, JoinRequest req, RoomSe
 }).RequireRateLimiting("join");
 
 app.MapHub<GameHub>("/hubs/game");
+// unknown API paths answer 404 instead of falling through to the Angular page
+app.Map("/api/{**rest}", () => Results.NotFound(new ApiError("not-found", "הכתובת לא נמצאה.")));
 app.MapFallbackToFile("index.html");
 
 app.Run();
 
-public sealed record CreateRoomRequest(string? ScenarioId);
 public sealed record JoinRequest(string? Nickname, string? CharacterId, string? Appearance, string? HostClaim);
 public sealed record ApiError(string Code, string Message);
 

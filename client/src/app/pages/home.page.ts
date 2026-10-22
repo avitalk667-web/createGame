@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { ApiService } from '../core/api.service';
+import { ApiService, orderStore } from '../core/api.service';
 import { AudioService } from '../core/audio.service';
 import { Product, formatPrice, playersLabel } from '../core/models';
 import { SettingsPanelComponent } from '../ui/settings-panel.component';
@@ -29,6 +29,15 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
         <p class="pitch">משחקים קבוצתיים בדפדפן: נכנסים יחד לעולם תלת־ממדי, חוקרים, אוספים חפצים ופותרים חידות שמחייבות שיתוף פעולה. רכישה אחת לכל הקבוצה — וכל החברים מצטרפים עם קוד משחק.</p>
         <a class="btn primary big" href="#games" (click)="scrollTo($event, 'games')">למשחקים <span aria-hidden="true">↓</span></a>
       </section>
+
+      @if (myOrders.length) {
+        <section class="mine card" aria-label="הרכישות שלכם">
+          <b>הרכישות שלכם במכשיר הזה:</b>
+          @for (o of myOrders; track o.orderId) {
+            <a [routerLink]="['/checkout', o.orderId]">{{ o.productName || 'רכישה' }}</a>
+          }
+        </section>
+      }
 
       <section id="games" class="games" aria-labelledby="games-title">
         <h2 id="games-title">המשחקים</h2>
@@ -130,6 +139,7 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
     .price { display:flex; flex-direction:column; }
     .price b { font-size:1.8rem; color:var(--gold-2); line-height:1.1; }
     .price span { font-size:.9rem; color:var(--muted); }
+    .mine { display:flex; flex-wrap:wrap; gap:.4rem 1rem; align-items:center; padding:.8rem 1.1rem; margin-bottom:1.25rem; }
     .how { padding-block:2rem; scroll-margin-top:16px; }
     .how ol { list-style:none; padding:0; margin:0; display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:1rem; counter-reset:s; }
     .how li { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:1rem; counter-increment:s; display:flex; flex-direction:column; gap:.3rem; }
@@ -156,6 +166,7 @@ export class HomePage {
   loading = signal(true);
   error = signal<string | null>(null);
   showSettings = signal(false);
+  myOrders = orderStore.all().slice(0, 5);
   price = formatPrice;
   players = playersLabel;
 

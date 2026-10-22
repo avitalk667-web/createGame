@@ -1,13 +1,14 @@
+import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, effect, inject, input, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { ApiService, sessionStore } from '../core/api.service';
+import { ApiService, StoredOrder, orderStore } from '../core/api.service';
 import { AudioService } from '../core/audio.service';
 import { Product, formatPrice, playersLabel } from '../core/models';
 
 /** /games/:id — one product: large image, what's included, players, price and the next step (spec §2). */
 @Component({
   selector: 'px-game',
-  imports: [RouterLink],
+  imports: [RouterLink, DatePipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <main>
@@ -58,14 +59,40 @@ import { Product, formatPrice, playersLabel } from '../core/models';
             } @else {
               <b class="price soon">המחיר יפורסם בקרוב</b>
             }
-            @if (p.playable) {
-              <!-- Until orders and payments are added (stage 3) this game keeps its current free room creation. -->
-              <button class="btn primary big" (click)="create(p)" [disabled]="busy()">
-                {{ busy() ? 'יוצרים משחק...' : 'יצירת משחק' }}
-              </button>
-            } @else {
-              <button class="btn primary big" disabled>רכישה{{ price(p) ? ' — ' + price(p) : '' }}</button>
+            @if (p.purchasable) {
+              @if (!checkout()) {
+                <button class="btn primary big" (click)="checkout.set(true)">רכישת המשחק — {{ price(p) }}</button>
+              } @else {
+                <form class="checkout" (submit)="$event.preventDefault(); pay(p)">
+                  <h3>סיכום לפני תשלום</h3>
+                  <dl>
+                    <dt>משחק</dt><dd>{{ p.name }}</dd>
+                    <dt>מחיר</dt><dd>{{ price(p) }}</dd>
+                    <dt>כולל</dt><dd>משחק קבוצתי אחד, עד {{ p.maxPlayers }} משתתפים. המשתתפים לא משלמים.</dd>
+                  </dl>
+                  <label for="email">דוא״ל לקבלה <span class="muted">(רשות)</span></label>
+                  <input id="email" type="email" dir="ltr" autocomplete="email" maxlength="200" placeholder="name@example.com"
+                    [value]="email()" (input)="email.set($any($event.target).value)" />
+                  @if (p.testPayments) {
+                    <p class="test" role="note">מצב בדיקה: התשלום מדומה, לא יתבצע חיוב, והרכישה לא נספרת כהכנסה.</p>
+                  }
+                  <p class="muted small">בלחיצה על „מעבר לתשלום” אתם מאשרים את <a routerLink="/info/terms">תנאי השימוש</a> ואת <a routerLink="/info/refunds">מדיניות הביטולים</a>.</p>
+                  <button class="btn primary big" type="submit" [disabled]="busy()">{{ busy() ? 'מכינים את התשלום...' : 'מעבר לתשלום' }}</button>
+                  <button class="btn ghost small" type="button" (click)="checkout.set(false)">חזרה</button>
+                </form>
+              }
+            } @else if (!p.priceSet) {
+              <button class="btn primary big" disabled>רכישה</button>
+              <p class="muted note">הרכישה תיפתח אחרי שייקבע מחיר למשחק.</p>
+            } @else if (!p.playable) {
+              <button class="btn primary big" disabled>רכישת המשחק — {{ price(p) }}</button>
               <p class="muted note">המשחק בשלבי פיתוח אחרונים. הרכישה תיפתח עם ההשקה.</p>
+            } @else {
+              <button class="btn primary big" disabled>רכישת המשחק — {{ price(p) }}</button>
+              <p class="muted note">התשלום באתר עדיין לא פתוח. נסו שוב מאוחר יותר.</p>
+            }
+            @for (o of myOrders(); track o.orderId) {
+              <a class="btn" [routerLink]="['/checkout', o.orderId]">לרכישה שלכם מ־{{ o.createdAt | date: 'd.M.yy' }}</a>
             }
             <a routerLink="/join" class="btn">יש לי קוד משחק</a>
             @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
@@ -112,6 +139,13 @@ import { Product, formatPrice, playersLabel } from '../core/models';
     figure img { width:100%; aspect-ratio:16/9.4; object-fit:cover; display:block; }
     figcaption { padding:.55rem .7rem; font-size:.9rem; line-height:1.4; }
     .center { text-align:center; }
+    .checkout { display:flex; flex-direction:column; gap:.5rem; border-top:1px solid var(--line); padding-top:.75rem; }
+    .checkout h3 { margin:0; font-family:var(--font-title); }
+    dl { display:grid; grid-template-columns:auto 1fr; gap:.25rem .75rem; margin:0; }
+    dt { color:var(--muted); } dd { margin:0; }
+    .checkout input { width:100%; }
+    .test { margin:0; padding:.5rem .7rem; border-radius:10px; border:1px dashed var(--blue); color:#cfe2ff; font-size:.9rem; }
+    .small { font-size:.85rem; margin:0; }
     @media (max-width: 900px) { .tiles { grid-template-columns:repeat(2, minmax(0,1fr)); } }
     @media (max-width: 760px) {
       .hero, .layout { grid-template-columns:1fr; }
@@ -128,6 +162,9 @@ export class GamePage {
   loading = signal(true);
   busy = signal(false);
   error = signal<string | null>(null);
+  checkout = signal(false);
+  email = signal('');
+  myOrders = signal<StoredOrder[]>([]);
   price = formatPrice;
   players = playersLabel;
 
@@ -140,6 +177,7 @@ export class GamePage {
     this.error.set(null);
     try {
       this.product.set(await this.api.product(id));
+      this.myOrders.set(orderStore.all().filter((o) => o.productId === id).slice(0, 3));
     } catch (e: any) {
       this.product.set(null);
       this.error.set(e.message);
@@ -148,18 +186,19 @@ export class GamePage {
     }
   }
 
-  async create(p: Product) {
+  /** Creates the order on the server (price from the catalog) and moves on to the provider's payment page. */
+  async pay(p: Product) {
     this.audio.unlock();
     this.audio.sfx('click');
     this.busy.set(true);
     this.error.set(null);
     try {
-      const r = await this.api.createRoom(p.scenarioId!);
-      sessionStore.setHostClaim(r.code, r.hostClaim);
-      await this.router.navigate(['/join', r.code]);
+      const o = await this.api.createOrder(p.id, this.email().trim() || null);
+      orderStore.save({ orderId: o.orderId, key: o.accessKey, productId: p.id, productName: p.name, createdAt: new Date().toISOString() });
+      if (o.checkoutUrl.startsWith('/')) await this.router.navigateByUrl(o.checkoutUrl);
+      else window.location.assign(o.checkoutUrl);
     } catch (e: any) {
       this.error.set(e.message);
-    } finally {
       this.busy.set(false);
     }
   }

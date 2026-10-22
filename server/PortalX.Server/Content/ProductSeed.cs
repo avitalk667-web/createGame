@@ -59,9 +59,9 @@ public sealed class ProductSeed
 /// <summary>Public view of a product for the catalog pages.</summary>
 public static class ProductView
 {
-    public static object Build(Product p, ScenarioCatalog scenarios)
+    public static object Build(Product p, ScenarioCatalog scenarios, Payments.PaymentGateway gateway)
     {
-        var playable = p.ScenarioId != null && scenarios.Find(p.ScenarioId) != null;
+        var playable = Payments.PurchaseService.IsPlayable(p, scenarios);
         return new
         {
             p.Id, p.Name, p.Tagline, p.Description,
@@ -72,8 +72,10 @@ public static class ProductView
             p.MinPlayers, p.MaxPlayers, p.ScenarioId,
             // the game content exists on the server and can be played
             Playable = playable,
-            // has a positive price set by the catalog (purchase flow arrives with orders/payments)
             PriceSet = p.PriceIls is > 0,
+            Purchasable = Payments.PurchaseService.IsPurchasable(p, scenarios, gateway),
+            PaymentsAvailable = gateway.Available,
+            TestPayments = gateway.Provider?.IsTest ?? false,
         };
     }
 }

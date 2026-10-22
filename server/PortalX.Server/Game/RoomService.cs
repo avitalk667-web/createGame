@@ -31,12 +31,13 @@ public sealed class RoomService(PortalDbContext db, GameEngine engine, ILogger<R
 
     public static string NormalizeCode(string code) => (code ?? "").Trim().ToUpperInvariant().Replace("-", "").Replace(" ", "");
 
-    public async Task<(GameRoom room, string hostClaim)> CreateRoomAsync(string scenarioId)
+    public async Task<(GameRoom room, string hostClaim)> CreateRoomAsync(string scenarioId, Action<GameRoom>? configure = null)
     {
         var hostClaim = NewToken();
         string code;
         do { code = NewCode(); } while (await db.Rooms.AnyAsync(r => r.Code == code));
         var room = engine.CreateRoom(scenarioId, code, Hash(hostClaim), DateTime.UtcNow);
+        configure?.Invoke(room);
         db.Rooms.Add(room);
         db.Events.Add(new GameEvent { RoomId = room.Id, Type = "room-created", CreatedAt = DateTime.UtcNow });
         await db.SaveChangesAsync();

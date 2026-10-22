@@ -12,7 +12,8 @@ using PortalX.Server.Domain;
 namespace PortalX.Tests;
 
 /// <summary>Shared catalog: two separate products with server-side prices, and the migration baseline.</summary>
-public class ProductCatalogTests : IClassFixture<HubIntegrationTests.Factory>
+[Collection(DatabaseCollection.Name)]
+public class ProductCatalogTests
 {
     private readonly HubIntegrationTests.Factory _factory;
     public ProductCatalogTests(HubIntegrationTests.Factory factory) => _factory = factory;

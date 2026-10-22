@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Product, ScenarioContent, ScenarioSummary } from './models';
+import { OrderView, Product, ScenarioContent, ScenarioSummary } from './models';
 
 export class ApiError extends Error {
   constructor(public code: string, message: string) {
@@ -21,12 +21,12 @@ export interface RoomInfo {
 export class ApiService {
   private scenarioCache = new Map<string, Promise<ScenarioContent>>();
 
-  private async request<T>(method: string, url: string, body?: unknown): Promise<T> {
+  private async request<T>(method: string, url: string, body?: unknown, headers?: Record<string, string>): Promise<T> {
     let res: Response;
     try {
       res = await fetch(url, {
         method,
-        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+        headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...headers },
         body: body ? JSON.stringify(body) : undefined,
       });
     } catch {
@@ -59,8 +59,28 @@ export class ApiService {
     return this.scenarioCache.get(id)!;
   }
 
-  createRoom(scenarioId: string) {
-    return this.request<{ code: string; hostClaim: string }>('POST', '/api/rooms', { scenarioId });
+  /** Guest checkout: the server reads the price from the catalog; the browser only names the product. */
+  createOrder(productId: string, email: string | null) {
+    return this.request<{ orderId: string; number: number; accessKey: string; checkoutUrl: string; isTest: boolean }>(
+      'POST', '/api/orders', { productId, email: email || undefined });
+  }
+
+  order(id: string, key: string) {
+    return this.request<OrderView>('GET', `/api/orders/${encodeURIComponent(id)}`, undefined, { 'X-Order-Key': key });
+  }
+
+  openGame(id: string, key: string) {
+    return this.request<{ code: string; hostClaim?: string | null; existing: boolean }>(
+      'POST', `/api/orders/${encodeURIComponent(id)}/game`, undefined, { 'X-Order-Key': key });
+  }
+
+  sandboxCheckout(session: string) {
+    return this.request<{ number: number; productName: string; amount: number; currency: string; status: string; orderId: string }>(
+      'GET', `/api/sandbox/checkout/${encodeURIComponent(session)}`);
+  }
+
+  sandboxPay(session: string, outcome: 'approve' | 'decline' | 'cancel') {
+    return this.request<{ result: string; returnUrl: string }>('POST', `/api/sandbox/checkout/${encodeURIComponent(session)}`, { outcome });
   }
 
   room(code: string) {
@@ -116,6 +136,42 @@ export const sessionStore = {
   setHostClaim(code: string, claim: string) {
     try {
       sessionStorage.setItem('portalx.host.' + code, claim);
+    } catch {}
+  },
+};
+
+/** The buyer's orders on this device (localStorage, so they survive closing the tab). The key is the only proof of purchase. */
+export interface StoredOrder {
+  orderId: string;
+  key: string;
+  productId: string;
+  productName: string;
+  createdAt: string;
+}
+
+const ORDERS_KEY = 'portalx.orders';
+
+export const orderStore = {
+  all(): StoredOrder[] {
+    try {
+      const raw = localStorage.getItem(ORDERS_KEY);
+      return raw ? (JSON.parse(raw) as StoredOrder[]) : [];
+    } catch {
+      return [];
+    }
+  },
+  get(orderId: string): StoredOrder | null {
+    return this.all().find((o) => o.orderId === orderId) ?? null;
+  },
+  save(o: StoredOrder) {
+    try {
+      const rest = this.all().filter((x) => x.orderId !== o.orderId);
+      localStorage.setItem(ORDERS_KEY, JSON.stringify([o, ...rest].slice(0, 20)));
+    } catch {}
+  },
+  remove(orderId: string) {
+    try {
+      localStorage.setItem(ORDERS_KEY, JSON.stringify(this.all().filter((x) => x.orderId !== orderId)));
     } catch {}
   },
 };

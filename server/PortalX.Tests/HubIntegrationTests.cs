@@ -14,7 +14,8 @@ namespace PortalX.Tests;
 /// End-to-end over HTTP + SignalR against the real PostgreSQL test database (portalx_test):
 /// four simulated players create, join, start and finish a full game.
 /// </summary>
-public class HubIntegrationTests : IClassFixture<HubIntegrationTests.Factory>
+[Collection(DatabaseCollection.Name)]
+public class HubIntegrationTests
 {
     public sealed class Factory : WebApplicationFactory<Program>
     {
@@ -26,6 +27,9 @@ public class HubIntegrationTests : IClassFixture<HubIntegrationTests.Factory>
             builder.ConfigureAppConfiguration((_, cfg) => cfg.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:Default"] = $"Host=localhost;Port=5433;Database=portalx_test;Username=portalx;Password={pass}",
+                ["Payments:Provider"] = "sandbox",
+                ["RateLimits:CreatePerMinute"] = "100000",
+                ["RateLimits:JoinPerMinute"] = "100000",
             }));
         }
     }
@@ -95,11 +99,10 @@ public class HubIntegrationTests : IClassFixture<HubIntegrationTests.Factory>
     public async Task Four_players_play_a_full_game_in_sync()
     {
         var http = _factory.CreateClient();
-        var create = await (await http.PostAsJsonAsync("/api/rooms", new { scenarioId = "last-portal" })).Content.ReadFromJsonAsync<JsonElement>(Json);
-        var code = create.GetProperty("code").GetString()!;
+        var (code, hostClaim) = await TestPurchase.PaidRoomAsync(http, _factory.Services);
         Assert.Equal(6, code.Length);
 
-        var host = await JoinAsync(http, code, "ישראל", "explorer", create.GetProperty("hostClaim").GetString());
+        var host = await JoinAsync(http, code, "ישראל", "explorer", hostClaim);
         var dovid = await JoinAsync(http, code, "דוד", "scholar");
         var uri = await JoinAsync(http, code, "אורי", "navigator");
         var moshe = await JoinAsync(http, code, "משה", "detective");
@@ -191,10 +194,10 @@ public class HubIntegrationTests : IClassFixture<HubIntegrationTests.Factory>
     public async Task Rooms_are_isolated_and_bad_codes_are_rejected()
     {
         var http = _factory.CreateClient();
-        var a = await (await http.PostAsJsonAsync("/api/rooms", new { scenarioId = "last-portal" })).Content.ReadFromJsonAsync<JsonElement>(Json);
-        var b = await (await http.PostAsJsonAsync("/api/rooms", new { scenarioId = "last-portal" })).Content.ReadFromJsonAsync<JsonElement>(Json);
-        var ca = await JoinAsync(http, a.GetProperty("code").GetString()!, "אליהו", "explorer", a.GetProperty("hostClaim").GetString());
-        var cb = await JoinAsync(http, b.GetProperty("code").GetString()!, "שמואל", "scholar", b.GetProperty("hostClaim").GetString());
+        var a = await TestPurchase.PaidRoomAsync(http, _factory.Services);
+        var b = await TestPurchase.PaidRoomAsync(http, _factory.Services);
+        var ca = await JoinAsync(http, a.Code, "אליהו", "explorer", a.HostClaim);
+        var cb = await JoinAsync(http, b.Code, "שמואל", "scholar", b.HostClaim);
         await Ok(ca.Conn.InvokeAsync<JsonElement>("SendChat", "שלום", (string?)null));
         await Task.Delay(300);
         Assert.Empty(cb.Chats);
@@ -208,7 +211,7 @@ public class HubIntegrationTests : IClassFixture<HubIntegrationTests.Factory>
         Assert.Equal("bad-token", r.GetProperty("code").GetString());
 
         // Host revokes the invite: old code stops working, the room keeps its players.
-        var oldCode = a.GetProperty("code").GetString()!;
+        var oldCode = a.Code;
         await Ok(ca.Conn.InvokeAsync<JsonElement>("RegenerateCode"));
         Assert.Equal(System.Net.HttpStatusCode.NotFound, (await http.GetAsync($"/api/rooms/{oldCode}")).StatusCode);
 

@@ -48,6 +48,11 @@ if ($MinPlayers -gt 0) {
   $env:Game__MinPlayersOverride = "$MinPlayers"
   Write-Host "TEST MODE: minimum players set to $MinPlayers (spec default: 4)"
 } else { Remove-Item Env:Game__MinPlayersOverride -ErrorAction SilentlyContinue }
+# Local runs use the TEST payment provider: no money is charged and nothing counts as revenue.
+# The server refuses the test provider in the Production environment, so local runs use "Local".
+$env:ASPNETCORE_ENVIRONMENT = 'Local'
+$env:Payments__Provider = 'sandbox'
+Write-Host 'TEST PAYMENTS: purchases go through the sandbox page, no real charge.'
 Write-Host "PORTAL X is running: http://localhost:$Port   (Ctrl+C to stop)"
 if ($Lan) {
   $ips = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |

@@ -15,6 +15,9 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
     public DbSet<GameEvent> Events => Set<GameEvent>();
     public DbSet<GameResult> Results => Set<GameResult>();
     public DbSet<Product> Products => Set<Product>();
+    public DbSet<Order> Orders => Set<Order>();
+    public DbSet<PaymentEvent> PaymentEvents => Set<PaymentEvent>();
+    public DbSet<Entitlement> Entitlements => Set<Entitlement>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -30,6 +33,8 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.Property(x => x.WorldJson).HasColumnType("jsonb");
             e.HasMany(x => x.Players).WithOne().HasForeignKey(p => p.RoomId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Puzzles).WithOne().HasForeignKey(p => p.RoomId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.EntitlementId).IsUnique().HasFilter("\"EntitlementId\" IS NOT NULL");
+            e.Property(x => x.AccessSource).HasDefaultValue("legacy");
         });
 
         b.Entity<PlayerSession>(e =>
@@ -58,6 +63,8 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.Property(x => x.AchievementsJson).HasColumnType("jsonb");
         });
 
+        ConfigurePayments(b);
+
         b.Entity<Product>(e =>
         {
             e.HasKey(x => x.Id);
@@ -68,6 +75,42 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.Property(x => x.FeaturesJson).HasColumnType("jsonb");
             e.Property(x => x.IncludedJson).HasColumnType("jsonb");
             e.ToTable(t => t.HasCheckConstraint("CK_Products_Price", "\"PriceIls\" IS NULL OR \"PriceIls\" > 0"));
+        });
+    }
+
+    private static void ConfigurePayments(ModelBuilder b)
+    {
+        b.Entity<Order>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Number).UseIdentityByDefaultColumn().HasIdentityOptions(startValue: 1001);
+            e.HasIndex(x => x.Number).IsUnique();
+            e.Property(x => x.PriceSnapshot).HasPrecision(10, 2);
+            e.Property(x => x.RefundedAmount).HasPrecision(10, 2);
+            e.Property(x => x.Currency).HasMaxLength(3);
+            e.Property(x => x.Email).HasMaxLength(200);
+            e.HasIndex(x => new { x.Provider, x.ProviderSessionId }).IsUnique().HasFilter("\"ProviderSessionId\" IS NOT NULL");
+            e.HasIndex(x => x.CreatedAt);
+            e.Property(x => x.Version).IsRowVersion();
+            e.ToTable(t => t.HasCheckConstraint("CK_Orders_Price", "\"PriceSnapshot\" > 0"));
+        });
+
+        b.Entity<PaymentEvent>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.Provider, x.ProviderEventId }).IsUnique();
+            e.HasIndex(x => x.OrderId);
+            e.Property(x => x.Amount).HasPrecision(10, 2);
+        });
+
+        b.Entity<Entitlement>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            // one entitlement per paid order, however many times the provider confirms it
+            e.HasIndex(x => x.OrderId).IsUnique().HasFilter("\"OrderId\" IS NOT NULL");
+            e.Property(x => x.Version).IsRowVersion();
         });
     }
 

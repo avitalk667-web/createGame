@@ -43,7 +43,7 @@ public class DatabaseStartupTests : IClassFixture<DatabaseStartupTests.BrokenDbF
         Assert.StartsWith("config:", problem);
         Assert.DoesNotContain(FakeSecret, problem);
 
-        var create = await http.PostAsJsonAsync("/api/rooms", new { scenarioId = "last-portal" });
+        var create = await http.PostAsJsonAsync("/api/orders", new { productId = "last-portal" });
         Assert.Equal(HttpStatusCode.ServiceUnavailable, create.StatusCode);
         Assert.Contains("מסד הנתונים", await create.Content.ReadAsStringAsync());
 

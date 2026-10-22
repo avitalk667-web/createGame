@@ -48,6 +48,12 @@ public class GameRoom
     /// <summary>JSON of <see cref="WorldState"/>: inventory, world items, letters, contributions.</summary>
     public string WorldJson { get; set; } = "{}";
     public DateTime UpdatedAt { get; set; }
+    /// <summary>Catalog product this game was opened for (null for rooms created before purchases existed).</summary>
+    public string? ProductId { get; set; }
+    /// <summary>The entitlement that paid for this room; at most one room per entitlement.</summary>
+    public Guid? EntitlementId { get; set; }
+    /// <summary>"purchase", "admin-free" or "legacy" (created before purchases existed).</summary>
+    public string AccessSource { get; set; } = "legacy";
 
     public List<PlayerSession> Players { get; set; } = new();
     public List<PuzzleState> Puzzles { get; set; } = new();
@@ -154,4 +160,74 @@ public class Product
     public int SortOrder { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+}
+
+public enum OrderStatus { Pending = 0, Paid = 1, Failed = 2, Cancelled = 3, Refunded = 4 }
+
+/// <summary>
+/// A guest purchase of one group game. No customer account: the buyer proves ownership with a secret
+/// order key (only its hash is stored). The price is copied from the catalog when the order is created.
+/// </summary>
+public class Order
+{
+    public Guid Id { get; set; }
+    /// <summary>Short public order number shown to the buyer and the admin.</summary>
+    public long Number { get; set; }
+    public string ProductId { get; set; } = "";
+    public string ProductName { get; set; } = "";
+    public decimal PriceSnapshot { get; set; }
+    public string Currency { get; set; } = "ILS";
+    public OrderStatus Status { get; set; }
+    public string Provider { get; set; } = "";
+    /// <summary>True when paid through a test/sandbox provider: never revenue, never unlocks production games.</summary>
+    public bool IsTest { get; set; }
+    public string? ProviderSessionId { get; set; }
+    public string? ProviderTransactionId { get; set; }
+    /// <summary>Optional, only for the receipt / support. Never a login.</summary>
+    public string? Email { get; set; }
+    public string AccessKeyHash { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public DateTime? PaidAt { get; set; }
+    public DateTime? FailedAt { get; set; }
+    public DateTime? RefundedAt { get; set; }
+    public decimal? RefundedAmount { get; set; }
+    /// <summary>Optimistic concurrency (PostgreSQL xmin).</summary>
+    public uint Version { get; set; }
+}
+
+/// <summary>Every payment notification received, verified or not; the unique (Provider, ProviderEventId) blocks replays.</summary>
+public class PaymentEvent
+{
+    public long Id { get; set; }
+    public string Provider { get; set; } = "";
+    public string ProviderEventId { get; set; } = "";
+    public Guid? OrderId { get; set; }
+    public string Type { get; set; } = "";
+    public decimal? Amount { get; set; }
+    public string? Currency { get; set; }
+    public string? ProviderTransactionId { get; set; }
+    public bool IsTest { get; set; }
+    /// <summary>"applied", "ignored:..." or "rejected:...".</summary>
+    public string Result { get; set; } = "";
+    public DateTime ReceivedAt { get; set; }
+}
+
+public enum EntitlementSource { Purchase = 0, AdminFree = 1 }
+
+/// <summary>The right to open group games of one product, created only after a verified payment (or by the admin).</summary>
+public class Entitlement
+{
+    public Guid Id { get; set; }
+    public string ProductId { get; set; } = "";
+    public Guid? OrderId { get; set; }
+    public EntitlementSource Source { get; set; }
+    public int SessionsAllowed { get; set; } = 1;
+    public int SessionsUsed { get; set; }
+    public bool IsTest { get; set; }
+    public bool Revoked { get; set; }
+    public DateTime? RevokedAt { get; set; }
+    public DateTime? ExpiresAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public uint Version { get; set; }
 }

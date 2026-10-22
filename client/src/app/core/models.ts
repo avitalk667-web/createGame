@@ -217,6 +217,31 @@ export interface Product {
   scenarioId?: string | null;
   playable: boolean;
   priceSet: boolean;
+  /** Published, priced, playable and a payment provider is active. */
+  purchasable: boolean;
+  paymentsAvailable: boolean;
+  /** The active provider is a sandbox: no real charge. */
+  testPayments: boolean;
+}
+
+export type OrderStatus = 'pending' | 'paid' | 'failed' | 'cancelled' | 'refunded';
+
+export interface OrderView {
+  id: string;
+  number: number;
+  productId: string;
+  productName: string;
+  price: number;
+  currency: string;
+  status: OrderStatus;
+  isTest: boolean;
+  createdAt: string;
+  paidAt?: string;
+  emailOnFile: boolean;
+  maxPlayers: number;
+  game?: { code: string; phase: string; playerCount: number } | null;
+  canOpenGame: boolean;
+  gameBlockedReason?: string | null;
 }
 
 export function formatPrice(p: Product): string | null {
