@@ -231,3 +231,16 @@ public class Entitlement
     public DateTime CreatedAt { get; set; }
     public uint Version { get; set; }
 }
+
+/// <summary>Important admin actions (spec §16): free games, product/price changes, access changes, logins.</summary>
+public class AdminAuditLog
+{
+    public long Id { get; set; }
+    public string AdminName { get; set; } = "";
+    public string Action { get; set; } = "";
+    public string? TargetType { get; set; }
+    public string? TargetId { get; set; }
+    /// <summary>Non-sensitive details only (never passwords or payment data).</summary>
+    public string DetailsJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+}

@@ -18,6 +18,7 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<PaymentEvent> PaymentEvents => Set<PaymentEvent>();
     public DbSet<Entitlement> Entitlements => Set<Entitlement>();
+    public DbSet<AdminAuditLog> AdminAuditLog => Set<AdminAuditLog>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -111,6 +112,13 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             // one entitlement per paid order, however many times the provider confirms it
             e.HasIndex(x => x.OrderId).IsUnique().HasFilter("\"OrderId\" IS NOT NULL");
             e.Property(x => x.Version).IsRowVersion();
+        });
+
+        b.Entity<AdminAuditLog>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CreatedAt);
+            e.Property(x => x.DetailsJson).HasColumnType("jsonb");
         });
     }
 

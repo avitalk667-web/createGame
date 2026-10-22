@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { AdminApiService } from '../core/admin-api.service';
 import { ApiService, orderStore } from '../core/api.service';
 import { AudioService } from '../core/audio.service';
 import { Product, formatPrice, playersLabel } from '../core/models';
@@ -18,6 +19,7 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
         <a class="anchor" href="#games" (click)="scrollTo($event, 'games')">המשחקים</a>
         <a class="anchor" href="#how" (click)="scrollTo($event, 'how')">איך משחקים?</a>
         <a routerLink="/join" class="btn small">יש לי קוד משחק</a>
+        @if (isAdmin()) { <a routerLink="/admin" class="btn small">כניסת מנהל</a> }
         <button class="btn small ghost" (click)="showSettings.set(true)">הגדרות</button>
       </nav>
     </header>
@@ -162,6 +164,9 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
 export class HomePage {
   private api = inject(ApiService);
   private audio = inject(AudioService);
+  private adminApi = inject(AdminApiService);
+  /** The admin button appears only for a verified admin session (the server decides). */
+  isAdmin = signal(false);
   products = signal<Product[]>([]);
   loading = signal(true);
   error = signal<string | null>(null);
@@ -173,6 +178,7 @@ export class HomePage {
   constructor() {
     this.audio.setMusic('home');
     this.load();
+    this.adminApi.session().then((s) => this.isAdmin.set(s.admin)).catch(() => {});
   }
 
   async load() {

@@ -53,6 +53,12 @@ if ($MinPlayers -gt 0) {
 $env:ASPNETCORE_ENVIRONMENT = 'Local'
 $env:Payments__Provider = 'sandbox'
 Write-Host 'TEST PAYMENTS: purchases go through the sandbox page, no real charge.'
+# Admin login for local runs: user "admin", hash from %LOCALAPPDATA%\PortalX\admin.hash (tools\set-admin-password.ps1 -Local).
+$adminHash = Join-Path $pgRoot 'admin.hash'
+if (Test-Path $adminHash) {
+  $env:Admin__Username = 'admin'
+  $env:Admin__PasswordHash = (Get-Content $adminHash -Raw).Trim()
+} else { Write-Host 'Admin login disabled: run tools\set-admin-password.ps1 -Local to enable it.' }
 Write-Host "PORTAL X is running: http://localhost:$Port   (Ctrl+C to stop)"
 if ($Lan) {
   $ips = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |

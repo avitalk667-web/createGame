@@ -5,11 +5,22 @@ using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using PortalX.Server.Admin;
 using PortalX.Server.Content;
 using PortalX.Server.Data;
 using PortalX.Server.Game;
 using PortalX.Server.Hubs;
 using PortalX.Server.Payments;
+
+// `PortalX.Server --hash-password`: reads a password from standard input and prints the hash for Admin__PasswordHash.
+if (args.Contains("--hash-password"))
+{
+    // PowerShell may prefix piped text with a byte-order mark; it is never part of the password
+    var password = (Console.In.ReadLine() ?? "").TrimStart((char)0xFEFF).TrimEnd((char)13);
+    if (password.Length < 12) { Console.Error.WriteLine("Use at least 12 characters."); return 1; }
+    Console.WriteLine(AdminAuth.HashPassword(password));
+    return 0;
+}
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -28,6 +39,9 @@ builder.Services.AddSingleton(sp => PaymentGateway.Create(
     sp.GetRequiredService<IConfiguration>().GetSection("Payments").Get<PaymentOptions>() ?? new PaymentOptions(),
     sp.GetRequiredService<IHostEnvironment>(), sp.GetRequiredService<ILoggerFactory>().CreateLogger("Payments")));
 builder.Services.AddScoped<PurchaseService>();
+builder.Services.Configure<AdminOptions>(builder.Configuration.GetSection("Admin"));
+builder.Services.AddScoped<AdminService>();
+builder.Services.AddAdminAuth();
 
 builder.Services.ConfigureHttpJsonOptions(o =>
 {
@@ -63,6 +77,8 @@ builder.Services.AddRateLimiter(o =>
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:CreatePerMinute", 10), Window = TimeSpan.FromMinutes(1) }));
     o.AddPolicy("join", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:JoinPerMinute", 40), Window = TimeSpan.FromMinutes(1) }));
+    o.AddPolicy("admin-login", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:AdminLoginPerMinute", 10), Window = TimeSpan.FromMinutes(1) }));
 });
 
 var app = builder.Build();
@@ -92,6 +108,8 @@ app.Use(async (ctx, next) =>
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseRateLimiter();
+app.UseAuthentication();
+app.UseAuthorization();
 
 var api = app.MapGroup("/api");
 
@@ -124,6 +142,7 @@ api.MapGet("/products/{id}", async (string id, PortalDbContext db, ScenarioCatal
 
 // Group games are opened only through a paid order (POST /api/orders/{id}/game) — no free room creation.
 api.MapPurchaseEndpoints(app.Services.GetRequiredService<PaymentGateway>());
+api.MapAdminEndpoints();
 
 api.MapGet("/rooms/{code}", async (string code, RoomService rooms, ScenarioCatalog catalog) =>
 {
@@ -165,6 +184,7 @@ app.Map("/api/{**rest}", () => Results.NotFound(new ApiError("not-found", "הכ�
 app.MapFallbackToFile("index.html");
 
 app.Run();
+return 0;
 
 public sealed record JoinRequest(string? Nickname, string? CharacterId, string? Appearance, string? HostClaim);
 public sealed record ApiError(string Code, string Message);
