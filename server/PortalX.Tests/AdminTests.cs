@@ -242,6 +242,32 @@ public class AdminTests
     }
 
     [Fact]
+    public void Common_paste_mistakes_in_the_dashboard_still_work()
+    {
+        var hash = AdminAuth.HashPassword("a-long-password-123");
+        foreach (var pasted in new[] { $" {hash} ", $"\"{hash}\"", $"'{hash}'", $"{hash}\n", $"{hash[..40]}\n{hash[40..]}", $"“{hash}”" })
+        {
+            var options = new AdminOptions { Username = " Owner ", PasswordHash = pasted };
+            Assert.Equal("ready", AdminAuth.HashStatus(options));
+            Assert.True(AdminAuth.Verify(options, "owner", "a-long-password-123"), pasted);
+            Assert.True(AdminAuth.Verify(options, "OWNER ", "a-long-password-123"));
+            Assert.Equal(AdminAuth.LoginCheck.WrongPassword, AdminAuth.Check(options, "owner", "a-long-password-12"));
+            Assert.Equal(AdminAuth.LoginCheck.WrongUser, AdminAuth.Check(options, "someone", "a-long-password-123"));
+        }
+    }
+
+    [Fact]
+    public void Hash_status_explains_a_bad_configuration_without_revealing_it()
+    {
+        var hash = AdminAuth.HashPassword("a-long-password-123");
+        Assert.Equal("not-configured", AdminAuth.HashStatus(new AdminOptions()));
+        Assert.StartsWith("invalid", AdminAuth.HashStatus(new AdminOptions { Username = "u", PasswordHash = "not base64!" }));
+        Assert.StartsWith("invalid", AdminAuth.HashStatus(new AdminOptions { Username = "u", PasswordHash = hash[..40] })); // cut short
+        Assert.StartsWith("invalid", AdminAuth.HashStatus(new AdminOptions { Username = "u", PasswordHash = Convert.ToBase64String(new byte[61]) }));
+        Assert.Equal(AdminAuth.LoginCheck.BadHash, AdminAuth.Check(new AdminOptions { Username = "u", PasswordHash = "%%%" }, "u", "x"));
+    }
+
+    [Fact]
     public void Password_hash_round_trip()
     {
         var options = new AdminOptions { Username = "owner", PasswordHash = AdminAuth.HashPassword("a-long-password-123") };

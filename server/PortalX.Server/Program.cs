@@ -117,8 +117,10 @@ var api = app.MapGroup("/api");
 // which commit and front-end bundle are deployed (to verify a deploy)
 api.MapGet("/version", (IWebHostEnvironment env) => Results.Ok(StaticCaching.Version(env)));
 
-api.MapGet("/health", (DatabaseStatus db) => Results.Ok(new
+api.MapGet("/health", (DatabaseStatus db, Microsoft.Extensions.Options.IOptions<AdminOptions> admin) => Results.Ok(new
 {
+    // whether the admin login is set up and its hash is well-formed (never the hash or the user name)
+    adminLogin = AdminAuth.HashStatus(admin.Value),
     status = db.IsReady ? "ok" : "degraded",
     database = db.State,
     problem = db.Problem,

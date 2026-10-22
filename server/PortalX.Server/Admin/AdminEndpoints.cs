@@ -14,7 +14,7 @@ public static class AdminEndpoints
     {
         var admin = api.MapGroup("/admin");
 
-        admin.MapPost("/login", async (AdminLoginRequest req, HttpContext ctx, IOptions<AdminOptions> options, AdminLoginGuard guard, AdminService service) =>
+        admin.MapPost("/login", async (AdminLoginRequest req, HttpContext ctx, IOptions<AdminOptions> options, AdminLoginGuard guard, AdminService service, ILoggerFactory logs) =>
         {
             if (!options.Value.Configured)
                 return Results.Json(new ApiError("admin-not-configured", "כניסת המנהל לא הוגדרה בשרת."), statusCode: 503);
@@ -22,9 +22,12 @@ public static class AdminEndpoints
             var now = DateTime.UtcNow;
             if (guard.IsLocked(key, now))
                 return Results.Json(new ApiError("locked", "יותר מדי ניסיונות כניסה שגויים. נסו שוב בעוד 15 דקות."), statusCode: 429);
-            if (!AdminAuth.Verify(options.Value, req.Username, req.Password))
+            var check = AdminAuth.Check(options.Value, req.Username, req.Password);
+            if (check != AdminAuth.LoginCheck.Ok)
             {
                 guard.Failed(key, now);
+                // the cause goes to the server log only (visible to the owner); the visitor gets the same generic message
+                logs.CreateLogger("AdminLogin").LogWarning("Admin login failed: {Cause}. Configured hash: {HashStatus}", check, AdminAuth.HashStatus(options.Value));
                 await service.AuditAsync(req.Username?.Trim() is { Length: > 0 and <= 64 } u ? u : "?", "login-failed", null, null);
                 return Results.Json(new ApiError("bad-login", "שם המשתמש או הסיסמה שגויים."), statusCode: 401);
             }

@@ -51,24 +51,56 @@ public static class AdminAuth
         services.AddSingleton<AdminLoginGuard>();
     }
 
-    /// <summary>Checks the credentials in constant time; the hash is verified even for a wrong username.</summary>
-    public static bool Verify(AdminOptions options, string? username, string? password)
+    public enum LoginCheck { Ok, NotConfigured, BadHash, WrongUser, WrongPassword }
+
+    /// <summary>
+    /// The hash as pasted into a hosting dashboard, without the usual paste mistakes:
+    /// surrounding quotes, spaces or line breaks (none of them can be part of Base64).
+    /// </summary>
+    public static string CleanHash(string? hash) =>
+        new string((hash ?? "").Where(c => !char.IsWhiteSpace(c) && c is not ('"' or '\'' or '“' or '”' or '`')).ToArray());
+
+    /// <summary>User names are compared without case and surrounding spaces.</summary>
+    private static string CleanUser(string? user) => (user ?? "").Trim().ToLowerInvariant();
+
+    /// <summary>
+    /// Whether the configured hash has the ASP.NET Core Identity V3 layout. Safe to show publicly:
+    /// it says nothing about the password or the user name.
+    /// </summary>
+    public static string HashStatus(AdminOptions options)
     {
-        if (!options.Configured || string.IsNullOrEmpty(password)) return false;
+        if (!options.Configured) return "not-configured";
+        byte[] bytes;
+        try { bytes = Convert.FromBase64String(CleanHash(options.PasswordHash)); }
+        catch (FormatException) { return "invalid: the hash is not Base64 (was it copied completely?)"; }
+        if (bytes.Length < 13 || bytes[0] != 0x01) return "invalid: not a password hash made by tools/set-admin-password.ps1";
+        var saltLength = (bytes[9] << 24) | (bytes[10] << 16) | (bytes[11] << 8) | bytes[12];
+        if (saltLength < 16 || bytes.Length != 13 + saltLength + 32) return "invalid: the hash has the wrong length (was it copied completely?)";
+        return "ready";
+    }
+
+    /// <summary>Checks the credentials in constant time; the hash is verified even for a wrong user name.</summary>
+    public static LoginCheck Check(AdminOptions options, string? username, string? password)
+    {
+        if (!options.Configured) return LoginCheck.NotConfigured;
+        if (string.IsNullOrEmpty(password)) return LoginCheck.WrongPassword;
         var userOk = CryptographicOperations.FixedTimeEquals(
-            SHA256.HashData(Encoding.UTF8.GetBytes(username?.Trim() ?? "")),
-            SHA256.HashData(Encoding.UTF8.GetBytes(options.Username.Trim())));
+            SHA256.HashData(Encoding.UTF8.GetBytes(CleanUser(username))),
+            SHA256.HashData(Encoding.UTF8.GetBytes(CleanUser(options.Username))));
         PasswordVerificationResult result;
         try
         {
-            result = Hasher.VerifyHashedPassword(new object(), options.PasswordHash, password);
+            result = Hasher.VerifyHashedPassword(new object(), CleanHash(options.PasswordHash), password);
         }
         catch (FormatException)
         {
-            return false; // a malformed hash in the configuration
+            return LoginCheck.BadHash;
         }
-        return userOk && result != PasswordVerificationResult.Failed;
+        if (result == PasswordVerificationResult.Failed) return userOk ? LoginCheck.WrongPassword : LoginCheck.WrongUser;
+        return userOk ? LoginCheck.Ok : LoginCheck.WrongUser;
     }
+
+    public static bool Verify(AdminOptions options, string? username, string? password) => Check(options, username, password) == LoginCheck.Ok;
 
     public static Task SignInAsync(HttpContext ctx, string username) =>
         ctx.SignInAsync(Scheme, new ClaimsPrincipal(new ClaimsIdentity(
