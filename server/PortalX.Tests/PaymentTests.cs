@@ -213,7 +213,7 @@ public class PaymentTests
     {
         var http = _factory.CreateClient();
         Assert.Equal(HttpStatusCode.Conflict, (await http.PostAsJsonAsync("/api/orders", new { productId = "last-portal" })).StatusCode); // no price set
-        Assert.Equal(HttpStatusCode.Conflict, (await http.PostAsJsonAsync("/api/orders", new { productId = "hanukkah-oil" })).StatusCode); // not built yet
+        Assert.Equal(HttpStatusCode.OK, (await http.PostAsJsonAsync("/api/orders", new { productId = "hanukkah-oil" })).StatusCode); // its own price, 90
         Assert.Equal(HttpStatusCode.NotFound, (await http.PostAsJsonAsync("/api/orders", new { productId = "nope" })).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await http.PostAsJsonAsync("/api/orders", new { productId = ProductId, email = "not-an-email" })).StatusCode);
 
@@ -241,7 +241,7 @@ public class PaymentTests
         Assert.True(byId[ProductId].GetProperty("purchasable").GetBoolean());
         Assert.True(byId[ProductId].GetProperty("testPayments").GetBoolean());
         Assert.False(byId["last-portal"].GetProperty("purchasable").GetBoolean());
-        Assert.False(byId["hanukkah-oil"].GetProperty("purchasable").GetBoolean());
+        Assert.True(byId["hanukkah-oil"].GetProperty("purchasable").GetBoolean());
     }
 
     // ------------------------------------------------------------------ production safety

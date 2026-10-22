@@ -240,6 +240,7 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
             {
                 r.Result.DurationSeconds, r.Result.HintsUsed, r.Result.PuzzlesSolved, r.Result.PuzzlesTotal, r.Result.CompletionType,
             },
+            groupScore = GameEngine.World(r.Room).Score?.Group,
         });
     }
 
@@ -260,7 +261,10 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
             {
                 p.Nickname, p.CharacterId, p.IsConnected, p.JoinedAt, p.LastSeenAt, isHost = p.Id == room.HostPlayerId,
                 contributions = world.Contributions.GetValueOrDefault(p.Id.ToString()),
+                points = world.Score?.Personal.GetValueOrDefault(p.Id.ToString()),
             }),
+            groupScore = world.Score?.Group,
+            roomScores = world.Score?.Rooms,
             puzzles = room.Puzzles.OrderBy(p => scenario?.Puzzles.FirstOrDefault(x => x.Id == p.PuzzleId)?.Order ?? 99).Select(p => new
             {
                 p.PuzzleId, title = scenario?.Puzzles.FirstOrDefault(x => x.Id == p.PuzzleId)?.Title,

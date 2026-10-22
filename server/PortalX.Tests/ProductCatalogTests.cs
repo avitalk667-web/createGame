@@ -39,7 +39,7 @@ public class ProductCatalogTests
         Assert.Equal("ILS", hanukkah.GetProperty("currency").GetString());
         Assert.Equal(8, hanukkah.GetProperty("maxPlayers").GetInt32());
         Assert.Equal(8, hanukkah.GetProperty("gallery").GetArrayLength());
-        Assert.False(hanukkah.GetProperty("playable").GetBoolean()); // the game content does not exist yet
+        Assert.True(hanukkah.GetProperty("playable").GetBoolean());
 
         // no price existed for the original game, so none is invented
         var portal = byId["last-portal"];

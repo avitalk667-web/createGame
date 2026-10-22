@@ -102,6 +102,17 @@ public sealed class GameHub(RoomService rooms, RoomRuntime runtime, PortalDbCont
         Run("place", clientActionId, (room, pid) => rooms.Engine.PlaceItem(room, pid, puzzleId, itemId, DateTime.UtcNow),
             new JsonObject { ["puzzleId"] = puzzleId, ["itemId"] = itemId });
 
+    /// <summary>Mechanism puzzles: place/remove/activate slots, move the maze key or pull a lever, rotate a mosaic stone.</summary>
+    public Task<HubResult> Operate(string puzzleId, JsonElement action, string clientActionId)
+    {
+        if (!Allow("operate", 12, 3)) return Task.FromResult(TooFast());
+        return Run("operate", clientActionId, (room, pid) => rooms.Engine.Operate(room, pid, puzzleId, action, DateTime.UtcNow),
+            new JsonObject { ["puzzleId"] = puzzleId, ["action"] = JsonNode.Parse(action.GetRawText()) });
+    }
+
+    public Task<HubResult> DiscoverClue(string clueId, string clientActionId) =>
+        Run("clue", clientActionId, (room, pid) => rooms.Engine.DiscoverClue(room, pid, clueId, DateTime.UtcNow), new JsonObject { ["clueId"] = clueId });
+
     public Task<HubResult> GetTune(string puzzleId) => Read((room, pid) => rooms.Engine.GetTune(room, pid, puzzleId, DateTime.UtcNow));
 
     public Task<HubResult> GetPersonalClues(string puzzleId) => Read((room, pid) => rooms.Engine.GetPersonalClues(room, pid, puzzleId, DateTime.UtcNow));

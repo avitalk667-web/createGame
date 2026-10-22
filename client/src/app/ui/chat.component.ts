@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, ElementRef, effect, inject, input, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, input, signal, viewChild } from '@angular/core';
 import { GameService } from '../core/game.service';
 import { AudioService } from '../core/audio.service';
 
@@ -14,11 +14,15 @@ const PHRASES = ['מצאתי רמז!', 'בואו לכאן', 'מישהו ראה �
   template: `
     <div class="chat" [class.compact]="compact()">
       <div class="log" #log role="log" aria-live="polite" aria-label="הודעות הצ׳אט">
-        @for (m of game.chat(); track m.id) {
-          <div class="msg" [class.mine]="m.playerId === game.playerId()">
-            <b>{{ m.nickname }}</b>
-            @if (m.emote) { <span class="emote">{{ m.emote }}</span> } @else { <span>{{ m.text }}</span> }
-          </div>
+        @for (m of lines(); track m.id) {
+          @if (m.system) {
+            <div class="msg system">{{ m.text }}</div>
+          } @else {
+            <div class="msg" [class.mine]="m.playerId === game.playerId()">
+              <b>{{ m.nickname }}</b>
+              @if (m.emote) { <span class="emote">{{ m.emote }}</span> } @else { <span>{{ m.text }}</span> }
+            </div>
+          }
         } @empty {
           <div class="muted empty">כאן תוכלו לשתף רמזים עם חברי הקבוצה.</div>
         }
@@ -46,6 +50,7 @@ const PHRASES = ['מצאתי רמז!', 'בואו לכאן', 'מישהו ראה �
     .msg { background: rgba(255,255,255,.05); border-radius: 10px; padding: .3rem .6rem; font-size:.95rem; line-height:1.4; }
     .msg b { color: var(--gold-2); margin-inline-end: .4em; }
     .msg.mine { background: rgba(224,185,92,.12); }
+    .msg.system { background: rgba(106,168,255,.1); border: 1px solid rgba(106,168,255,.35); color: #d8e6ff; font-size:.88rem; }
     .emote { font-size: 1.4rem; }
     .empty { font-size: .9rem; padding: .4rem; }
     .quick { display:flex; gap:.2rem; flex-wrap:wrap; }
@@ -61,6 +66,13 @@ export class ChatComponent {
   game = inject(GameService);
   private audio = inject(AudioService);
   compact = input(false);
+  /** Optional system lines (puzzle events) shown in the same log, in time order. */
+  system = input<{ id: string; text: string; at: number }[]>([]);
+  lines = computed(() => {
+    const chat = this.game.chat().map((m) => ({ ...m, system: false, t: Date.parse(m.at) }));
+    const sys = this.system().map((s) => ({ id: 'sys-' + s.id, text: s.text, system: true, t: s.at, playerId: '', nickname: '', emote: undefined as string | undefined }));
+    return sys.length ? [...chat, ...sys].sort((a, b) => a.t - b.t) : chat;
+  });
   text = signal('');
   error = signal<string | null>(null);
   emotes = EMOTES;
@@ -71,6 +83,7 @@ export class ChatComponent {
   constructor() {
     effect(() => {
       const n = this.game.chat().length;
+      this.system();
       const el = this.log()?.nativeElement;
       if (el) queueMicrotask(() => (el.scrollTop = el.scrollHeight));
       if (n > this.seen && this.seen > 0) this.audio.sfx('chat');

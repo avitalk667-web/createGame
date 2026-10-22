@@ -82,8 +82,19 @@ public sealed class RoomService(PortalDbContext db, GameEngine engine, ILogger<R
             var room = await LoadAsync(roomId, tracking: true);
             if (room == null) return new ExecResult(ActionOutcome.Fail("no-room", "החדר לא נמצא."), null, false, roomId);
             var wasCompleted = room.Phase == RoomPhase.Completed;
+            var awardedBefore = GameEngine.World(room).Score?.Log.Select(e => e.Key).ToHashSet() ?? [];
+            var roundBefore = room.Round;
             var outcome = action(room);
             var now = DateTime.UtcNow;
+
+            // every new score award is also stored as a row; (room, round, key) is unique in the database
+            var log = GameEngine.World(room).Score?.Log ?? [];
+            foreach (var e in log.Where(e => room.Round != roundBefore || !awardedBefore.Contains(e.Key)))
+                db.ScoreEvents.Add(new PlayerScoreEvent
+                {
+                    RoomId = roomId, Round = room.Round, PlayerId = e.PlayerId == null ? null : Guid.Parse(e.PlayerId),
+                    Kind = e.Kind, Type = e.Type, Points = e.Points, Zone = e.Zone, PuzzleId = e.PuzzleId, Key = e.Key, CreatedAt = e.At,
+                });
 
             if (outcome.StateChanged || clientActionId != null)
             {

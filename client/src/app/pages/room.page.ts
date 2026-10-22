@@ -6,11 +6,12 @@ import { AudioService } from '../core/audio.service';
 import { GameService } from '../core/game.service';
 import { LobbyComponent } from './lobby.component';
 import { PlayComponent } from './play.component';
+import { HPlayComponent } from '../hanukkah/h-play.component';
 
 /** Connects to the room with this tab's player token and shows the screen for the current phase. */
 @Component({
   selector: 'px-room',
-  imports: [RouterLink, LobbyComponent, PlayComponent],
+  imports: [RouterLink, LobbyComponent, PlayComponent, HPlayComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @switch (game.connection()) {
@@ -29,6 +30,7 @@ import { PlayComponent } from './play.component';
     }
     @if (game.snapshot(); as s) {
       @if (s.phase === 'lobby') { <px-lobby (leave)="leave()" /> }
+      @else if (s.scenarioId === 'hanukkah-oil') { <px-h-play (leave)="leave()" /> }
       @else { <px-play (leave)="leave()" /> }
     }
     @if (game.connection() === 'reconnecting' || game.connection() === 'disconnected') {

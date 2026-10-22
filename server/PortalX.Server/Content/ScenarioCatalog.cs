@@ -20,6 +20,14 @@ public sealed class ScenarioContent
     public required List<RecipeContent> Recipes { get; init; }
     public required List<PuzzleContent> Puzzles { get; init; }
     public required List<AchievementContent> Achievements { get; init; }
+    /// <summary>Clues that can be discovered in the rooms (first discoverer scores). Public content.</summary>
+    public List<ClueContent> Clues { get; init; } = new();
+    /// <summary>Difficulty per zone ("easy" / "medium" / "medium-hard" / "hard"), used for the group score.</summary>
+    public Dictionary<string, string> ZoneDifficulty { get; init; } = new();
+    /// <summary>Scoring values. When null the scenario has no scoring (the original game).</summary>
+    public ScoringRules? Scoring { get; init; }
+    /// <summary>Length of this scenario's opening scene; null = the server default.</summary>
+    public int? IntroSeconds { get; init; }
 
     public PuzzleContent Puzzle(string id) =>
         Puzzles.FirstOrDefault(p => p.Id == id) ?? throw new KeyNotFoundException($"Puzzle {id} not found");
@@ -34,6 +42,21 @@ public sealed record ItemContent(string Id, string Name, string Description, str
 public sealed record RecipeContent(List<string> Inputs, string Output, string Message);
 
 public sealed record AchievementContent(string Id, string Title, string Description);
+
+public sealed record ClueContent(string Id, string Zone, string Title, string Text);
+
+/// <summary>All score values in one place (spec Part G §18), so they can be changed without touching the puzzles.</summary>
+public sealed class ScoringRules
+{
+    public int Clue { get; init; } = 10;
+    public int Mechanism { get; init; } = 20;
+    public int Placement { get; init; } = 10;
+    public int Answer { get; init; } = 25;
+    /// <summary>"Complex stage" events, e.g. each maze symbol reached in the right order (spec: up to 25).</summary>
+    public int Stage { get; init; } = 5;
+    public Dictionary<string, int> Room { get; init; } = new() { ["easy"] = 100, ["medium"] = 150, ["hard"] = 250 };
+    public int HintPenalty { get; init; } = 10;
+}
 
 public sealed record PersonalClue(int Index, string Title, string Text, string Visual, int Value);
 
@@ -60,6 +83,8 @@ public sealed class PuzzleContent
     public string? RewardLetter { get; init; }
     public string? RewardItem { get; init; }
     public string? UnlocksZone { get; init; }
+    /// <summary>Stays locked until this puzzle (in the same room) is solved.</summary>
+    public string? RequiresPuzzle { get; init; }
 }
 
 /// <summary>Loads game scenarios from the content folder. Content is kept separate from code (spec §13).</summary>
@@ -101,10 +126,17 @@ public sealed class ScenarioCatalog
 
     private static void Validate(ScenarioContent s)
     {
+        foreach (var c in s.Clues)
+            if (s.Zones.All(z => z.Id != c.Zone)) throw new InvalidDataException($"clue {c.Id}: unknown zone {c.Zone}");
+        if (s.Scoring != null)
+            foreach (var z in s.Zones)
+                if (!s.ZoneDifficulty.TryGetValue(z.Id, out var d) || !s.Scoring.Room.ContainsKey(d))
+                    throw new InvalidDataException($"{s.Id}: zone {z.Id} has no scored difficulty");
         if (s.Puzzles.Count == 0) throw new InvalidDataException($"{s.Id}: no puzzles");
         foreach (var p in s.Puzzles)
         {
-            if (p.Hints.Count != 3) throw new InvalidDataException($"{p.Id}: expected 3 hint levels");
+            if (p.Hints.Count is < 1 or > 3) throw new InvalidDataException($"{p.Id}: expected 1–3 hint levels");
+            if (p.RequiresPuzzle != null && s.Puzzles.All(x => x.Id != p.RequiresPuzzle)) throw new InvalidDataException($"{p.Id}: unknown required puzzle");
             if (s.Zones.All(z => z.Id != p.Zone)) throw new InvalidDataException($"{p.Id}: unknown zone {p.Zone}");
             if (p.RewardItem != null && s.Item(p.RewardItem) == null) throw new InvalidDataException($"{p.Id}: unknown item");
             if (p.PersonalKey.Count > 0 && p.PublicData["message"] is System.Text.Json.Nodes.JsonArray msg)

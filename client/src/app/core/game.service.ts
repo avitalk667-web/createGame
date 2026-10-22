@@ -165,6 +165,9 @@ export class GameService {
   pickUp = (itemId: string) => this.invoke('PickUp', itemId, this.actionId());
   combine = (a: string, b: string) => this.invoke('Combine', a, b, this.actionId());
   placeItem = (puzzleId: string, itemId: string) => this.invoke('PlaceItem', puzzleId, itemId, this.actionId());
+  /** Mechanism puzzles: { op: 'place' | 'remove' | 'activate' | 'move' | 'lever' | 'rotate', ... } — validated by the server. */
+  operate = (puzzleId: string, action: object) => this.invoke('Operate', puzzleId, action, this.actionId());
+  discoverClue = (clueId: string) => this.invoke<never>('DiscoverClue', clueId, this.actionId());
   getTune = (puzzleId: string) => this.invoke<{ sequence: string[] }>('GetTune', puzzleId);
   getPersonalClues = (puzzleId: string) =>
     this.invoke<{ clues: { index: number; title: string; text: string; visual: string }[] }>('GetPersonalClues', puzzleId);

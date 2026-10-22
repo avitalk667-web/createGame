@@ -159,7 +159,7 @@ const ACTIONS: Record<string, string> = {
           @case ('games') {
             <div class="table-wrap">
               <table>
-                <thead><tr><th>קוד</th><th>משחק</th><th>גישה</th><th>בעלים</th><th>נוצר</th><th>התחיל</th><th>הסתיים</th><th>משתתפים</th><th>מצב</th><th>תוצאה</th></tr></thead>
+                <thead><tr><th>קוד</th><th>משחק</th><th>גישה</th><th>בעלים</th><th>נוצר</th><th>התחיל</th><th>הסתיים</th><th>משתתפים</th><th>מצב</th><th>תוצאה</th><th>ניקוד קבוצתי</th></tr></thead>
                 <tbody>
                   @for (g of games(); track g.code) {
                     <tr class="click" (click)="showGame(g.code)" [class.test]="g.isTest">
@@ -167,8 +167,9 @@ const ACTIONS: Record<string, string> = {
                       <td>{{ g.createdAt | date: 'd.M.yy HH:mm' }}</td><td>{{ g.startedAt ? (g.startedAt | date: 'd.M HH:mm') : '—' }}</td><td>{{ g.endedAt ? (g.endedAt | date: 'd.M HH:mm') : '—' }}</td>
                       <td>{{ g.players }}</td><td>{{ label(g.status) }}</td>
                       <td>{{ g.result ? g.result.puzzlesSolved + '/' + g.result.puzzlesTotal + ' חידות · ' + minutes(g.result.durationSeconds) : '—' }}</td>
+                      <td>{{ g.groupScore ?? '—' }}</td>
                     </tr>
-                  } @empty { <tr><td colspan="10" class="muted">אין משחקים בסינון הזה.</td></tr> }
+                  } @empty { <tr><td colspan="11" class="muted">אין משחקים בסינון הזה.</td></tr> }
                 </tbody>
               </table>
             </div>
@@ -179,7 +180,7 @@ const ACTIONS: Record<string, string> = {
                 <h3>משתתפים</h3>
                 <ul>
                   @for (p of g.players; track p.nickname) {
-                    <li>{{ p.nickname }}{{ p.isHost ? ' (מארח)' : '' }} · {{ p.isConnected ? 'מחובר' : 'לא מחובר' }} · תרומות: {{ p.contributions ?? 0 }}</li>
+                    <li>{{ p.nickname }}{{ p.isHost ? ' (מארח)' : '' }} · {{ p.isConnected ? 'מחובר' : 'לא מחובר' }} · תרומות: {{ p.contributions ?? 0 }}@if (p.points != null) { · <b>{{ p.points }} נקודות</b> }</li>
                   } @empty { <li class="muted">עדיין אין משתתפים.</li> }
                 </ul>
                 <h3>התקדמות</h3>
@@ -192,7 +193,7 @@ const ACTIONS: Record<string, string> = {
                   <h3>תוצאות</h3>
                   <ul>@for (r of g.results; track r.round) { <li>סבב {{ r.round }}: {{ r.puzzlesSolved }}/{{ r.puzzlesTotal }} חידות · {{ minutes(r.durationSeconds) }} · {{ r.hintsUsed }} רמזים</li> }</ul>
                 }
-                <p class="muted small">ניקוד אישי וקבוצתי יתווסף כאן עם מערכת הניקוד.</p>
+                @if (g.groupScore != null) { <p>ניקוד קבוצתי: <b>{{ g.groupScore }}</b></p> }
               </section>
             }
           }

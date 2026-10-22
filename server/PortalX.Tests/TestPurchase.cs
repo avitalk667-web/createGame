@@ -59,9 +59,9 @@ public static class TestPurchase
         http.SendAsync(WithKey(HttpMethod.Post, $"/api/orders/{p.OrderId}/game", p.Key));
 
     /// <summary>Order → sandbox approval → open game. Returns the room code and the host claim.</summary>
-    public static async Task<(string Code, string HostClaim)> PaidRoomAsync(HttpClient http, IServiceProvider services)
+    public static async Task<(string Code, string HostClaim)> PaidRoomAsync(HttpClient http, IServiceProvider services, string productId = ProductId)
     {
-        var p = await CreateOrderAsync(http, services);
+        var p = await CreateOrderAsync(http, services, productId);
         (await PayAsync(http, p)).EnsureSuccessStatusCode();
         var res = await OpenGameAsync(http, p);
         res.EnsureSuccessStatusCode();

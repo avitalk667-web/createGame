@@ -128,6 +128,62 @@ public class WorldState
     public List<string> PlacedItems { get; set; } = new();
     public List<GoldenLetter> Letters { get; set; } = new();
     public Dictionary<string, int> Contributions { get; set; } = new();
+    /// <summary>Shared state of mechanism puzzles (slots, maze, mosaic), by puzzle id.</summary>
+    public Dictionary<string, MechanismState> Mechanisms { get; set; } = new();
+    /// <summary>Discovered clue ids → the player who found each first.</summary>
+    public Dictionary<string, string> Clues { get; set; } = new();
+    /// <summary>Scores of the current round (only for scenarios with scoring).</summary>
+    public ScoreBoard? Score { get; set; }
+}
+
+public sealed class MechanismState
+{
+    /// <summary>Slots: slot id → item id, and slot id → player who placed it.</summary>
+    public Dictionary<string, string> Slots { get; set; } = new();
+    public Dictionary<string, string> SlotBy { get; set; } = new();
+    /// <summary>Slots with an activate button: all parts are in the right places.</summary>
+    public bool Ready { get; set; }
+    /// <summary>Values revealed once every slot is filled (e.g. digits on the backs of the dreidels), by slot id.</summary>
+    public Dictionary<string, string> Backs { get; set; } = new();
+    /// <summary>Maze: key position [row, col], lever states, symbols passed in order.</summary>
+    public List<int> Key { get; set; } = new();
+    public List<bool> Levers { get; set; } = new();
+    public int Progress { get; set; }
+    /// <summary>Mosaic: quarter turns of each stone.</summary>
+    public List<int> Rotations { get; set; } = new();
+    /// <summary>Something the solved mechanism reveals, e.g. the code in the maze's collection box.</summary>
+    public string? Revealed { get; set; }
+}
+
+/// <summary>Personal and group score of a round. The server is the only authority (spec Part G §19).</summary>
+public sealed class ScoreBoard
+{
+    public Dictionary<string, int> Personal { get; set; } = new();
+    /// <summary>Puzzles, mechanisms and answers each player completed (contributions and tie-break).</summary>
+    public Dictionary<string, int> Solved { get; set; } = new();
+    public Dictionary<string, int> Rooms { get; set; } = new();
+    public int Group { get; set; }
+    /// <summary>Every award given this round; its key makes each award happen at most once.</summary>
+    public List<ScoreEntry> Log { get; set; } = new();
+}
+
+public sealed record ScoreEntry(string Key, string? PlayerId, string Kind, string Type, int Points, string Reason, string? Zone, string? PuzzleId, DateTime At);
+
+/// <summary>Every score award, stored once (unique per room, round and key) — spec Part H PlayerScoreEvents.</summary>
+public class PlayerScoreEvent
+{
+    public long Id { get; set; }
+    public Guid RoomId { get; set; }
+    public int Round { get; set; }
+    /// <summary>Null for group points.</summary>
+    public Guid? PlayerId { get; set; }
+    public string Kind { get; set; } = "personal";
+    public string Type { get; set; } = "";
+    public int Points { get; set; }
+    public string? Zone { get; set; }
+    public string? PuzzleId { get; set; }
+    public string Key { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
 }
 
 public record GoldenLetter(string Letter, string Zone);

@@ -1,0 +1,318 @@
+{
+  "id": "hanukkah-oil",
+  "name": "סוד פך השמן",
+  "tagline": "מסע בעקבות נס החנוכה",
+  "description": "שמונה חדרים רציפים באחוזה מסתורית. המשתתפים חוקרים, אוספים חפצים, מפענחים רמזים, מפעילים מנגנונים ופותרים חידות. עם השלמת כל חדר נפתחת הדלת לחדר הבא.",
+  "durationMinutes": "",
+  "difficulty": "משתנה",
+  "minPlayers": 1,
+  "maxPlayers": 8,
+  "finalWord": "8",
+  "introSeconds": 24,
+  "zones": [
+    { "id": "library", "name": "הספרייה הסודית", "order": 1, "icon": "book", "entryLine": "h_zone_library" },
+    { "id": "workshop", "name": "סדנת מנורת השמן", "order": 2, "icon": "gear", "entryLine": "h_zone_workshop" },
+    { "id": "maze", "name": "מבוך המפתח המגנטי", "order": 3, "icon": "compass", "entryLine": "h_zone_maze" },
+    { "id": "cipher", "name": "חדר הכתב המוצפן", "order": 4, "icon": "dial", "entryLine": "h_zone_cipher" },
+    { "id": "dreidels", "name": "חדר סביבוני הסוד", "order": 5, "icon": "star", "entryLine": "h_zone_dreidels" },
+    { "id": "lab", "name": "מעבדת השמן", "order": 6, "icon": "drop", "entryLine": "h_zone_lab" },
+    { "id": "mosaic", "name": "חדר הפסיפס והמראות", "order": 7, "icon": "mirror", "entryLine": "h_zone_mosaic" },
+    { "id": "hall", "name": "היכל האור", "order": 8, "icon": "portal", "entryLine": "h_zone_hall" }
+  ],
+  "zoneDifficulty": {
+    "library": "easy",
+    "workshop": "easy",
+    "maze": "medium",
+    "cipher": "hard",
+    "dreidels": "medium",
+    "lab": "hard",
+    "mosaic": "medium-hard",
+    "hall": "medium"
+  },
+  "scoring": {
+    "clue": 10,
+    "mechanism": 20,
+    "placement": 10,
+    "answer": 25,
+    "stage": 5,
+    "room": { "easy": 100, "medium": 150, "medium-hard": 200, "hard": 250 },
+    "hintPenalty": 10
+  },
+  "items": [
+    { "id": "antique-key", "name": "המפתח העתיק", "description": "מפתח עתיק שנמצא במגירה הנעולה של הספרייה.", "zone": "library", "spawnedAtStart": false },
+    { "id": "lamp-base", "name": "בסיס המנורה", "description": "בסיס כבד ורחב. עליו נשען כל השאר.", "zone": "workshop", "spawnedAtStart": true },
+    { "id": "lamp-tank", "name": "מכל שמן", "description": "מכל קטן שבו נשמר השמן.", "zone": "workshop", "spawnedAtStart": true },
+    { "id": "lamp-wick", "name": "פתיל", "description": "פתיל קלוע מכותנה.", "zone": "workshop", "spawnedAtStart": true },
+    { "id": "lamp-glass", "name": "זכוכית", "description": "גליל זכוכית שקוף שמגן על הלהבה.", "zone": "workshop", "spawnedAtStart": true },
+    { "id": "lamp-cover", "name": "מכסה", "description": "מכסה מתכת מחורר.", "zone": "workshop", "spawnedAtStart": true },
+    { "id": "menorah-symbol", "name": "סמל החנוכייה הזוהר", "description": "סמל חנוכייה זוהר שהתגלה כשהמנורה נדלקה.", "zone": "workshop", "spawnedAtStart": false },
+    { "id": "golden-key", "name": "המפתח המוזהב", "description": "מפתח מוזהב קטן שעבר את המבוך המגנטי.", "zone": "maze", "spawnedAtStart": false },
+    { "id": "light-stone", "name": "אבן האור", "description": "אבן זוהרת המסומנת בסמל אור.", "zone": "cipher", "spawnedAtStart": false },
+    { "id": "dreidel-nun", "name": "סביבון נ׳", "description": "סביבון קטן. על הדופן שלו האות נ׳.", "zone": "dreidels", "spawnedAtStart": true },
+    { "id": "dreidel-gimel", "name": "סביבון ג׳", "description": "סביבון קטן. על הדופן שלו האות ג׳.", "zone": "dreidels", "spawnedAtStart": true },
+    { "id": "dreidel-he", "name": "סביבון ה׳", "description": "סביבון קטן. על הדופן שלו האות ה׳.", "zone": "dreidels", "spawnedAtStart": true },
+    { "id": "dreidel-pe", "name": "סביבון פ׳", "description": "סביבון קטן. על הדופן שלו האות פ׳.", "zone": "dreidels", "spawnedAtStart": true },
+    { "id": "flame-symbol", "name": "סמל הלהבה", "description": "סמל עתיק של להבה מתוך התיבה בחדר הסביבונים.", "zone": "dreidels", "spawnedAtStart": false },
+    { "id": "golden-jug", "name": "פך השמן המוזהב", "description": "פך שמן מוזהב ממעבדת השמן — פריט מרכזי בחידה האחרונה.", "zone": "lab", "spawnedAtStart": false },
+    { "id": "blue-crystal", "name": "גביש האור הכחול", "description": "גביש אור כחול מחדר הפסיפס והמראות.", "zone": "mosaic", "spawnedAtStart": false }
+  ],
+  "recipes": [],
+  "clues": [
+    { "id": "r1-letter", "zone": "library", "title": "מכתב מקופל", "text": "המכתב נכתב בידי אחד משומרי האחוזה, ובו חידה על חפץ קטן שקשור לנס חנוכה." },
+    { "id": "r2-scroll", "zone": "workshop", "title": "מגילה עם איור המנורה", "text": "איור חלקי של המנורה, מלמטה למעלה: בסיס ← מכל שמן ← פתיל ← זכוכית ← מכסה." },
+    { "id": "r3-scroll", "zone": "maze", "title": "המגילה של המבוך", "text": "סדר הסמלים: כוכב ← להבה ← מנורה." },
+    { "id": "r4-scroll", "zone": "cipher", "title": "המגילה", "text": "„לכל אות ערך משלה. מצאו את ערכי האותיות, וקראו משמאל לימין את המילה שמאירה את החושך.”" },
+    { "id": "r4-gematria", "zone": "cipher", "title": "לוח ערכי גימטריה", "text": "א=1 · ב=2 · ג=3 · ד=4 · ה=5 · ו=6 · ז=7 · ח=8 · ט=9 · י=10 · כ=20 · ל=30 · מ=40 · נ=50 · ס=60 · ע=70 · פ=80 · צ=90 · ק=100 · ר=200 · ש=300 · ת=400" },
+    { "id": "r5-card-1", "zone": "dreidels", "title": "קלף רמז", "text": "נ נמצאת בפינה השמאלית העליונה." },
+    { "id": "r5-card-2", "zone": "dreidels", "title": "קלף רמז", "text": "ג נמצאת מימין לנ." },
+    { "id": "r5-card-3", "zone": "dreidels", "title": "קלף רמז", "text": "ה נמצאת מתחת לג." },
+    { "id": "r5-card-4", "zone": "dreidels", "title": "קלף רמז", "text": "פ נמצאת מתחת לנ." },
+    { "id": "r6-sign", "zone": "lab", "title": "הכתובת מעל הכדים", "text": "„רק אחת מארבע הכתובות שעל הכדים נכונה.”" }
+  ],
+  "achievements": [],
+  "puzzles": [
+    {
+      "id": "h1-riddle",
+      "order": 1,
+      "type": "cipher",
+      "zone": "library",
+      "title": "מכתב הסוד",
+      "objective": "קראו את המכתב ופתרו את החידה",
+      "instructions": "על שולחן העץ מונח מכתב מסתורי. קראו אותו, פתרו את החידה, והמגירה הנעולה תיפתח.",
+      "publicData": {
+        "riddle": "„קטן אני, אך סיפור גדול איתי. שמן היה בתוכי, ובנס מיוחד הספיק להדליק אור ימים רבים. מי אני?”",
+        "options": ["פך השמן", "מנורת שמן", "גלובוס עתיק", "זכוכית מגדלת"]
+      },
+      "solution": { "text": "פך השמן", "accept": ["פך שמן"] },
+      "hints": ["אני כלי קטן שמכיל נוזל.", "חפשו את הכלי שהשמן שבתוכו קשור לנס חנוכה."],
+      "success": "המגירה נפתחה! בתוכה מפתח עתיק — והוא פותח את הדלת לחדר השני.",
+      "failure": "זו לא התשובה. קראו שוב את החידה.",
+      "rewardItem": "antique-key",
+      "unlocksZone": "workshop"
+    },
+    {
+      "id": "h2-lamp",
+      "order": 2,
+      "type": "slots",
+      "zone": "workshop",
+      "title": "הרכבת מנורת השמן",
+      "objective": "מצאו את חמשת חלקי המנורה והרכיבו אותם לפי המגילה",
+      "instructions": "חפשו בחדר את חמשת חלקי המנורה והרימו אותם. הניחו אותם באזורי ההרכבה בשולחן העבודה, מלמטה למעלה. כשכל החלקים מונחים בסדר הנכון, יופעל הכפתור „הדלקת המנורה”.",
+      "publicData": {
+        "mode": "activate",
+        "activateLabel": "הדלקת המנורה",
+        "accepts": ["lamp-base", "lamp-tank", "lamp-wick", "lamp-glass", "lamp-cover"],
+        "slots": [
+          { "id": "s1", "label": "מקום 1 — התחתון" },
+          { "id": "s2", "label": "מקום 2" },
+          { "id": "s3", "label": "מקום 3" },
+          { "id": "s4", "label": "מקום 4" },
+          { "id": "s5", "label": "מקום 5 — העליון" }
+        ]
+      },
+      "solution": { "slots": { "s1": "lamp-base", "s2": "lamp-tank", "s3": "lamp-wick", "s4": "lamp-glass", "s5": "lamp-cover" } },
+      "hints": ["התחילו מהחלק שמחזיק את כל השאר.", "הפתיל צריך להיות מחובר למכל השמן."],
+      "success": "המנורה נדלקה והקרינה על הקיר סמל של מפתח. מאחורי לוח הקיר נחשף המפתח לחדר הבא — וסמל חנוכייה זוהר נאסף לתיק.",
+      "failure": "החלקים לא מסודרים נכון. בדקו שוב את המגילה.",
+      "rewardItem": "menorah-symbol",
+      "unlocksZone": "maze"
+    },
+    {
+      "id": "h3-maze",
+      "order": 3,
+      "type": "maze",
+      "zone": "maze",
+      "title": "מבוך המפתח המגנטי",
+      "objective": "הובילו את המפתח דרך הכוכב, הלהבה והמנורה — לפי הסדר שבמגילה",
+      "instructions": "המפתח כלוא מתחת לזכוכית. הזיזו אותו בעזרת המוט המגנטי. כדי לעבור אזורים חסומים צריך להפעיל מנופים. הפעלת מנוף שגוי אינה פותרת את החידה, אך מותר לנסות שוב. כשהמפתח מגיע ליציאה, הוא נכנס לתא האיסוף.",
+      "publicData": {
+        "grid": [
+          "#########",
+          "#S..a..*#",
+          "#.#####.#",
+          "#.#F.b..#",
+          "#.#.#####",
+          "#...M.cE#",
+          "#########"
+        ],
+        "symbols": { "*": "star", "F": "flame", "M": "menorah" },
+        "symbolNames": { "star": "כוכב", "flame": "להבה", "menorah": "מנורה" },
+        "levers": [
+          { "gate": "a", "label": "מנוף ראשון" },
+          { "gate": "b", "label": "מנוף שני" },
+          { "gate": "c", "label": "מנוף שלישי" }
+        ]
+      },
+      "solution": { "order": ["star", "flame", "menorah"], "revealCode": "825" },
+      "hints": ["לא כל שער פתוח מוביל ליציאה.", "סדרו את המסלול לפי הסמלים שבמגילה, ורק אז הפעילו את המנופים."],
+      "success": "המפתח הגיע ליציאה ונכנס לתא האיסוף. התא נפתח ומתגלה קוד בן שלוש ספרות!",
+      "failure": "המפתח עבר סמל שלא לפי הסדר וחזר להתחלה."
+    },
+    {
+      "id": "h3-box",
+      "order": 4,
+      "type": "cipher",
+      "zone": "maze",
+      "title": "תיבת המתכת",
+      "objective": "פתחו את תיבת המתכת שבקצה המבוך בקוד שהתגלה",
+      "instructions": "הזינו במנעול של תיבת המתכת את הקוד בן שלוש הספרות שהתגלה בתא האיסוף.",
+      "publicData": { "digits": 3 },
+      "solution": { "text": "825" },
+      "hints": ["הקוד מופיע בתא האיסוף שנפתח בסוף המבוך."],
+      "success": "תיבת המתכת נפתחה! המפתח המוזהב נכנס לתיק החפצים של הקבוצה.",
+      "failure": "הקוד אינו נכון. בדקו את הקוד שבתא האיסוף.",
+      "rewardItem": "golden-key",
+      "requiresPuzzle": "h3-maze",
+      "unlocksZone": "cipher"
+    },
+    {
+      "id": "h4-wheel",
+      "order": 5,
+      "type": "cipher",
+      "zone": "cipher",
+      "title": "גלגל האותיות",
+      "objective": "המירו את המספרים לאותיות והזינו את המילה בגלגל האותיות",
+      "instructions": "על שלושת הלוחות מופיעים המספרים. מצאו את לוח הגימטריה, המירו את המספרים לאותיות והזינו אותן בגלגל האותיות. יש לקרוא משמאל לימין לפי הסדר המוצג בחידה.",
+      "publicData": { "numbers": [1, 6, 200], "wheels": 3 },
+      "solution": { "text": "אור" },
+      "hints": ["אל תחפשו מילה בתוך הספר. חפשו את ערכי האותיות.", "האותיות א, ו, ר הן אותיות בעלות ערכי גימטריה 1, 6, 200."],
+      "success": "המילה „אור” נוצרה — מנגנון המגירה נפתח! בתוכה אבן זוהרת המסומנת בסמל אור.",
+      "failure": "הגלגלים לא נעצרו. בדקו שוב את ערכי האותיות.",
+      "rewardItem": "light-stone",
+      "unlocksZone": "dreidels"
+    },
+    {
+      "id": "h5-stand",
+      "order": 6,
+      "type": "slots",
+      "zone": "dreidels",
+      "title": "מתקן הסביבונים",
+      "objective": "מצאו את ארבעת הסביבונים ומקמו אותם במתקן לפי הרמזים",
+      "instructions": "הרימו את ארבעת הסביבונים והניחו אותם במתקן העץ לפי ארבעת הרמזים. בעת הנחת סביבון מוצגת האות שעליו. לאחר שכל הסביבונים הונחו, אפשר לקרוא את הספרות שבגבם.",
+      "publicData": {
+        "mode": "auto",
+        "layout": "grid2x2",
+        "accepts": ["dreidel-nun", "dreidel-gimel", "dreidel-he", "dreidel-pe"],
+        "slots": [
+          { "id": "tl", "label": "שורה עליונה — פינה שמאלית" },
+          { "id": "tr", "label": "שורה עליונה — פינה ימנית" },
+          { "id": "bl", "label": "שורה תחתונה — פינה שמאלית" },
+          { "id": "br", "label": "שורה תחתונה — פינה ימנית" }
+        ]
+      },
+      "solution": {
+        "slots": { "tl": "dreidel-nun", "tr": "dreidel-gimel", "bl": "dreidel-pe", "br": "dreidel-he" },
+        "backs": { "dreidel-nun": "4", "dreidel-gimel": "8", "dreidel-pe": "2", "dreidel-he": "6" }
+      },
+      "hints": ["קראו את ארבעת קלפי הרמז שליד המתקן — כל קלף קובע מקום של אות אחת.", "התחילו מנ׳: היא בפינה השמאלית העליונה, ושאר האותיות נקבעות ביחס אליה."],
+      "success": "כל הסביבונים במקומם! עכשיו אפשר לקרוא את הספרות שבגבם — משמאל לימין, שורה אחר שורה.",
+      "failure": "הסביבונים לא מסודרים לפי הרמזים."
+    },
+    {
+      "id": "h5-lock",
+      "order": 7,
+      "type": "cipher",
+      "zone": "dreidels",
+      "title": "התיבה עם המנעול המספרי",
+      "objective": "הזינו את הקוד שבגב הסביבונים",
+      "instructions": "קראו את הספרות שבגב הסביבונים משמאל לימין, שורה אחר שורה, והזינו את הקוד במנעול של תיבת העץ.",
+      "publicData": { "digits": 4 },
+      "solution": { "text": "4826" },
+      "hints": ["קוראים את השורה העליונה משמאל לימין, ואחריה את השורה התחתונה."],
+      "success": "התיבה נפתחה ובה סמל עתיק של להבה!",
+      "failure": "הקוד אינו נכון. קראו שוב את הספרות משמאל לימין, שורה אחר שורה.",
+      "rewardItem": "flame-symbol",
+      "requiresPuzzle": "h5-stand",
+      "unlocksZone": "lab"
+    },
+    {
+      "id": "h6-jugs",
+      "order": 8,
+      "type": "cipher",
+      "zone": "lab",
+      "title": "ארבעת כדי השמן",
+      "objective": "מצאו את הכד שבו השמן הטהור",
+      "instructions": "קראו את ארבע הכתובות. בחרו כד וסמנו אותו כמועמד, ובדקו כמה מהכתובות יהיו נכונות במקרה זה. רק כתובת אחת נכונה.",
+      "publicData": {
+        "sign": "„רק אחת מארבע הכתובות שעל הכדים נכונה.”",
+        "jugs": [
+          { "id": "א", "text": "„השמן הטהור נמצא בכד ב.”" },
+          { "id": "ב", "text": "„השמן הטהור אינו בכד ב.”" },
+          { "id": "ג", "text": "„השמן הטהור אינו בכד א.”" },
+          { "id": "ד", "text": "„השמן הטהור נמצא בכד ד.”" }
+        ]
+      },
+      "solution": { "text": "א" },
+      "hints": ["אל תנסו לנחש לפי צבע השמן. בדקו את המשפטים.", "הניחו בכל פעם שכד אחר הוא הטהור, ובדקו כמה משפטים יוצאים נכונים."],
+      "success": "המנגנון זיהה התאמה — מעבדת השמן נפתחה ונחשף פך שמן מוזהב!",
+      "failure": "בכד הזה אין שמן טהור. בדקו שוב כמה כתובות יוצאות נכונות.",
+      "rewardItem": "golden-jug",
+      "unlocksZone": "mosaic"
+    },
+    {
+      "id": "h7-mosaic",
+      "order": 9,
+      "type": "mosaic",
+      "zone": "mosaic",
+      "title": "לוח הפסיפס",
+      "objective": "סובבו את אבני הפסיפס כך שהאור יגיע מהכניסה אל סמל המנורה",
+      "instructions": "סובבו את אבני הפסיפס כך שחריצי האור יתחברו למסלול רציף מהכניסה ועד לסמל המנורה. לא כל אבן משתתפת במסלול; האור אינו יכול לעבור דרך קצה חסום. אם המסלול נקטע, האור נעצר בנקודת החסימה.",
+      "publicData": {
+        "size": 3,
+        "entry": { "row": 1, "side": "W" },
+        "target": { "row": 1, "side": "E" },
+        "tiles": ["dead", "dead", "dead", "straight", "corner", "corner", "dead", "corner", "corner"],
+        "start": [0, 1, 2, 0, 0, 3, 1, 2, 1]
+      },
+      "solution": { "path": [[1, 0], [1, 1], [2, 1], [2, 2], [1, 2]] },
+      "hints": ["האור נכנס בשורה האמצעית משמאל, וסמל המנורה נמצא בשורה האמצעית מימין.", "האבנים בשורה העליונה ובפינה השמאלית התחתונה אינן משתתפות במסלול."],
+      "success": "האור הגיע לסמל המנורה — שער האבן נפתח! גביש אור כחול נכנס לתיק.",
+      "failure": "",
+      "rewardItem": "blue-crystal",
+      "unlocksZone": "hall"
+    },
+    {
+      "id": "h8-pedestals",
+      "order": 10,
+      "type": "slots",
+      "zone": "hall",
+      "title": "סידור חפצי המסע",
+      "objective": "הניחו כל פריט מהמסע על הכן המתאים לו",
+      "instructions": "על כל כן מופיע רמז שמתאר את הפריט המתאים. הרימו כל פריט מהתיק, בדקו אותו והניחו אותו על הכן המתאים. כשהפריטים מסודרים נכון, מנגנון ההיכל מופעל.",
+      "publicData": {
+        "mode": "auto",
+        "accepts": ["antique-key", "menorah-symbol", "golden-key", "light-stone", "flame-symbol", "golden-jug", "blue-crystal"],
+        "slots": [
+          { "id": "p1", "label": "כאן מונח מה שהסתתר במגירה הנעולה של הספרייה." },
+          { "id": "p2", "label": "כאן מונח האור שעלה מהמנורה שהורכבה בסדנה." },
+          { "id": "p3", "label": "כאן מונח מה שעבר במבוך בין הכוכב, הלהבה והמנורה." },
+          { "id": "p4", "label": "כאן מונחת האבן שהתגלתה כשנמצאה המילה שמאירה את החושך." },
+          { "id": "p5", "label": "כאן מונח מה שהסתתר בתיבה שליד הסביבונים." },
+          { "id": "p6", "label": "כאן מונח הכלי שבו נמצא השמן הטהור." },
+          { "id": "p7", "label": "כאן מונח מה שנולד כשהאור הכחול הגיע אל המנורה." }
+        ]
+      },
+      "solution": {
+        "slots": { "p1": "antique-key", "p2": "menorah-symbol", "p3": "golden-key", "p4": "light-stone", "p5": "flame-symbol", "p6": "golden-jug", "p7": "blue-crystal" }
+      },
+      "hints": ["כל כן מתאר חדר אחד מהמסע. חשבו מה קיבלתם בכל חדר.", "פך השמן ממעבדת השמן מונח על הכן של הכלי עם השמן הטהור."],
+      "success": "כל חפצי המסע במקומם — מנגנון ההיכל הופעל! בספר הפתוח מופיעה החידה האחרונה.",
+      "failure": "המנגנון לא הגיב. בדקו את הרמזים שעל הכנים."
+    },
+    {
+      "id": "h8-final",
+      "order": 11,
+      "type": "cipher",
+      "zone": "hall",
+      "title": "החידה האחרונה",
+      "objective": "הזינו את התשובה במנגנון המרכזי",
+      "instructions": "קראו את המשפט שבספר והזינו את המספר במנגנון המרכזי.",
+      "publicData": { "question": "„מעט היה השמן, אך הנס האריך את אורו. כמה ימים האיר?”" },
+      "solution": { "text": "8", "accept": ["שמונה", "שמונה ימים", "8 ימים"] },
+      "hints": ["חשבו על מספר נרות החנוכה, בלי השמש."],
+      "success": "כל הכבוד! גיליתם את סוד פך השמן והשלמתם את מסע החנוכה.",
+      "failure": "זו לא התשובה. קראו שוב את המשפט שבספר.",
+      "requiresPuzzle": "h8-pedestals"
+    }
+  ]
+}

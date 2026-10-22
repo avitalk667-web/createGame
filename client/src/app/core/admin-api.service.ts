@@ -35,6 +35,7 @@ export interface AdminGame {
   code: string; productId?: string | null; productName?: string | null; access: string; isTest: boolean; orderNumber?: number | null;
   owner?: string | null; createdAt: string; startedAt?: string | null; endedAt?: string | null; players: number; phase: string; status: string;
   result?: { durationSeconds: number; hintsUsed: number; puzzlesSolved: number; puzzlesTotal: number; completionType: string } | null;
+  groupScore?: number | null;
 }
 
 export interface AdminProduct {

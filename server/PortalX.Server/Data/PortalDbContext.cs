@@ -19,6 +19,7 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
     public DbSet<PaymentEvent> PaymentEvents => Set<PaymentEvent>();
     public DbSet<Entitlement> Entitlements => Set<Entitlement>();
     public DbSet<AdminAuditLog> AdminAuditLog => Set<AdminAuditLog>();
+    public DbSet<PlayerScoreEvent> ScoreEvents => Set<PlayerScoreEvent>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -112,6 +113,14 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             // one entitlement per paid order, however many times the provider confirms it
             e.HasIndex(x => x.OrderId).IsUnique().HasFilter("\"OrderId\" IS NOT NULL");
             e.Property(x => x.Version).IsRowVersion();
+        });
+
+        b.Entity<PlayerScoreEvent>(e =>
+        {
+            e.ToTable("PlayerScoreEvents");
+            e.HasKey(x => x.Id);
+            // the same award can never be stored twice (spec Part G §19)
+            e.HasIndex(x => new { x.RoomId, x.Round, x.Key }).IsUnique();
         });
 
         b.Entity<AdminAuditLog>(e =>

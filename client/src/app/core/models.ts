@@ -78,6 +78,12 @@ export interface RoomSnapshot {
   result?: ResultDto;
   /** Room the whole group belongs in — decided by the server. */
   activeZone: string;
+  /** Shared state of mechanism puzzles (Hanukkah game), by puzzle id. */
+  mechanisms?: Record<string, MechanismState> | null;
+  /** Discovered clue id → player who found it first. */
+  clues?: Record<string, string> | null;
+  /** Personal and group score (only games with scoring). */
+  score?: ScoreDto | null;
   /** When the server unlocked it; clients move the group at activeZoneSince + transitionDelayMs. */
   activeZoneSince?: string;
   transitionDelayMs: number;
@@ -99,6 +105,46 @@ export interface GameNotice {
   voiceLine?: string;
   itemId?: string;
   zone?: string;
+  points?: number;
+}
+
+export interface MechanismState {
+  slots: Record<string, string>;
+  slotBy: Record<string, string>;
+  ready: boolean;
+  backs: Record<string, string>;
+  key: number[];
+  levers: boolean[];
+  progress: number;
+  rotations: number[];
+  revealed?: string | null;
+  lit?: number[][];
+  reached?: boolean;
+}
+
+export interface PlayerScore {
+  playerId: string;
+  nickname: string;
+  points: number;
+  solved: number;
+  contributions: number;
+  rank: number;
+}
+
+export interface ScoreDto {
+  group: number;
+  rooms: Record<string, number>;
+  hintsByZone: Record<string, number>;
+  hintsUsed: number;
+  players: PlayerScore[];
+  tie: boolean;
+}
+
+export interface ClueContent {
+  id: string;
+  zone: string;
+  title: string;
+  text: string;
 }
 
 export interface ChatMessage {
@@ -139,7 +185,7 @@ export interface ItemContent {
 export interface PuzzleContent {
   id: string;
   order: number;
-  type: 'cipher' | 'sequence' | 'sound' | 'split' | 'items' | 'final';
+  type: 'cipher' | 'sequence' | 'sound' | 'split' | 'items' | 'final' | 'slots' | 'maze' | 'mosaic';
   zone: string;
   title: string;
   objective: string;
@@ -150,6 +196,9 @@ export interface PuzzleContent {
   rewardLetter?: string;
   rewardItem?: string;
   unlocksZone?: string;
+  requiresPuzzle?: string;
+  /** Number of official hints (their texts come from the server one by one). */
+  hintCount?: number;
 }
 
 export interface ScenarioContent {
@@ -166,6 +215,9 @@ export interface ScenarioContent {
   recipes: { inputs: string[]; output: string; message: string }[];
   puzzles: PuzzleContent[];
   achievements: Achievement[];
+  clues?: ClueContent[];
+  zoneDifficulty?: Record<string, string>;
+  scoring?: { room: Record<string, number>; hintPenalty: number } | null;
 }
 
 export interface ScenarioSummary {

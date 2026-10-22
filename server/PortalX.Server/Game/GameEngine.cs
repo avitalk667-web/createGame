@@ -20,7 +20,7 @@ public sealed class GameOptions
 
 /// <summary>A message the server announces to the whole group after an action.</summary>
 public sealed record GameNotice(string Kind, string Message, string? PlayerId = null, string? PuzzleId = null,
-    string? VoiceLine = null, string? ItemId = null, string? Zone = null);
+    string? VoiceLine = null, string? ItemId = null, string? Zone = null, int? Points = null);
 
 public sealed record ActionOutcome(bool Ok, string Code, string Message, IReadOnlyList<GameNotice> Notices,
     bool StateChanged, JsonNode? Data = null)
@@ -33,7 +33,7 @@ public sealed record ActionOutcome(bool Ok, string Code, string Message, IReadOn
 /// Server-side rules of the game. All validation happens here — the client never decides that a puzzle was solved (spec §13).
 /// Methods mutate the passed room; the caller persists and broadcasts.
 /// </summary>
-public sealed class GameEngine(ScenarioCatalog catalog, GameOptions options)
+public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions options)
 {
     public const int MaxNicknameLength = 16;
     public static readonly string[] Characters = ["explorer", "scholar", "navigator", "detective"];
@@ -42,6 +42,8 @@ public sealed class GameEngine(ScenarioCatalog catalog, GameOptions options)
     public GameOptions Options => options;
 
     public int MinPlayers(ScenarioContent s) => options.MinPlayersOverride ?? s.MinPlayers;
+
+    public int IntroSeconds(ScenarioContent s) => s.IntroSeconds ?? options.IntroSeconds;
 
     // ---------------------------------------------------------------- room & lobby
 
@@ -172,7 +174,7 @@ public sealed class GameEngine(ScenarioCatalog catalog, GameOptions options)
         if (room.Phase != RoomPhase.Intro) return new ActionOutcome(true, "noop", "", Array.Empty<GameNotice>(), false);
         if (skip && room.HostPlayerId != playerId) return ActionOutcome.Fail("not-host", "רק המארח יכול לדלג על הפתיחה עבור כולם.");
         var elapsed = now - (room.IntroStartedAt ?? now);
-        if (!skip && elapsed.TotalSeconds < options.IntroSeconds - 5)
+        if (!skip && elapsed.TotalSeconds < IntroSeconds(catalog.Get(room.ScenarioId)) - 5)
             return ActionOutcome.Fail("too-early", "סצנת הפתיחה עדיין מתנגנת.");
         room.Phase = RoomPhase.Playing;
         room.StartedAt = now;
@@ -204,6 +206,7 @@ public sealed class GameEngine(ScenarioCatalog catalog, GameOptions options)
         var check = CheckPuzzleAccess(room, playerId, puzzleId, now, out var scenario, out var puzzle, out var state, out var player);
         if (check != null) return check;
         if (puzzle!.Type == "items") return ActionOutcome.Fail("wrong-action", "את החידה הזאת פותרים בעזרת הנחת חפצים על הכן.");
+        if (MechanismTypes.Contains(puzzle.Type)) return ActionOutcome.Fail("wrong-action", "את החידה הזאת פותרים בעזרת המנגנון שבחדר.");
 
         bool correct;
         try { correct = IsCorrect(puzzle, answer); }
@@ -231,9 +234,19 @@ public sealed class GameEngine(ScenarioCatalog catalog, GameOptions options)
 
     public ActionOutcome RequestHint(GameRoom room, Guid playerId, string puzzleId, DateTime now)
     {
-        var check = CheckPuzzleAccess(room, playerId, puzzleId, now, out _, out var puzzle, out var state, out var player, ignoreCooldown: true);
+        var check = CheckPuzzleAccess(room, playerId, puzzleId, now, out var hintScenario, out var puzzle, out var state, out var player, ignoreCooldown: true);
         if (check != null) return check;
         if (state!.HintsRevealed >= puzzle!.Hints.Count) return ActionOutcome.Fail("no-more-hints", "כבר נחשפו כל הרמזים לחידה הזאת.");
+        if (hintScenario!.Scoring is { } rules)
+        {
+            // an official hint costs the group points of this room, never personal points already earned
+            state.HintsRevealed++;
+            room.UpdatedAt = now;
+            var hint = puzzle.Hints[state.HintsRevealed - 1];
+            return ActionOutcome.Done(hint, new GameNotice("hint",
+                $"{player!.Nickname} ביקש רמז (−{rules.HintPenalty} לניקוד הקבוצתי של החדר): {hint}",
+                player.Id.ToString(), puzzle.Id, Zone: puzzle.Zone, Points: -rules.HintPenalty));
+        }
         state.HintsRevealed++;
         room.UpdatedAt = now;
         var level = state.HintsRevealed;
@@ -432,7 +445,8 @@ public sealed class GameEngine(ScenarioCatalog catalog, GameOptions options)
 
     // ---------------------------------------------------------------- internals
 
-    private ActionOutcome Solve(GameRoom room, ScenarioContent scenario, PuzzleContent puzzle, PuzzleState state, PlayerSession player, DateTime now)
+    private ActionOutcome Solve(GameRoom room, ScenarioContent scenario, PuzzleContent puzzle, PuzzleState state, PlayerSession player, DateTime now,
+        List<GameNotice>? prior = null)
     {
         state.Status = PuzzleStatus.Solved;
         state.SolvedAt = now;
@@ -461,9 +475,7 @@ public sealed class GameEngine(ScenarioCatalog catalog, GameOptions options)
                 collected.Add(left.Id);
             }
         }
-        SaveWorld(room, world, now);
-
-        var notices = new List<GameNotice>
+        var notices = new List<GameNotice>(prior ?? [])
         {
             new("puzzle-solved", $"{player.Nickname} פתר את „{puzzle.Title}”! {puzzle.Success}", player.Id.ToString(), puzzle.Id, VoiceLine: $"{puzzle.Id}_success"),
         };
@@ -472,22 +484,31 @@ public sealed class GameEngine(ScenarioCatalog catalog, GameOptions options)
         if (collected.Count > 0)
             notices.Add(new("item-collected", "נכנס לתיק המשותף: " + string.Join(", ", collected.Select(id => scenario.Item(id)?.Name ?? id)),
                 PuzzleId: puzzle.Id, ItemId: collected[0]));
+        // puzzles in the same room that waited for this one
+        foreach (var next in scenario.Puzzles.Where(p => p.RequiresPuzzle == puzzle.Id))
+        {
+            var ns = room.Puzzles.First(x => x.PuzzleId == next.Id);
+            if (ns.Status == PuzzleStatus.Locked) ns.Status = PuzzleStatus.Active;
+        }
+        ScoreSolve(room, scenario, puzzle, player, world, now, notices);
         if (puzzle.UnlocksZone != null)
         {
             var zone = scenario.Zones.First(z => z.Id == puzzle.UnlocksZone);
-            notices.Add(new("zone-unlocked", $"נפתחה הדרך אל {zone.Name}", Zone: zone.Id, VoiceLine: zone.EntryLine));
-            foreach (var next in scenario.Puzzles.Where(p => p.Zone == zone.Id))
+            notices.Add(new("zone-unlocked", scenario.Scoring != null ? $"החדר הבא נפתח! {zone.Name}" : $"נפתחה הדרך אל {zone.Name}",
+                Zone: zone.Id, VoiceLine: zone.EntryLine));
+            foreach (var next in scenario.Puzzles.Where(p => p.Zone == zone.Id && p.RequiresPuzzle == null))
             {
                 var ns = room.Puzzles.First(x => x.PuzzleId == next.Id);
                 if (ns.Status == PuzzleStatus.Locked) ns.Status = PuzzleStatus.Active;
             }
         }
+        SaveWorld(room, world, now);
 
         if (scenario.Puzzles.All(p => room.Puzzles.First(x => x.PuzzleId == p.Id).Status == PuzzleStatus.Solved))
         {
             room.Phase = RoomPhase.Completed;
             room.EndedAt = now;
-            notices.Add(new("game-completed", "הפורטל נפתח — הצלחתם!", VoiceLine: "outro_success"));
+            notices.Add(new("game-completed", scenario.Scoring != null ? puzzle.Success : "הפורטל נפתח — הצלחתם!", VoiceLine: "outro_success"));
         }
         room.UpdatedAt = now;
         return new ActionOutcome(true, "solved", puzzle.Success, notices, true);
@@ -521,12 +542,17 @@ public sealed class GameEngine(ScenarioCatalog catalog, GameOptions options)
         {
             var s = room.Puzzles.FirstOrDefault(x => x.PuzzleId == p.Id);
             if (s == null) room.Puzzles.Add(s = new PuzzleState { RoomId = room.Id, PuzzleId = p.Id });
-            s.Status = p.Zone == first ? PuzzleStatus.Active : PuzzleStatus.Locked;
+            s.Status = p.Zone == first && p.RequiresPuzzle == null ? PuzzleStatus.Active : PuzzleStatus.Locked;
             s.Attempts = s.WrongStreak = s.HintsRevealed = 0;
             s.CooldownUntil = s.SolvedAt = null;
             s.SolvedByPlayerId = null;
         }
-        var world = new WorldState { WorldItems = scenario.Items.Where(i => i.SpawnedAtStart).Select(i => i.Id).ToList() };
+        var world = new WorldState
+        {
+            WorldItems = scenario.Items.Where(i => i.SpawnedAtStart).Select(i => i.Id).ToList(),
+            Mechanisms = scenario.Puzzles.Where(p => MechanismTypes.Contains(p.Type)).ToDictionary(p => p.Id, NewMechanism),
+            Score = scenario.Scoring != null ? new ScoreBoard() : null,
+        };
         room.WorldJson = JsonSerializer.Serialize(world, ScenarioCatalog.JsonOptions);
     }
 
@@ -546,7 +572,8 @@ public sealed class GameEngine(ScenarioCatalog catalog, GameOptions options)
             case "final":
             case "split":
             {
-                var expected = NormalizeText(puzzle.Solution["text"]!.GetValue<string>());
+                var accepted = new List<string> { puzzle.Solution["text"]!.GetValue<string>() };
+                if (puzzle.Solution["accept"] is JsonArray alternatives) accepted.AddRange(alternatives.Select(n => n!.GetValue<string>()));
                 string given = answer.ValueKind switch
                 {
                     JsonValueKind.String => answer.GetString() ?? "",
@@ -554,7 +581,7 @@ public sealed class GameEngine(ScenarioCatalog catalog, GameOptions options)
                     JsonValueKind.Object when answer.TryGetProperty("text", out var t) => t.GetString() ?? "",
                     _ => "",
                 };
-                return NormalizeText(given) == expected;
+                return accepted.Select(NormalizeText).Contains(NormalizeText(given));
             }
             case "sequence":
             case "sound":

@@ -6,7 +6,9 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace PortalX.Tests;
 
@@ -231,5 +233,69 @@ public class HubIntegrationTests
         Assert.Contains("הפורטל האחרון", json);
         Assert.DoesNotContain("solution", json);
         Assert.DoesNotContain("749", json);
+    }
+
+    /// <summary>Hanukkah game over SignalR: two players stay in sync, scores reach both and are stored once, a reconnect keeps them.</summary>
+    [Fact]
+    public async Task Hanukkah_two_players_sync_scores_and_reconnect()
+    {
+        var http = _factory.CreateClient();
+        var (code, hostClaim) = await TestPurchase.PaidRoomAsync(http, _factory.Services, "hanukkah-oil");
+        var host = await JoinAsync(http, code, "ישראל", "explorer", hostClaim);
+        var guest = await JoinAsync(http, code, "דוד", "scholar");
+        await Ok(guest.Conn.InvokeAsync<JsonElement>("SetReady", true));
+        await Ok(host.Conn.InvokeAsync<JsonElement>("StartGame"));
+        await Ok(host.Conn.InvokeAsync<JsonElement>("FinishIntro", true));
+
+        // the guest finds the letter; the same click sent twice and a second click score once
+        var clue = await Ok(guest.Conn.InvokeAsync<JsonElement>("DiscoverClue", "r1-letter", "a1"));
+        await guest.Conn.InvokeAsync<JsonElement>("DiscoverClue", "r1-letter", "a1");
+        await guest.Conn.InvokeAsync<JsonElement>("DiscoverClue", "r1-letter", "a2");
+        Assert.Contains("חידה", clue.GetProperty("message").GetString());
+
+        var solved = await Ok(host.Conn.InvokeAsync<JsonElement>("SubmitAnswer", "h1-riddle", JsonSerializer.SerializeToElement("פך השמן"), "a3"));
+        Assert.Equal("solved", solved.GetProperty("code").GetString());
+
+        await WaitFor(() => guest.Notices.Any(n => n.GetProperty("kind").GetString() == "zone-unlocked"));
+        Assert.Contains(guest.Notices, n => n.GetProperty("kind").GetString() == "team-solved" && n.GetProperty("message").GetString() == "הקבוצה פתרה את החידה!");
+        Assert.Contains(guest.Notices, n => n.GetProperty("kind").GetString() == "clue" && n.GetProperty("message").GetString() == "דוד גילה רמז!");
+        Assert.Contains(host.Notices, n => n.GetProperty("kind").GetString() == "score" && n.GetProperty("points").GetInt32() == 25);
+
+        var state = guest.LastState!.Value;
+        Assert.Contains("workshop", state.GetProperty("unlockedZones").EnumerateArray().Select(z => z.GetString()));
+        var score = state.GetProperty("score");
+        Assert.Equal(100, score.GetProperty("group").GetInt32());
+        int Points(JsonElement s, string id) => s.GetProperty("players").EnumerateArray().First(p => p.GetProperty("playerId").GetString() == id).GetProperty("points").GetInt32();
+        Assert.Equal(25, Points(score, host.PlayerId));
+        Assert.Equal(10, Points(score, guest.PlayerId));
+
+        // stored once each in the database
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PortalX.Server.Data.PortalDbContext>();
+            var roomId = Guid.Parse(state.GetProperty("roomId").GetString()!);
+            var rows = await db.ScoreEvents.Where(e => e.RoomId == roomId).ToListAsync();
+            Assert.Single(rows, e => e.Key == "clue:r1-letter" && e.Points == 10);
+            Assert.Single(rows, e => e.Key == "answer:h1-riddle" && e.Points == 25);
+            Assert.Single(rows, e => e.Key == "room:library" && e.Points == 100 && e.PlayerId == null);
+        }
+
+        // the guest drops and comes back with the same seat and score
+        var token = guest.Token;
+        await guest.DisposeAsync();
+        var back = NewConnection();
+        await back.StartAsync();
+        var again = await back.InvokeAsync<JsonElement>("Connect", token);
+        Assert.True(again.GetProperty("ok").GetBoolean());
+        Assert.Equal(10, Points(again.GetProperty("snapshot").GetProperty("score"), guest.PlayerId));
+        Assert.Equal("workshop", again.GetProperty("snapshot").GetProperty("activeZone").GetString());
+        await back.DisposeAsync();
+        await host.DisposeAsync();
+    }
+
+    private static async Task WaitFor(Func<bool> condition)
+    {
+        for (var i = 0; i < 50 && !condition(); i++) await Task.Delay(100);
+        Assert.True(condition());
     }
 }
