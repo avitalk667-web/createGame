@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using PortalX.Server;
 using PortalX.Server.Admin;
 using PortalX.Server.Content;
 using PortalX.Server.Data;
@@ -92,7 +93,7 @@ app.UseForwardedHeaders();
 app.Use(async (ctx, next) =>
 {
     var path = ctx.Request.Path;
-    if ((path.StartsWithSegments("/api") && !path.StartsWithSegments("/api/health") && !path.StartsWithSegments("/api/scenarios"))
+    if ((path.StartsWithSegments("/api") && !path.StartsWithSegments("/api/health") && !path.StartsWithSegments("/api/version") && !path.StartsWithSegments("/api/scenarios"))
         || path.StartsWithSegments("/hubs"))
     {
         if (!ctx.RequestServices.GetRequiredService<DatabaseStatus>().IsReady)
@@ -106,12 +107,15 @@ app.Use(async (ctx, next) =>
     await next();
 });
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(StaticCaching.Options);
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
 var api = app.MapGroup("/api");
+
+// which commit and front-end bundle are deployed (to verify a deploy)
+api.MapGet("/version", (IWebHostEnvironment env) => Results.Ok(StaticCaching.Version(env)));
 
 api.MapGet("/health", (DatabaseStatus db) => Results.Ok(new
 {
@@ -181,7 +185,7 @@ api.MapPost("/rooms/{code}/players", async (string code, JoinRequest req, RoomSe
 app.MapHub<GameHub>("/hubs/game");
 // unknown API paths answer 404 instead of falling through to the Angular page
 app.Map("/api/{**rest}", () => Results.NotFound(new ApiError("not-found", "הכתובת לא נמצאה.")));
-app.MapFallbackToFile("index.html");
+app.MapFallbackToFile("index.html", StaticCaching.Options);
 
 app.Run();
 return 0;
