@@ -36,7 +36,8 @@ public static class DatabaseStartup
             logger.LogInformation("Database: {Target}", DatabaseConfig.Describe(DatabaseConfig.Resolve(config)));
             using var scope = services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<PortalDbContext>();
-            await PortalDbContext.InitializeAsync(db, scope.ServiceProvider.GetRequiredService<ScenarioCatalog>());
+            await PortalDbContext.InitializeAsync(db, scope.ServiceProvider.GetRequiredService<ScenarioCatalog>(),
+                scope.ServiceProvider.GetRequiredService<List<ProductSeed>>());
             status.Ready();
             logger.LogInformation("Database ready (attempt {Attempt}).", status.Attempts);
             return true;

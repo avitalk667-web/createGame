@@ -14,6 +14,7 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
     public DbSet<PuzzleState> PuzzleStates => Set<PuzzleState>();
     public DbSet<GameEvent> Events => Set<GameEvent>();
     public DbSet<GameResult> Results => Set<GameResult>();
+    public DbSet<Product> Products => Set<Product>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -56,12 +57,25 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.HasIndex(x => x.RoomId);
             e.Property(x => x.AchievementsJson).HasColumnType("jsonb");
         });
+
+        b.Entity<Product>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.PriceIls).HasPrecision(10, 2);
+            e.Property(x => x.Currency).HasMaxLength(3);
+            e.Property(x => x.GalleryJson).HasColumnType("jsonb");
+            e.Property(x => x.FeaturesJson).HasColumnType("jsonb");
+            e.Property(x => x.IncludedJson).HasColumnType("jsonb");
+            e.ToTable(t => t.HasCheckConstraint("CK_Products_Price", "\"PriceIls\" IS NULL OR \"PriceIls\" > 0"));
+        });
     }
 
-    /// <summary>Creates the schema if needed and mirrors the content files into the scenario tables.</summary>
-    public static async Task InitializeAsync(PortalDbContext db, ScenarioCatalog catalog)
+    /// <summary>Applies migrations and mirrors the content files into the scenario tables.</summary>
+    public static async Task InitializeAsync(PortalDbContext db, ScenarioCatalog catalog, IEnumerable<ProductSeed> products)
     {
-        await db.Database.EnsureCreatedAsync();
+        await MigrationBaseline.ApplyAsync(db);
+        await ProductSeed.SeedAsync(db, products);
         foreach (var s in catalog.All)
         {
             var row = await db.Scenarios.FindAsync(s.Id) ?? db.Scenarios.Add(new GameScenario { Id = s.Id }).Entity;

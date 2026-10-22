@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { ScenarioContent, ScenarioSummary } from './models';
+import { Product, ScenarioContent, ScenarioSummary } from './models';
 
 export class ApiError extends Error {
   constructor(public code: string, message: string) {
@@ -36,6 +36,14 @@ export class ApiService {
     const data = await res.json().catch(() => null);
     if (!res.ok) throw new ApiError(data?.code ?? 'error', data?.message ?? 'אירעה שגיאה. נסו שוב.');
     return data as T;
+  }
+
+  products() {
+    return this.request<Product[]>('GET', '/api/products');
+  }
+
+  product(id: string) {
+    return this.request<Product>('GET', `/api/products/${encodeURIComponent(id)}`);
   }
 
   scenarios() {

@@ -17,6 +17,7 @@ builder.Services.AddDbContext<PortalDbContext>((sp, o) => o.UseNpgsql(
     // retry transient failures, e.g. right after the computer wakes from sleep
     npgsql => npgsql.EnableRetryOnFailure(4, TimeSpan.FromSeconds(3), null)));
 builder.Services.AddSingleton(_ => ScenarioCatalog.LoadDefault());
+builder.Services.AddSingleton(_ => ProductSeed.LoadDefault());
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IConfiguration>().GetSection("Game").Get<GameOptions>() ?? new GameOptions());
 builder.Services.AddSingleton<GameEngine>();
 builder.Services.AddSingleton<RoomRuntime>();
@@ -104,6 +105,16 @@ api.MapGet("/scenarios", (ScenarioCatalog catalog) => catalog.All.Select(s => ne
 
 api.MapGet("/scenarios/{id}", (string id, ScenarioCatalog catalog) =>
     catalog.Find(id) is { } s ? Results.Content(Snapshots.PublicScenario(s).ToJsonString(ScenarioCatalog.JsonOptions), "application/json; charset=utf-8") : Results.NotFound());
+
+// Shared catalog of purchasable games (spec §1): only published products, price from the server.
+api.MapGet("/products", async (PortalDbContext db, ScenarioCatalog scenarios) =>
+    (await db.Products.AsNoTracking().Where(p => p.Status == PortalX.Server.Domain.ProductStatus.Published)
+        .OrderBy(p => p.SortOrder).ToListAsync()).Select(p => ProductView.Build(p, scenarios)));
+
+api.MapGet("/products/{id}", async (string id, PortalDbContext db, ScenarioCatalog scenarios) =>
+    await db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id && p.Status == PortalX.Server.Domain.ProductStatus.Published) is { } p
+        ? Results.Ok(ProductView.Build(p, scenarios))
+        : Results.NotFound(new ApiError("no-product", "המשחק לא נמצא.")));
 
 api.MapPost("/rooms", async (CreateRoomRequest req, RoomService rooms, ScenarioCatalog catalog) =>
 {

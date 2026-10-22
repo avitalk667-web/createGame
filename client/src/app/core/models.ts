@@ -199,3 +199,32 @@ export const CHARACTERS: CharacterInfo[] = [
 ];
 
 export const characterInfo = (id: string | undefined) => CHARACTERS.find((c) => c.id === id) ?? CHARACTERS[0];
+
+/** A purchasable game from the shared catalog (/api/products). The price always comes from the server. */
+export interface Product {
+  id: string;
+  name: string;
+  tagline: string;
+  description: string;
+  price?: number | null;
+  currency: string;
+  coverImage: string;
+  gallery: { src: string; caption: string }[];
+  features: string[];
+  included: string[];
+  minPlayers: number;
+  maxPlayers: number;
+  scenarioId?: string | null;
+  playable: boolean;
+  priceSet: boolean;
+}
+
+export function formatPrice(p: Product): string | null {
+  if (p.price == null) return null;
+  const n = Number.isInteger(p.price) ? String(p.price) : p.price.toFixed(2);
+  return p.currency === 'ILS' ? `${n} ₪` : `${n} ${p.currency}`;
+}
+
+export function playersLabel(p: Product): string {
+  return p.minPlayers > 1 ? `${p.minPlayers}–${p.maxPlayers} משתתפים` : `עד ${p.maxPlayers} משתתפים`;
+}

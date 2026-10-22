@@ -1,158 +1,187 @@
-import { AfterViewInit, ChangeDetectionStrategy, Component, ElementRef, OnDestroy, inject, signal, viewChild } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
-import { ApiService, sessionStore } from '../core/api.service';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { ApiService } from '../core/api.service';
 import { AudioService } from '../core/audio.service';
-import { ScenarioSummary } from '../core/models';
-import { SettingsService } from '../core/settings.service';
-import { GameWorld } from '../world/world';
-import { IconComponent } from '../ui/icon.component';
+import { Product, formatPrice, playersLabel } from '../core/models';
 import { SettingsPanelComponent } from '../ui/settings-panel.component';
 
-/** Step 1 — home: game name, short pitch, the "start adventure" button, the featured adventure (spec §4). */
+/** Shared entry gate: a catalog of both games, each with its own server-side price (spec §2). */
 @Component({
   selector: 'px-home',
-  imports: [RouterLink, IconComponent, SettingsPanelComponent],
+  imports: [RouterLink, SettingsPanelComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="bg"><canvas #c aria-hidden="true"></canvas><div class="shade"></div></div>
-    <main>
-      <header class="top">
-        <span class="brand gold-title">PORTAL X</span>
+    <div class="bg" aria-hidden="true"></div>
+    <header class="top">
+      <a routerLink="/" class="brand gold-title">PORTAL X</a>
+      <nav aria-label="ניווט ראשי">
+        <a class="anchor" href="#games" (click)="scrollTo($event, 'games')">המשחקים</a>
+        <a class="anchor" href="#how" (click)="scrollTo($event, 'how')">איך משחקים?</a>
+        <a routerLink="/join" class="btn small">יש לי קוד משחק</a>
         <button class="btn small ghost" (click)="showSettings.set(true)">הגדרות</button>
-      </header>
+      </nav>
+    </header>
 
+    <main>
       <section class="hero">
-        <h1><span class="gold-title">PORTAL X</span></h1>
-        <p class="sub">חדר בריחה קולנועי, דיגיטלי ורב־משתתפים</p>
-        <p class="pitch">קבוצה של 4–8 חברים, כל אחד מהבית או יחד בחדר אחד. חוקרים אחוזה עתיקה בתלת־ממד, פותרים חידות שמחייבות שיתוף פעולה — ופותחים את הפורטל לפני שייסגר.</p>
-        <div class="actions">
-          <button class="btn primary big" (click)="create()" [disabled]="busy()">
-            {{ busy() ? 'יוצרים חדר...' : 'התחלת הרפתקה' }} <span aria-hidden="true">‹</span>
-          </button>
-        </div>
-        <form class="join" (submit)="$event.preventDefault(); join()">
-          <label for="code">יש לכם קוד חדר?</label>
-          <div class="row">
-            <input id="code" [value]="code()" (input)="code.set($any($event.target).value.toUpperCase())" maxlength="8"
-              placeholder="7G3KQ2" autocomplete="off" dir="ltr" />
-            <button class="btn" type="submit" [disabled]="code().trim().length < 4">הצטרפות</button>
+        <span class="kicker">חדרי בריחה תלת־ממדיים · בעברית מלאה</span>
+        <h1>בחרו את ההרפתקה שלכם</h1>
+        <p class="pitch">משחקים קבוצתיים בדפדפן: נכנסים יחד לעולם תלת־ממדי, חוקרים, אוספים חפצים ופותרים חידות שמחייבות שיתוף פעולה. רכישה אחת לכל הקבוצה — וכל החברים מצטרפים עם קוד משחק.</p>
+        <a class="btn primary big" href="#games" (click)="scrollTo($event, 'games')">למשחקים <span aria-hidden="true">↓</span></a>
+      </section>
+
+      <section id="games" class="games" aria-labelledby="games-title">
+        <h2 id="games-title">המשחקים</h2>
+        @if (loading()) {
+          <p class="muted">טוענים את המשחקים...</p>
+        } @else if (error()) {
+          <div class="card center">
+            <p class="error" role="alert">{{ error() }}</p>
+            <button class="btn" (click)="load()">נסו שוב</button>
           </div>
-        </form>
-        @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+        } @else {
+          <div class="grid">
+            @for (p of products(); track p.id) {
+              <article class="product card">
+                <a class="cover" [routerLink]="['/games', p.id]" [attr.aria-label]="'פרטים על ' + p.name">
+                  <img [src]="p.coverImage" [alt]="p.name" loading="lazy" />
+                </a>
+                <div class="body">
+                  <h3><a [routerLink]="['/games', p.id]">{{ p.name }}</a></h3>
+                  <p class="tagline">{{ p.tagline }}</p>
+                  <ul class="features">
+                    @for (f of p.features; track f) { <li class="chip">{{ f }}</li> }
+                  </ul>
+                  <div class="buy">
+                    <div class="price">
+                      @if (price(p); as pr) {
+                        <b>{{ pr }}</b> <span>למשחק קבוצתי · {{ players(p) }}</span>
+                      } @else {
+                        <span class="muted">המחיר יפורסם בקרוב</span>
+                      }
+                    </div>
+                    <a class="btn primary" [routerLink]="['/games', p.id]">{{ cta(p) }}</a>
+                  </div>
+                </div>
+              </article>
+            } @empty {
+              <p class="muted">אין כרגע משחקים זמינים.</p>
+            }
+          </div>
+        }
       </section>
 
-      <section class="featured card">
-        <div class="feat-img"><img src="img/concept-hunt.jpg" alt="ארבעה בנים עם כיפות וחולצות לבנות חוקרים ספרייה עתיקה לאור פנסים" /></div>
-        <div class="feat-body">
-          <span class="chip">ההרפתקה הראשונה</span>
-          <h2>{{ scenario()?.name ?? 'הפורטל האחרון' }}</h2>
-          <p>{{ scenario()?.description ?? 'הקבוצה נכנסת לאחוזה מסתורית ומקבלת הודעה מדמות שומרת: פורטל עתיק עומד להיסגר.' }}</p>
-          <ul class="facts">
-            <li><px-icon name="hint" [size]="18" /> {{ scenario()?.durationMinutes ?? '25–35' }} דקות</li>
-            <li><px-icon name="compass" [size]="18" /> {{ scenario()?.minPlayers ?? 4 }}–{{ scenario()?.maxPlayers ?? 8 }} משתתפים</li>
-            <li><px-icon name="dial" [size]="18" /> רמת קושי: {{ scenario()?.difficulty ?? 'בינונית' }}</li>
-            <li><px-icon name="portal" [size]="18" /> 6 אזורים · 6 סוגי חידות</li>
-          </ul>
-        </div>
-      </section>
-
-      <section class="how">
-        <h2>איך זה עובד?</h2>
+      <section id="how" class="how" aria-labelledby="how-title">
+        <h2 id="how-title">איך זה עובד?</h2>
         <ol>
-          <li><b>יוצרים חדר</b><span>מקבלים קישור וקוד ושולחים לחברים.</span></li>
-          <li><b>בוחרים דמות</b><span>כל משתתף בוחר כינוי ודמות ומסמן „מוכן”.</span></li>
-          <li><b>יוצאים לדרך</b><span>סצנת פתיחה, חקירה, חידות משותפות — ופתיחת הפורטל!</span></li>
+          <li><b>בוחרים משחק</b><span>כל משחק עם עולם, חידות ומחיר משלו.</span></li>
+          <li><b>רכישה אחת לקבוצה</b><span>משלמים פעם אחת — לא לכל משתתף.</span></li>
+          <li><b>מקבלים קוד משחק</b><span>הקוד נוצר אחרי אישור התשלום בשרת.</span></li>
+          <li><b>עד 8 משתתפים מצטרפים</b><span>כל אחד מזין את הקוד, בוחר כינוי ודמות.</span></li>
+          <li><b>משחקים יחד</b><span>המארח מתחיל, וכל הקבוצה נכנסת להרפתקה.</span></li>
         </ol>
-        <p class="muted">עובד בדפדפן במחשב ובטלפון. לא צריך מצלמה או מיקרופון, ולא צריך להירשם.</p>
+        <p class="muted">עובד בדפדפן במחשב ובטלפון. לא צריך מצלמה, מיקרופון או הרשמה.</p>
       </section>
-
-      <footer>
-        <a routerLink="/info/privacy">מדיניות פרטיות</a> · <a routerLink="/info/terms">תנאי שימוש</a> · <a routerLink="/info/about">על המשחק</a>
-      </footer>
     </main>
+
+    <footer>
+      <nav aria-label="מידע">
+        <a routerLink="/info/terms">תנאי שימוש</a>
+        <a routerLink="/info/privacy">מדיניות פרטיות</a>
+        <a routerLink="/info/refunds">ביטולים והחזרים</a>
+        <a routerLink="/info/contact">יצירת קשר</a>
+        <a routerLink="/info/about">על PORTAL X</a>
+      </nav>
+      <p class="muted small">פרטי העסק יעודכנו כאן לפני פתיחת המכירות.</p>
+    </footer>
     @if (showSettings()) { <px-settings (close)="showSettings.set(false)" /> }
   `,
   styles: [`
     :host { display:block; min-height:100dvh; position:relative; }
-    .bg { position:fixed; inset:0; z-index:0; }
-    .bg canvas { width:100%; height:100%; display:block; }
-    .shade { position:absolute; inset:0; background: linear-gradient(90deg, rgba(7,11,28,.15), rgba(7,11,28,.55) 55%, rgba(7,11,28,.92)); }
-    main { position:relative; z-index:1; max-width: 1100px; margin: 0 auto; padding: 16px 16px 40px; }
-    .top { display:flex; justify-content:space-between; align-items:center; }
-    .brand { font-weight: 900; letter-spacing: .08em; font-size: 1.2rem; }
-    .hero { min-height: 72dvh; display:flex; flex-direction:column; justify-content:center; max-width: 560px; }
-    h1 { font-size: clamp(3rem, 10vw, 6rem); letter-spacing: .04em; margin:0; font-family: var(--font-title); font-weight: 900; direction:ltr; text-align:right; }
-    .sub { font-size: clamp(1.2rem, 3vw, 1.7rem); color: var(--gold-2); font-family: var(--font-title); margin: .2em 0 .8em; }
-    .pitch { font-size: 1.1rem; line-height: 1.7; color: #e6e0cf; }
-    .actions { margin: 1.4rem 0 1.2rem; } .big { font-size: 1.25rem; padding: .9em 2.2em; }
-    .join label { font-weight:700; display:block; margin-bottom:.35rem; }
-    .join .row { display:flex; gap:.5rem; } .join input { width: 200px; letter-spacing: .15em; font-weight: 700; text-align:center; }
-    .featured { display:grid; grid-template-columns: 1fr 1.2fr; gap: 1.2rem; align-items:center; margin-top: 1rem; }
-    .feat-img img { width:100%; border-radius: 12px; display:block; border:1px solid var(--line); }
-    .facts { list-style:none; padding:0; display:grid; grid-template-columns: 1fr 1fr; gap:.4rem; color: var(--gold-2); }
-    .facts li { display:flex; align-items:center; gap:.4rem; }
-    .how { margin-top: 2.5rem; } .how ol { list-style:none; padding:0; display:grid; grid-template-columns: repeat(3,1fr); gap: 1rem; counter-reset: s; }
-    .how li { background: var(--panel); border:1px solid var(--line); border-radius: 14px; padding: 1rem; counter-increment: s; display:flex; flex-direction:column; gap:.3rem; }
-    .how li::before { content: counter(s); font-family: var(--font-title); font-size: 2rem; color: var(--gold); font-weight:900; }
-    footer { margin-top: 2rem; text-align:center; color: var(--muted); }
+    .bg { position:fixed; inset:0; z-index:0; pointer-events:none;
+      background:
+        radial-gradient(60rem 30rem at 85% -10%, rgba(224,185,92,.18), transparent 60%),
+        radial-gradient(50rem 30rem at 0% 30%, rgba(106,168,255,.14), transparent 60%),
+        linear-gradient(180deg, #0a1230 0%, var(--bg) 60%); }
+    .top, main, footer { position:relative; z-index:1; max-width:1160px; margin:0 auto; padding-inline:16px; }
+    .top { display:flex; justify-content:space-between; align-items:center; gap:1rem; padding-block:14px; flex-wrap:wrap; }
+    .brand { font-weight:900; letter-spacing:.08em; font-size:1.3rem; text-decoration:none; direction:ltr; }
+    .top nav { display:flex; align-items:center; gap:1rem; flex-wrap:wrap; }
+    .top nav a:not(.btn) { color:var(--text); text-decoration:none; font-weight:600; }
+    .top nav a:not(.btn):hover { color:var(--gold-2); }
+    .hero { min-height:56dvh; display:flex; flex-direction:column; justify-content:center; align-items:flex-start; max-width:680px; padding-block:2rem; }
+    .kicker { color:var(--blue); font-weight:700; letter-spacing:.02em; }
+    h1 { font-family:var(--font-title); font-size:clamp(2.4rem, 7vw, 4.4rem); line-height:1.1; margin:.3em 0; color:var(--gold-2); }
+    .pitch { font-size:1.15rem; line-height:1.75; color:#e6e0cf; margin:0 0 1.5rem; }
+    .big { font-size:1.15rem; padding:.85em 2em; }
+    h2 { font-family:var(--font-title); font-size:2rem; margin:0 0 1rem; }
+    .games { padding-block:1rem 2rem; scroll-margin-top:16px; }
+    .grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:1.25rem; }
+    .product { padding:0; overflow:hidden; display:flex; flex-direction:column; }
+    .cover { display:block; aspect-ratio:16/9; overflow:hidden; background:var(--bg-2); }
+    .cover img { width:100%; height:100%; object-fit:cover; display:block; transition:transform .4s; }
+    .product:hover .cover img { transform:scale(1.03); }
+    .body { padding:1.1rem 1.25rem 1.25rem; display:flex; flex-direction:column; gap:.6rem; flex:1; }
+    h3 { margin:0; font-family:var(--font-title); font-size:1.7rem; }
+    h3 a { color:var(--text); text-decoration:none; }
+    .tagline { margin:0; color:var(--muted); line-height:1.6; }
+    .features { list-style:none; padding:0; margin:.2rem 0; display:flex; flex-wrap:wrap; gap:.4rem; }
+    .buy { margin-top:auto; display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; padding-top:.6rem; border-top:1px solid var(--line); }
+    .price { display:flex; flex-direction:column; }
+    .price b { font-size:1.8rem; color:var(--gold-2); line-height:1.1; }
+    .price span { font-size:.9rem; color:var(--muted); }
+    .how { padding-block:2rem; scroll-margin-top:16px; }
+    .how ol { list-style:none; padding:0; margin:0; display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:1rem; counter-reset:s; }
+    .how li { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:1rem; counter-increment:s; display:flex; flex-direction:column; gap:.3rem; }
+    .how li::before { content:counter(s); font-family:var(--font-title); font-size:2rem; color:var(--gold); font-weight:900; }
+    .how li span { color:var(--muted); line-height:1.5; }
+    footer { text-align:center; padding-block:2rem 2.5rem; border-top:1px solid var(--line); margin-top:1rem; }
+    footer nav { display:flex; justify-content:center; flex-wrap:wrap; gap:.4rem 1.4rem; }
+    footer a { color:var(--text); }
+    .small { font-size:.85rem; }
+    .center { text-align:center; }
+    @media (max-width: 900px) { .how ol { grid-template-columns:repeat(2, minmax(0,1fr)); } }
     @media (max-width: 760px) {
-      .featured { grid-template-columns: 1fr; } .how ol { grid-template-columns: 1fr; }
-      .shade { background: rgba(7,11,28,.7); } .join input { width: 100%; flex:1; }
+      .grid { grid-template-columns:1fr; }
+      .how ol { grid-template-columns:1fr; }
+      .top nav { gap:.5rem; } .top nav .anchor { display:none; }
+      .hero { min-height:auto; padding-block:1.5rem 2rem; }
     }
   `],
 })
-export class HomePage implements AfterViewInit, OnDestroy {
+export class HomePage {
   private api = inject(ApiService);
-  private router = inject(Router);
   private audio = inject(AudioService);
-  private settings = inject(SettingsService);
-  private canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('c');
-  private world?: GameWorld;
-  scenario = signal<ScenarioSummary | null>(null);
-  busy = signal(false);
+  products = signal<Product[]>([]);
+  loading = signal(true);
   error = signal<string | null>(null);
-  code = signal('');
   showSettings = signal(false);
+  price = formatPrice;
+  players = playersLabel;
 
   constructor() {
-    this.api.scenarios().then((s) => this.scenario.set(s[0] ?? null)).catch(() => {});
     this.audio.setMusic('home');
+    this.load();
   }
 
-  ngAfterViewInit() {
-    try {
-      const q = this.settings.settings().quality === 'high' ? 'medium' : this.settings.settings().quality;
-      this.world = new GameWorld(this.canvas().nativeElement, q);
-      this.world.build(null);
-      this.world.setMode('showcase');
-      this.world.start();
-    } catch {
-      // WebGL unavailable: the page still works with the dark background.
-    }
-  }
-
-  async create() {
-    this.audio.unlock();
-    this.audio.sfx('click');
-    this.busy.set(true);
+  async load() {
+    this.loading.set(true);
     this.error.set(null);
     try {
-      const r = await this.api.createRoom(this.scenario()?.id ?? 'last-portal');
-      sessionStore.setHostClaim(r.code, r.hostClaim);
-      await this.router.navigate(['/join', r.code]);
+      this.products.set(await this.api.products());
     } catch (e: any) {
       this.error.set(e.message);
     } finally {
-      this.busy.set(false);
+      this.loading.set(false);
     }
   }
 
-  join() {
-    const c = this.code().trim().replace(/[\s-]/g, '');
-    if (c) this.router.navigate(['/join', c]);
+  cta(p: Product) {
+    return p.id === 'hanukkah-oil' ? 'לרכישת משחק החנוכה' : 'לפרטים ולרכישה';
   }
 
-  ngOnDestroy() {
-    this.world?.dispose();
+  scrollTo(ev: Event, id: string) {
+    ev.preventDefault();
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 }

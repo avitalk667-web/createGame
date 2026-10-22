@@ -125,3 +125,33 @@ public class WorldState
 }
 
 public record GoldenLetter(string Letter, string Zone);
+
+public enum ProductStatus { Draft = 0, Published = 1, Hidden = 2 }
+
+/// <summary>A purchasable game in the shared catalog. Prices live here only, never in the client.</summary>
+public class Product
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Tagline { get; set; } = "";
+    public string Description { get; set; } = "";
+    /// <summary>Price in ILS for one group game; null = not set yet (cannot be sold).</summary>
+    public decimal? PriceIls { get; set; }
+    public string Currency { get; set; } = "ILS";
+    public string CoverImage { get; set; } = "";
+    /// <summary>JSON array of { src, caption }.</summary>
+    public string GalleryJson { get; set; } = "[]";
+    /// <summary>JSON array of short feature chips.</summary>
+    public string FeaturesJson { get; set; } = "[]";
+    /// <summary>JSON array of "what's included" lines.</summary>
+    public string IncludedJson { get; set; } = "[]";
+    public ProductStatus Status { get; set; }
+    public int MinPlayers { get; set; } = 1;
+    public int MaxPlayers { get; set; } = 8;
+    public string GameType { get; set; } = "escape-room-3d";
+    /// <summary>Scenario that runs when the game is played; null or unknown = not playable yet.</summary>
+    public string? ScenarioId { get; set; }
+    public int SortOrder { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
