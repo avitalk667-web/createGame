@@ -81,7 +81,7 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
         </ol>
       </aside>
 
-      <aside class="objectives card" [class.collapsed]="!showObjectives()">
+      <aside class="objectives card" [class.collapsed]="!showObjectives()" [style.display]="focus() ? 'none' : null">
         <button class="obj-head" (click)="showObjectives.set(!showObjectives())" [attr.aria-expanded]="showObjectives()">
           <b>המשימות בחדר</b><span>{{ showObjectives() ? '−' : '+' }}</span></button>
         @if (showObjectives()) {
@@ -98,32 +98,35 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
         }
       </aside>
 
-      @if (bench()) {
-        <section class="bench card" role="region" aria-label="הרכבת מנורת השמן">
+      @if (focus(); as f) {
+        <section class="bench card" role="region" [attr.aria-label]="focusPuzzle()?.title">
           <header>
-            <b>{{ lampPuzzle()?.title }}</b>
+            <b>{{ focusPuzzle()?.title }}</b>
             <button class="btn small ghost" (click)="exitBench()" aria-label="חזרה לחדר">✕ חזרה לחדר</button>
           </header>
-          @if (lampState()?.status === 'solved') {
-            <p class="b-ok">המנורה הורכבה ונדלקה! מאחורי לוח הקיר נחשף המפתח.</p>
+          @if (focusState()?.status === 'solved') {
+            <p class="b-ok">{{ FOCUS_DONE[f] }}</p>
           } @else {
-            <p class="b-ins">{{ lampPuzzle()?.instructions }}</p>
-            @if (!benchHasParts()) { <p class="muted small">אין חלקים על השולחן — חפשו את חלקי המנורה בחדר והרימו אותם.</p> }
+            <p class="b-ins">{{ FOCUS_HELP[f] || focusPuzzle()?.instructions }}</p>
+            @if (f !== 'h3-maze' && !benchHasParts()) { <p class="muted small">{{ f === 'h2-lamp' ? 'אין חלקים על השולחן — חפשו את חלקי המנורה בחדר והרימו אותם.' : 'אין סביבונים בתיק — חפשו את ארבעת הסביבונים בחדר והרימו אותם.' }}</p> }
+            @if (f === 'h3-maze') { <p class="muted small">סמלים שהמפתח עבר לפי הסדר: {{ game.snapshot()?.mechanisms?.['h3-maze']?.progress ?? 0 }} מתוך 3</p> }
             @if (benchMsg(); as m) { <p class="b-msg" [class.bad]="!m.ok" role="status">{{ m.text }}</p> }
-            @for (h of lampState()?.hints ?? []; track $index) { <p class="b-hint">💡 {{ h }}</p> }
+            @for (h of focusState()?.hints ?? []; track $index) { <p class="b-hint">💡 {{ h }}</p> }
             <div class="b-actions">
-              <button class="btn primary" (click)="checkLamp()" [disabled]="benchBusy()">בדוק הרכבה</button>
-              <button class="btn" (click)="resetLamp()" [disabled]="benchBusy()">החזר חלקים</button>
+              @if (f !== 'h3-maze') {
+                <button class="btn primary" (click)="checkBench()" [disabled]="benchBusy()">{{ f === 'h2-lamp' ? 'בדוק הרכבה' : 'בדוק סידור' }}</button>
+                <button class="btn" (click)="resetBench()" [disabled]="benchBusy()">{{ f === 'h2-lamp' ? 'החזר חלקים' : 'החזר סביבונים' }}</button>
+              }
               @if (benchMsg() && !benchMsg()!.ok) { <button class="btn" (click)="benchMsg.set(null)">נסה שוב</button> }
-              @if ((lampState()?.hintsRevealed ?? 0) < (lampPuzzle()?.hintCount ?? 0)) {
-                <button class="btn small ghost" (click)="lampHint()" [disabled]="benchBusy()">💡 רמז (−{{ game.scenario()?.scoring?.hintPenalty ?? 10 }})</button>
+              @if ((focusState()?.hintsRevealed ?? 0) < (focusPuzzle()?.hintCount ?? 0)) {
+                <button class="btn small ghost" (click)="benchHint()" [disabled]="benchBusy()">💡 רמז (−{{ game.scenario()?.scoring?.hintPenalty ?? 10 }})</button>
               }
             </div>
           }
         </section>
       }
 
-      @if (hover(); as h) { <div class="hover-label">{{ h.label }} <small>· {{ h.verb }}</small></div> }
+      @if (hover(); as h) { <div class="hover-label">@if (h.kind !== 'decor') { <span aria-hidden="true">👆 </span> }{{ h.label }} <small>· {{ h.verb }}</small></div> }
 
       <footer class="hud-bottom">
         <div class="inventory card" aria-label="תיק החפצים של הקבוצה">
@@ -158,7 +161,7 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
         </section>
       }
 
-      @if (touch && !bench()) {
+      @if (touch && !focus()) {
         <px-joystick class="joy" (changed)="world?.setJoystick($event.x, $event.y)" />
         <button class="btn primary act" (click)="interactNearest()">פעולה</button>
       }
@@ -198,7 +201,7 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
       @for (t of toasts(); track t.id) { <div class="toast" [class]="t.kind">{{ t.text }}</div> }
     </div>
 
-    @if (panel(); as p) { <px-h-panel [panel]="p.id" [ref]="p.ref" (close)="closePanel()" /> }
+    @if (panel(); as p) { <px-h-panel [panel]="p.id" [ref]="p.ref" (close)="closePanel()" (wheelChange)="world?.setWheel($event)" /> }
     @if (showSettings()) { <px-settings (close)="showSettings.set(false)" /> }
 
     @if (phase() === 'completed') {
@@ -261,7 +264,8 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
     .right-tools { margin-inline-start:auto; display:flex; gap:.4rem; }
     .badge { background: var(--bad); color:#fff; border-radius:999px; font-size:.75rem; padding:0 .45em; }
     .chat-pop { position:fixed; bottom:80px; inset-inline-end:10px; width:min(360px, calc(100% - 20px)); height:400px; z-index:12; display:flex; flex-direction:column; padding:.6rem; animation: fadein .25s ease both; }
-    .chat-pop header { display:flex; justify-content:space-between; align-items:center; } .chat-pop.pulse { box-shadow: 0 0 0 2px var(--gold-2), var(--shadow); }
+    .chat-pop header { display:flex; justify-content:space-between; align-items:center; }
+    .chat-pop px-chat { flex:1; min-height:0; } .chat-pop.pulse { box-shadow: 0 0 0 2px var(--gold-2), var(--shadow); }
     .help { position:fixed; bottom:90px; left:0; right:0; margin-inline:auto; z-index:11; width:min(560px, calc(100% - 24px)); padding:.7rem 1rem; }
     .help header { display:flex; justify-content:space-between; align-items:center; color: var(--gold-2); }
     .help ul { margin:.4rem 0 .6rem; padding-inline-start:1.1rem; line-height:1.7; font-size:.95rem; }
@@ -323,16 +327,28 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
   unread = signal(0);
   celebration = signal<{ name: string; verb: string; what: string; points: number; next?: string; puzzleId: string } | null>(null);
   transfer = signal<string | null>(null);
-  bench = signal(false);
+  /** The table the player is using: the lamp bench, the dreidel stand or the maze board (null in the room). */
+  focus = signal<string | null>(null);
   benchBusy = signal(false);
   benchMsg = signal<{ ok: boolean; text: string } | null>(null);
-  lampPuzzle = computed(() => this.game.scenario()?.puzzles.find((p) => p.id === 'h2-lamp'));
-  lampState = computed(() => this.game.snapshot()?.puzzles.find((p) => p.id === 'h2-lamp'));
+  focusPuzzle = computed(() => this.game.scenario()?.puzzles.find((p) => p.id === this.focus()));
+  focusState = computed(() => this.game.snapshot()?.puzzles.find((p) => p.id === this.focus()));
   benchHasParts = computed(() => {
     const s = this.game.snapshot();
-    const accepts: string[] = this.lampPuzzle()?.publicData?.accepts ?? [];
-    return accepts.some((i) => s?.inventory.includes(i)) || Object.keys(s?.mechanisms?.['h2-lamp']?.slots ?? {}).length > 0;
+    const id = this.focus();
+    const accepts: string[] = this.focusPuzzle()?.publicData?.accepts ?? [];
+    return accepts.some((i) => s?.inventory.includes(i)) || Object.keys((id && s?.mechanisms?.[id]?.slots) || {}).length > 0;
   });
+  readonly FOCUS_HELP: Record<string, string> = {
+    'h2-lamp': '',
+    'h5-stand': 'גררו כל סביבון אל אחת מארבע המשבצות במתקן, לפי ארבעת הרמזים. אפשר להרים סביבון ולהניח אותו מחדש. כשסיימתם — לחצו „בדוק סידור”.',
+    'h3-maze': 'גררו את המפתח על הלוח לאורך המסלול — הוא לא עובר דרך קירות. לחצו על ידית כדי להזיז אותה ולפתוח או לסגור שער. התיבה שבצד נפתחת בקוד שיתגלה ביציאה.',
+  };
+  readonly FOCUS_DONE: Record<string, string> = {
+    'h2-lamp': 'המנורה הורכבה ונדלקה! מאחורי לוח הקיר נחשף המפתח.',
+    'h5-stand': 'כל הסביבונים במקומם! קראו את הספרות שלפניהם משמאל לימין, שורה אחר שורה, והזינו את הקוד במנעול שבדלת.',
+    'h3-maze': 'המפתח הגיע ליציאה! הקוד שהתגלה מוצג ליד הלוח — לחצו על התיבה שבצד כדי להזין אותו.',
+  };
   tick = signal(0);
 
   phase = computed(() => this.game.snapshot()?.phase ?? 'lobby');
@@ -439,8 +455,12 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
         onTooFar: (d) => this.ngZone.run(() => this.toast(`התקרבו אל ${d.label} כדי ל${d.verb === 'הרמה' ? 'הרים' : 'השתמש'}`, 'info')),
         onZoneChange: (z) => this.ngZone.run(() => this.zone.set(z)),
         onMove: (x, y, z, ry, zone) => this.game.move(x, y, z, ry, zone),
-        onBenchDrop: (item, slot, from) => this.ngZone.run(() => this.benchDrop(item, slot, from)),
+        onBenchDrop: (puzzle, item, slot, from) => this.ngZone.run(() => this.benchDrop(puzzle, item, slot, from)),
         onBenchExit: () => this.ngZone.run(() => this.exitBench()),
+        onMazeStep: (dir) => this.ngZone.run(() => this.mazeStep(dir)),
+        onMazeLever: (i) => this.ngZone.run(() => this.mazeLever(i)),
+        onMazeBlocked: (text) => this.ngZone.run(() => this.benchMsg.set({ ok: false, text })),
+        onMazeBox: () => this.ngZone.run(() => this.openBox('h3-box', 'box')),
       }));
       this.world.sensitivity = this.settings.settings().lookSensitivity;
       if (this.game.scenario()) this.buildWorld();
@@ -542,6 +562,8 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
         break;
       case 'wrong-answer':
         this.audio.sfx('wrong');
+        // a wrong arrangement on the dreidel stand blinks red for everyone
+        if (n.puzzleId === 'h5-stand') this.world?.flashBench('h5-stand');
         if (!mine) this.toast(n.message, n.kind);
         break;
       case 'item-picked':
@@ -698,7 +720,11 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
         this.note.set({ title: def.label, text: def.text ?? '' });
         return;
       case 'panel':
-        if (def.panel === 'lamp') this.openBench();
+        if (def.panel === 'lamp') this.openBench('h2-lamp');
+        else if (def.panel === 'stand') this.openBench('h5-stand');
+        else if (def.panel === 'maze') this.openMaze();
+        else if (def.panel === 'box') this.openBox('h3-box', 'box');
+        else if (def.panel === 'lock') this.openBox('h5-lock', 'lock');
         else this.panel.set({ id: def.panel!, ref: def.ref });
         return;
     }
@@ -720,7 +746,8 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
       .filter((x) => x.zone === this.zone())
       .sort((a, b) => a.order - b.order)
       .find((x) => s?.puzzles.find((y) => y.id === x.id)?.status === 'active');
-    if (p?.id === 'h2-lamp') this.openBench();
+    if (p?.id === 'h2-lamp' || p?.id === 'h5-stand') this.openBench(p.id);
+    else if (p?.id === 'h3-maze') this.openMaze();
     else if (p && PUZZLE_PANEL[p.id]) this.panel.set({ id: PUZZLE_PANEL[p.id] });
     else this.toast('אין בחדר הזה חידה פתוחה.', 'info');
   }
@@ -741,42 +768,72 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     return this.game.scenario()?.items.find((i) => i.id === id)?.name ?? id;
   }
 
-  // ---- the lamp bench in room 2: the parts are dragged on the table itself (spec 7)
+  // ---- tables used directly in the 3D room: lamp bench, dreidel stand (drag and drop) and the maze board
 
-  openBench() {
+  openBench(puzzle: string) {
     if (!this.world || this.world.isCutscene) return;
     this.panel.set(null);
     this.note.set(null);
     this.benchMsg.set(null);
-    this.world.enterBench();
-    this.bench.set(this.world.isBench);
+    this.world.enterBench(puzzle);
+    this.focus.set(this.world.isBench ? puzzle : null);
+  }
+
+  openMaze() {
+    if (!this.world || this.world.isCutscene) return;
+    this.panel.set(null);
+    this.note.set(null);
+    this.benchMsg.set(null);
+    this.world.enterMaze();
+    this.focus.set(this.world.isMaze ? 'h3-maze' : null);
   }
 
   exitBench() {
-    if (!this.bench()) return;
+    if (!this.focus()) return;
     this.world?.exitBench();
-    this.bench.set(false);
+    this.world?.exitMaze();
+    this.focus.set(null);
     this.canvas().nativeElement.focus();
   }
 
-  private async lampOp(action: object) {
+  /**
+   * A code lock (the metal box in the maze room, the lock in the dreidel room's door): while its puzzle is still locked,
+   * say what is missing instead of opening it; once it can be opened, show the small code panel.
+   */
+  openBox(puzzleId: string, panel: HPanel) {
+    const s = this.game.snapshot();
+    const state = s?.puzzles.find((p) => p.id === puzzleId);
+    if (state?.status === 'locked') {
+      this.audio.sfx('wrong');
+      const text = puzzleId === 'h3-box'
+        ? 'התיבה נעולה. קודם הובילו את המפתח במבוך עד היציאה — שם יתגלה הקוד שפותח אותה.'
+        : 'הדלת נעולה במנעול קוד. קודם סדרו את ארבעת הסביבונים במתקן — הקוד כתוב בגבם.';
+      if (this.focus()) this.benchMsg.set({ ok: false, text });
+      else this.toast(text, 'info');
+      return;
+    }
+    this.exitBench();
+    this.panel.set({ id: panel });
+  }
+
+  private async benchOp(puzzle: string, action: object) {
     this.benchBusy.set(true);
     try {
-      return await this.game.operate('h2-lamp', action);
+      return await this.game.operate(puzzle, action);
     } finally {
       this.benchBusy.set(false);
     }
   }
 
-  async benchDrop(item: string, slot: string | null, from: string | null) {
-    const mech = this.game.snapshot()?.mechanisms?.['h2-lamp'];
+  async benchDrop(puzzle: string, item: string, slot: string | null, from: string | null) {
+    const mech = this.game.snapshot()?.mechanisms?.[puzzle];
     if (slot && mech?.slots?.[slot] && mech.slots[slot] !== item) {
       this.audio.sfx('wrong');
-      this.benchMsg.set({ ok: false, text: 'המקום הזה כבר תפוס. הרימו קודם את החלק שמונח בו.' });
+      this.benchMsg.set({ ok: false, text: 'המקום הזה כבר תפוס. הרימו קודם את מה שמונח בו.' });
       return;
     }
     if (from) {
-      const r = await this.lampOp({ op: 'remove', slot: from });
+      const r = await this.benchOp(puzzle, { op: 'remove', slot: from });
       if (!r.ok) {
         this.world?.benchRejected(item);
         this.benchMsg.set({ ok: false, text: r.message });
@@ -787,10 +844,14 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
       this.audio.sfx('click');
       return;
     }
-    const r = await this.lampOp({ op: 'place', slot, item });
+    const r = await this.benchOp(puzzle, { op: 'place', slot, item });
     if (r.ok) {
       this.audio.sfx('pickup');
-      this.benchMsg.set(r.message ? { ok: true, text: r.message } : null);
+      // a full but wrong arrangement is accepted as a move and reported, the zones blink red
+      if (r.code === 'placed-wrong') {
+        this.world?.flashBench(puzzle);
+        this.benchMsg.set({ ok: false, text: r.message });
+      } else this.benchMsg.set(r.message ? { ok: true, text: r.message } : null);
     } else {
       this.audio.sfx('wrong');
       this.world?.benchRejected(item);
@@ -798,26 +859,55 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     }
   }
 
-  async checkLamp() {
-    const r = await this.lampOp({ op: 'activate' });
-    this.benchMsg.set({ ok: r.ok, text: r.ok ? 'המנורה מורכבת נכון!' : r.message });
-    if (!r.ok) this.audio.sfx('wrong');
+  async checkBench() {
+    const puzzle = this.focus();
+    if (!puzzle) return;
+    const r = await this.benchOp(puzzle, { op: 'activate' });
+    if (r.ok) {
+      this.benchMsg.set({ ok: true, text: puzzle === 'h2-lamp' ? 'המנורה מורכבת נכון!' : 'הסידור נכון!' });
+      return;
+    }
+    this.benchMsg.set({ ok: false, text: r.message });
+    this.audio.sfx('wrong');
+    this.world?.flashBench(puzzle);
   }
 
-  async resetLamp() {
-    const r = await this.lampOp({ op: 'reset' });
+  async resetBench() {
+    const puzzle = this.focus();
+    if (!puzzle) return;
+    const r = await this.benchOp(puzzle, { op: 'reset' });
     this.benchMsg.set({ ok: r.ok, text: r.message });
     if (r.ok) this.audio.sfx('click');
   }
 
-  async lampHint() {
+  async benchHint() {
+    const puzzle = this.focus();
+    if (!puzzle) return;
     this.benchBusy.set(true);
     try {
-      const r = await this.game.requestHint('h2-lamp');
+      const r = await this.game.requestHint(puzzle);
       if (!r.ok) this.benchMsg.set({ ok: false, text: r.message });
     } finally {
       this.benchBusy.set(false);
     }
+  }
+
+  /** One step of the dragged maze key; the server checks walls, gates and the order of the symbols. */
+  async mazeStep(dir: string) {
+    const r = await this.game.operate('h3-maze', { op: 'move', dir });
+    if (r.ok) {
+      if (this.benchMsg()?.ok === false) this.benchMsg.set(null);
+      return true;
+    }
+    this.benchMsg.set({ ok: false, text: r.message });
+    if (r.code !== 'blocked') this.audio.sfx('wrong');
+    return false;
+  }
+
+  async mazeLever(index: number) {
+    const r = await this.game.operate('h3-maze', { op: 'lever', index });
+    this.audio.sfx(r.ok ? 'click' : 'wrong');
+    this.benchMsg.set({ ok: r.ok, text: r.message });
   }
 
   confirmLeave() {

@@ -108,7 +108,7 @@ const MAZE_SYMBOLS: Record<string, string> = { '*': '⭐', F: '🔥', M: '🕎',
                 @for (w of wheel(); track $index; let i = $index) {
                   <div class="wh">
                     <button class="btn small" (click)="spin(i, -1)" aria-label="אות קודמת">▲</button>
-                    <b>{{ w }}</b>
+                    <span class="dial">@for (l of [w]; track l) { <b class="turn">{{ l }}</b> }</span>
                     <button class="btn small" (click)="spin(i, 1)" aria-label="אות הבאה">▼</button>
                   </div>
                 }
@@ -253,7 +253,12 @@ const MAZE_SYMBOLS: Record<string, string> = { '*': '⭐', F: '🔥', M: '🕎',
     .tablets { display:flex; gap:1rem; justify-content:center; font-size:2rem; font-weight:900; color:#9fd0ff; margin:.4rem 0; }
     .tablets span { background:#3a3446; border-radius:10px; padding:.2rem 1rem; }
     .wheels { display:flex; gap:1rem; justify-content:center; margin:.6rem 0; }
-    .wh { display:flex; flex-direction:column; align-items:center; gap:.3rem; } .wh b { font-family: var(--font-title); font-size:2.2rem; color: var(--gold-2); background: rgba(255,255,255,.06); border-radius:10px; width:64px; text-align:center; }
+    .wh { display:flex; flex-direction:column; align-items:center; gap:.3rem; }
+    .dial { display:grid; place-items:center; width:84px; height:84px; border-radius:50%; overflow:visible;
+      background: radial-gradient(circle at 50% 40%, #e8c873, #9a7426 70%, #5a3e10); border:3px solid #ffd77a;
+      box-shadow: 0 0 18px rgba(106,168,255,.45), inset 0 0 12px rgba(0,0,0,.45); }
+    .dial b { font-family: var(--font-title); font-size:2.4rem; line-height:1; color:#2a1606; }
+    .turn { animation: turn .35s ease; } @keyframes turn { from { transform: rotateX(80deg); opacity:.2 } to { transform:none; opacity:1 } }
     .stand { display:grid; grid-template-columns: 1fr 1fr; gap:.5rem; max-width:420px; margin:.5rem auto; }
     .stand .slot { align-items:center; min-height:96px; justify-content:center; }
     .dl { font-family: var(--font-title); font-size:2.2rem; } .back { color:#9fd0ff; font-weight:700; }
@@ -284,6 +289,8 @@ export class HPanelComponent {
   panel = input.required<HPanel>();
   ref = input<string | undefined>();
   close = output<void>();
+  /** The letters chosen on the wheel, so the 3D wheel in the room turns with them. */
+  wheelChange = output<string[]>();
 
   text = signal('');
   busy = signal(false);
@@ -364,6 +371,7 @@ export class HPanelComponent {
 
   spin(i: number, d: number) {
     this.wheel.update((w) => w.map((l, k) => (k === i ? LETTERS[(LETTERS.indexOf(l) + d + LETTERS.length) % LETTERS.length] : l)));
+    this.wheelChange.emit(this.wheel());
     this.audio.sfx('click');
   }
 

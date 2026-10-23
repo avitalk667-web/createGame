@@ -15,7 +15,7 @@ import {
   hCenter, hInRects, hObstacles, hWalkable, hWorldPos, hZoneAt,
 } from './h-layout';
 
-export type HMode = 'intro' | 'play' | 'outro' | 'cutscene' | 'bench';
+export type HMode = 'intro' | 'play' | 'outro' | 'cutscene' | 'bench' | 'maze';
 
 export interface HWorldCallbacks {
   onHover?(def: HInteractable | null): void;
@@ -23,9 +23,15 @@ export interface HWorldCallbacks {
   onTooFar?(def: HInteractable): void;
   onZoneChange?(zone: HZone): void;
   onMove?(x: number, y: number, z: number, ry: number, zone: string): void;
-  /** A lamp part was dropped on the bench: on an assembly zone (`slot`) or off them (`slot` null); `from` is where it was. */
-  onBenchDrop?(item: string, slot: string | null, from: string | null): void;
+  /** A part was dropped on an assembly table: on a zone (`slot`) or off them (`slot` null); `from` is where it was. */
+  onBenchDrop?(puzzle: string, item: string, slot: string | null, from: string | null): void;
+  /** Escape at a table or the maze board. */
   onBenchExit?(): void;
+  /** The maze key was dragged one cell (N/E/S/W); resolves with whether the server accepted the step. */
+  onMazeStep?(dir: string): Promise<boolean>;
+  onMazeLever?(index: number): void;
+  onMazeBlocked?(text: string): void;
+  onMazeBox?(): void;
 }
 
 const DOOR_W = 2.4;
@@ -45,6 +51,42 @@ const BENCH_TOP = 1.0;
 const BENCH_SCALE = 1.1;
 const BENCH_REST: Record<string, number> = { 'lamp-base': 0.045, 'lamp-tank': 0.135, 'lamp-wick': 0.09, 'lamp-glass': 0.125, 'lamp-cover': 0.07 };
 const BENCH_STACK: Record<string, number> = { 'lamp-base': 0.045, 'lamp-tank': 0.22, 'lamp-wick': 0.4, 'lamp-glass': 0.42, 'lamp-cover': 0.61 };
+
+/** A drag-and-drop assembly on a table — the lamp bench and the dreidel stand. Positions are relative to the room centre. */
+interface Assembly {
+  zone: HZone;
+  slots: string[];
+  pad: Record<string, [number, number]>;
+  tray: Record<string, [number, number]>;
+  top: number;
+  rest: Record<string, number>;
+  /** Where the camera looks, and the half width that must stay in view. */
+  look: [number, number];
+  halfWidth: number;
+  bounds: [number, number, number, number];
+  /** Where the local player stands while using it (x, z, facing). */
+  stand: [number, number, number];
+  snap: number;
+}
+const ASSEMBLIES: Record<string, Assembly> = {
+  'h2-lamp': {
+    zone: 'workshop', slots: BENCH_SLOTS, pad: BENCH_PAD, tray: BENCH_TRAY, top: BENCH_TOP, rest: BENCH_REST,
+    look: [0, -1.15], halfWidth: 2.2, bounds: [-2.4, 2.4, -2.1, -0.65], stand: [3.3, -1.2, -Math.PI / 2], snap: 0.42,
+  },
+  // 2×2 as the hints describe it, seen from the front of the table: top row = the far row
+  'h5-stand': {
+    zone: 'dreidels', slots: ['tl', 'tr', 'bl', 'br'],
+    pad: { tl: [2.4, -1.7], tr: [3.2, -1.7], bl: [2.4, -1.1], br: [3.2, -1.1] },
+    tray: { 'dreidel-he': [2.0, -0.52], 'dreidel-nun': [2.53, -0.52], 'dreidel-pe': [3.07, -0.52], 'dreidel-gimel': [3.6, -0.52] },
+    top: 1.05, rest: { 'dreidel-nun': 0, 'dreidel-gimel': 0, 'dreidel-he': 0, 'dreidel-pe': 0 },
+    look: [2.8, -1.15], halfWidth: 1.9, bounds: [1.3, 4.3, -2.05, -0.35], stand: [0.5, -1.0, Math.PI / 2], snap: 0.32,
+  },
+};
+const LETTERS = 'אבגדהוזחטיכלמנסעפצקרשת'.split('');
+/** Symbols carved on each door, by the room it leads to. */
+const DOOR_SYMBOL: Partial<Record<HZone, string>> = {
+  workshop: '🪔', maze: '🧭', cipher: '📜', dreidels: 'נ ג', lab: '🏺', mosaic: '💎', hall: '🕎',
+};
 
 interface Flicker { light: THREE.PointLight; base: number; seed: number }
 
@@ -135,6 +177,129 @@ function sheetTexture(lines: string[], opts: { bg?: string; color?: string; w?: 
   return t;
 }
 
+/** A number on a tablet, centred and sized to fit, so long numbers (200) are never cut. */
+function numberTexture(text: string) {
+  const s = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = s;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#3a3446';
+  g.fillRect(0, 0, s, s);
+  g.strokeStyle = '#c9a24d';
+  g.lineWidth = 8;
+  g.strokeRect(10, 10, s - 20, s - 20);
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  let size = 150;
+  g.font = `bold ${size}px Frank Ruhl Libre, Heebo, serif`;
+  while (size > 40 && g.measureText(text).width > s - 56) {
+    size -= 6;
+    g.font = `bold ${size}px Frank Ruhl Libre, Heebo, serif`;
+  }
+  g.fillStyle = '#9fd0ff';
+  g.fillText(text, s / 2, s / 2 + size * 0.05);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** One leaf of a room door: dark carved wood, gilded borders and panels, and the symbol of the next room. */
+function doorLeafTexture(symbol: string, mirror: boolean) {
+  const w = 256;
+  const h = 720;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const g = c.getContext('2d')!;
+  const grad = g.createLinearGradient(0, 0, w, 0);
+  grad.addColorStop(0, mirror ? '#2a170b' : '#3c2412');
+  grad.addColorStop(1, mirror ? '#3c2412' : '#2a170b');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, w, h);
+  // wood grain
+  g.strokeStyle = 'rgba(0,0,0,.25)';
+  g.lineWidth = 2;
+  for (let x = 6; x < w; x += 11) {
+    g.beginPath();
+    g.moveTo(x, 0);
+    g.bezierCurveTo(x + 4, h * 0.3, x - 4, h * 0.6, x + 2, h);
+    g.stroke();
+  }
+  const gold = (x: number, y: number, ww: number, hh: number, lw: number) => {
+    g.strokeStyle = '#e2b84a';
+    g.lineWidth = lw;
+    g.strokeRect(x, y, ww, hh);
+    g.strokeStyle = 'rgba(90,50,10,.8)';
+    g.lineWidth = 2;
+    g.strokeRect(x + lw, y + lw, ww - lw * 2, hh - lw * 2);
+  };
+  gold(8, 8, w - 16, h - 16, 8);
+  // two carved panels
+  g.fillStyle = 'rgba(0,0,0,.28)';
+  g.fillRect(36, 40, w - 72, 300);
+  g.fillRect(36, 380, w - 72, 300);
+  gold(36, 40, w - 72, 300, 5);
+  gold(36, 380, w - 72, 300, 5);
+  // corner rosettes
+  g.fillStyle = '#e2b84a';
+  for (const [x, y] of [[36, 40], [w - 36, 40], [36, 340], [w - 36, 340], [36, 380], [w - 36, 380], [36, 680], [w - 36, 680]]) {
+    g.beginPath();
+    g.arc(x, y, 7, 0, Math.PI * 2);
+    g.fill();
+  }
+  // the room's symbol in a gilded medallion
+  g.beginPath();
+  g.arc(w / 2, 190, 74, 0, Math.PI * 2);
+  g.fillStyle = 'rgba(20,12,4,.6)';
+  g.fill();
+  g.lineWidth = 6;
+  g.strokeStyle = '#e2b84a';
+  g.stroke();
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = `bold ${symbol.length > 2 ? 54 : 80}px Segoe UI Emoji, Noto Color Emoji, Frank Ruhl Libre, serif`;
+  g.fillStyle = '#f2d27a';
+  g.fillText(symbol, w / 2, 196);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** The band of one ring of the letter wheel: the 22 letters in separate engraved segments. */
+function wheelBandTexture() {
+  const seg = 96;
+  const w = seg * LETTERS.length;
+  const h = 128;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#d8b25a';
+  g.fillRect(0, 0, w, h);
+  LETTERS.forEach((l, i) => {
+    const x = i * seg;
+    g.fillStyle = i % 2 ? '#cfa64c' : '#e0bd66';
+    g.fillRect(x + 3, 10, seg - 6, h - 20);
+    g.strokeStyle = '#6a4610';
+    g.lineWidth = 4;
+    g.strokeRect(x + 3, 10, seg - 6, h - 20);
+    g.save();
+    // the band runs around the wheel, so each letter is drawn turned to stand upright on the cylinder
+    g.translate(x + seg / 2, h / 2);
+    g.rotate(Math.PI / 2);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = 'bold 72px Frank Ruhl Libre, serif';
+    g.fillStyle = '#2a1606';
+    g.fillText(l, 0, 4);
+    g.restore();
+  });
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
 /** Groove pattern of a mosaic stone at rotation 0 (openings: straight N–S, corner N–E, dead N only). */
 function stoneGrooveTexture(kind: string, lit: boolean) {
   const s = 128;
@@ -212,11 +377,38 @@ export class HanukkahWorld {
   private lampBeam?: THREE.Mesh;
   private wallPanel?: THREE.Object3D;
   private keySymbol?: THREE.Mesh;
-  // the lamp bench (room 2): parts follow the server state; the local player drags them while at the bench
-  private benchPads = new Map<string, THREE.Mesh>();
-  private benchParts = new Map<string, THREE.Object3D>();
-  private benchSlots: Record<string, string> = {};
+  // assembly tables (lamp bench, dreidel stand): parts follow the server state; the local player drags them
+  private asm = new Map<string, { def: Assembly; pads: Map<string, THREE.Mesh>; parts: Map<string, THREE.Object3D>; slots: Record<string, string>; flash: number }>();
+  private benchId: string | null = null;
   private benchInv = new Set<string>();
+  private standSolved = false;
+  private standBacks: Record<string, string> = {};
+  private standDigits = new Map<string, THREE.Mesh>();
+  // maze table (room 3): the key is dragged on the board itself and the levers are pulled in the room
+  private mazeGrid: string[] = [];
+  private mazeGateIds: string[] = [];
+  private mazeLeverState: boolean[] = [];
+  private mazeKeyCell: [number, number] = [0, 0];
+  private mazeServerKey: [number, number] = [0, 0];
+  private mazeBusy = false;
+  private mazeDrag?: { pointerId: number };
+  private mazeAim: [number, number] | null = null;
+  private mazeLastStep = 0;
+  private mazeBlockedAt = -10;
+  private mazeShake = -10;
+  private mazeHover: string | null = null;
+  private mazeSolved = false;
+  private mazeHints: THREE.Object3D[] = [];
+  private mazeCodePlate?: THREE.Mesh;
+  private mazeCode = '';
+  private metalBox?: THREE.Mesh;
+  private boxHalo?: THREE.Sprite;
+  private boxGlow = false;
+  // the letter wheel (room 4) and the code lock on the door of room 5
+  private wheelTarget = [0, 0, 0].map(() => -(0.5 / 22) * Math.PI * 2);
+  private wheelSolved = false;
+  private doorLockDial?: THREE.Mesh;
+  private doorLockPlate?: THREE.Object3D;
   private benchGuess = new Map<string, string | null>();
   private benchShake = new Map<string, number>();
   private benchDrag?: { id: string; from: string | null; pointerId: number; pos: THREE.Vector3 };
@@ -236,8 +428,7 @@ export class HanukkahWorld {
   private mazeOrigin = new THREE.Vector3();
   private metalBoxLid?: THREE.Object3D;
   private drawerFront?: THREE.Object3D;
-  private wheelRings: THREE.Mesh[] = [];
-  private standSlots = new Map<string, THREE.Object3D>();
+  private wheelRings: THREE.Object3D[] = [];
   private woodBoxLid?: THREE.Object3D;
   private jugGlow?: THREE.Mesh;
   private mosaicStones: { mesh: THREE.Mesh; kind: string; lit?: boolean }[] = [];
@@ -470,7 +661,7 @@ export class HanukkahWorld {
       this.candle(sx * (H_HALF_W - 0.25), 2.8, c + 3, true);
     }
 
-    // corridor and door to the next room, with the room number on it
+    // corridor and the carved door to the next room
     if (!last) {
       const z0 = c - H_HALF_D;
       const len = H_SPACING - H_HALF_D * 2;
@@ -487,17 +678,78 @@ export class HanukkahWorld {
         w.position.set(sx * DOOR_W / 2, DOOR_H / 2, z0 - len / 2);
         this.scene.add(w);
       }
-      const tex = sheetTexture([String(i + 2)], { bg: '#4a2f1b', color: '#e2c27a', w: 256, h: 360, size: 150 });
-      const door = new THREE.Mesh(new THREE.BoxGeometry(DOOR_W, DOOR_H, 0.18), [
-        this.std('#3a2414'), this.std('#3a2414'), this.std('#3a2414'), this.std('#3a2414'),
-        this.std('#ffffff', { map: tex }), this.std('#ffffff', { map: tex }),
-      ]);
-      door.position.set(0, DOOR_H / 2, z0 - 0.12);
-      this.scene.add(door);
       const next = H_ZONES[i + 1];
+      const door = this.buildDoor(next, z0);
       this.doors.set(next, door);
       this.doorOpen.set(next, 0);
     }
+  }
+
+  /**
+   * A carved double door with gilded panels, metal ring handles and the next room's symbol. While locked it shows a
+   * padlock — or, on the dreidel room's door, its code lock; once unlocked the trim glows and the leaves swing open.
+   */
+  private buildDoor(next: HZone, z0: number) {
+    const door = new THREE.Group();
+    door.position.set(0, 0, z0 - 0.12);
+    const symbol = DOOR_SYMBOL[next] ?? '✦';
+    const edge = this.std('#2a170b');
+    const leaves: THREE.Object3D[] = [];
+    for (const side of [-1, 1]) {
+      const hinge = new THREE.Group();
+      hinge.position.set(side * DOOR_W / 2, 0, 0);
+      const face = this.std('#ffffff', { map: doorLeafTexture(symbol, side > 0), roughness: 0.6, metalness: 0.15 });
+      const leaf = new THREE.Mesh(new THREE.BoxGeometry(DOOR_W / 2, DOOR_H, 0.14), [edge, edge, edge, edge, face, face]);
+      leaf.position.set(-side * DOOR_W / 4, DOOR_H / 2, 0);
+      hinge.add(leaf);
+      // antique ring handle near the middle
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.018, 8, 20), this.std('#a88a4a', { metalness: 0.9, roughness: 0.35 }));
+      ring.position.set(-side * (DOOR_W / 2 - 0.2), 1.25, 0.1);
+      const boss = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.03, 14), this.gold());
+      boss.rotation.x = Math.PI / 2;
+      boss.position.set(-side * (DOOR_W / 2 - 0.2), 1.36, 0.08);
+      hinge.add(ring, boss);
+      door.add(hinge);
+      leaves.push(hinge);
+    }
+    // gilded frame around the doorway, on the room side
+    const trim = this.std('#c9a24d', { metalness: 0.85, roughness: 0.3, emissive: '#ffb347', emissiveIntensity: 0 });
+    for (const sx of [-1, 1]) this.box(0.16, DOOR_H + 0.2, 0.12, trim, sx * (DOOR_W / 2 + 0.08), (DOOR_H + 0.2) / 2, 0.14, door);
+    this.box(DOOR_W + 0.48, 0.2, 0.14, trim, 0, DOOR_H + 0.1, 0.14, door);
+    const crest = new THREE.Mesh(new THREE.CircleGeometry(0.22, 24), new THREE.MeshBasicMaterial({ map: glyphTexture(symbol.split(' ')[0], '#f2d27a', 128), transparent: true }));
+    crest.position.set(0, DOOR_H + 0.42, 0.2);
+    const crestBack = new THREE.Mesh(new THREE.CircleGeometry(0.26, 24), trim);
+    crestBack.position.set(0, DOOR_H + 0.42, 0.19);
+    door.add(crestBack, crest);
+    // the lock: a padlock across the seam, or the code lock on the dreidel room's door
+    let lock: THREE.Object3D;
+    if (next === 'lab') {
+      lock = new THREE.Group();
+      const plate = this.box(0.42, 0.62, 0.05, this.gold(), 0, 0, 0, lock);
+      plate.userData['doorLock'] = true;
+      const face = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.16), new THREE.MeshBasicMaterial({ map: labelTexture('▢ ▢ ▢ ▢', { color: '#ffd36b', bg: '#1a1208', width: 256, height: 120 }) }));
+      face.position.set(0, 0.16, 0.03);
+      const dial = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.05, 24), this.std('#e2b84a', { metalness: 0.9, roughness: 0.25, map: glyphTexture('🔒', '#000', 128) }));
+      dial.rotation.x = Math.PI / 2;
+      dial.position.set(0, -0.12, 0.04);
+      lock.add(face, dial);
+      lock.position.set(0.62, 1.45, 0.12);
+      this.doorLockDial = dial;
+      this.doorLockPlate = lock;
+      this.halo(lock, '#ffd36b', 1.0);
+    } else {
+      lock = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.17, 0.07), this.std('#8a6a2a', { metalness: 0.85, roughness: 0.35 }));
+      const shackle = new THREE.Mesh(new THREE.TorusGeometry(0.065, 0.016, 8, 20, Math.PI), this.std('#b8b8c0', { metalness: 0.9, roughness: 0.3 }));
+      shackle.position.y = 0.085;
+      lock.add(body, shackle);
+      lock.userData['shackle'] = shackle;
+      lock.position.set(0, 1.25, 0.12);
+    }
+    door.add(lock);
+    door.userData = { leaves, lock, trim, unlockT: 0, lockY: lock.position.y };
+    this.scene.add(door);
+    return door;
   }
 
   private wallWithGap(z: number, rotY: number, mat: THREE.Material, gapW: number) {
@@ -710,32 +962,60 @@ export class HanukkahWorld {
 
   // ---------------------------------------------------------------------- 2 · workshop
 
-  private buildWorkshop() {
-    const c = hCenter('workshop');
-    this.desk(c, 5.2, 1.6, -1.4, '#6a4a2a');
-    // five separate assembly zones on the bench (1 = the bottom of the lamp); parts are dragged onto them (spec 7)
-    BENCH_SLOTS.forEach((slot, k) => {
-      const [x, z] = BENCH_PAD[slot];
-      const ring = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.27, 32), new THREE.MeshBasicMaterial({ color: '#e2c27a', transparent: true, opacity: 0.55 }));
+  /** Zones on a table and the separate parts that are dragged onto them (shown there once the group has them). */
+  private buildAssembly(puzzle: string, kind: 'ring' | 'square', make: (item: string) => THREE.Object3D, gripY: number) {
+    const def = ASSEMBLIES[puzzle];
+    const c = hCenter(def.zone);
+    const pads = new Map<string, THREE.Mesh>();
+    def.slots.forEach((slot, k) => {
+      const [x, z] = def.pad[slot];
+      const ring = new THREE.Mesh(
+        kind === 'ring' ? new THREE.RingGeometry(0.2, 0.27, 32) : new THREE.RingGeometry(0.27, 0.33, 4, 1),
+        // not tone-mapped, so the red of a wrong arrangement stays red in the bright room
+        new THREE.MeshBasicMaterial({ color: '#e2c27a', transparent: true, opacity: 0.55, toneMapped: false }),
+      );
       ring.rotation.x = -Math.PI / 2;
-      ring.position.set(x, BENCH_TOP + 0.007, c + z);
-      const num = new THREE.Mesh(new THREE.CircleGeometry(0.19, 24), new THREE.MeshBasicMaterial({ map: glyphTexture(String(k + 1), '#e2c27a', 128, 'Heebo, sans-serif'), transparent: true, opacity: 0.6 }));
-      num.rotation.x = -Math.PI / 2;
-      num.position.set(x, BENCH_TOP + 0.006, c + z);
-      this.scene.add(ring, num);
-      this.benchPads.set(slot, ring);
+      if (kind === 'square') ring.rotation.z = Math.PI / 4;
+      ring.position.set(x, def.top + 0.007, c + z);
+      this.scene.add(ring);
+      if (kind === 'ring') {
+        const num = new THREE.Mesh(new THREE.CircleGeometry(0.19, 24), new THREE.MeshBasicMaterial({ map: glyphTexture(String(k + 1), '#e2c27a', 128, 'Heebo, sans-serif'), transparent: true, opacity: 0.6 }));
+        num.rotation.x = -Math.PI / 2;
+        num.position.set(x, def.top + 0.006, c + z);
+        this.scene.add(num);
+      } else {
+        // a softly lit square where the dreidel stands
+        const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.44, 0.44), new THREE.MeshBasicMaterial({ color: '#ffe6a0', transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false }));
+        glow.rotation.x = -Math.PI / 2;
+        glow.position.set(x, def.top + 0.005, c + z);
+        this.scene.add(glow);
+      }
+      pads.set(slot, ring);
     });
-    // the parts themselves: separate objects, shown on the bench once the group has picked them up
-    for (const id of Object.keys(BENCH_TRAY)) {
-      const part = this.itemModel(id);
-      part.scale.setScalar(BENCH_SCALE);
+    const parts = new Map<string, THREE.Object3D>();
+    for (const id of Object.keys(def.tray)) {
+      const part = make(id);
       part.visible = false;
       part.userData['benchItem'] = id;
       // a generous invisible grip, so thin parts (the wick) are easy to take with a finger too
-      part.add(new THREE.Mesh(new THREE.SphereGeometry(0.19, 10, 8), new THREE.MeshBasicMaterial({ visible: false })));
+      const grip = new THREE.Mesh(new THREE.SphereGeometry(0.19, 10, 8), new THREE.MeshBasicMaterial({ visible: false }));
+      grip.position.y = gripY;
+      part.add(grip);
       this.scene.add(part);
-      this.benchParts.set(id, part);
+      parts.set(id, part);
     }
+    this.asm.set(puzzle, { def, pads, parts, slots: {}, flash: -10 });
+  }
+
+  private buildWorkshop() {
+    const c = hCenter('workshop');
+    this.desk(c, 5.2, 1.6, -1.4, '#6a4a2a');
+    // five separate assembly zones on the bench (1 = the bottom of the lamp); parts are dragged onto them
+    this.buildAssembly('h2-lamp', 'ring', (id) => {
+      const part = this.itemModel(id);
+      part.scale.setScalar(BENCH_SCALE);
+      return part;
+    }, 0);
     // an easel with a clear drawing of the assembled lamp
     const easel = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.5), this.std('#ffffff', { map: lampDrawingTexture(), roughness: 0.8 }));
     easel.position.set(-3.3, 1.75, c - 1.9);
@@ -807,6 +1087,8 @@ export class HanukkahWorld {
     const grid: string[] = scenario?.puzzles.find((p) => p.id === 'h3-maze')?.publicData?.grid ?? [];
     const rows = grid.length;
     const cols = grid[0]?.length ?? 0;
+    this.mazeGrid = grid;
+    this.mazeGateIds = (scenario?.puzzles.find((p) => p.id === 'h3-maze')?.publicData?.levers ?? []).map((l: { gate: string }) => l.gate);
     // the mechanical table under a glass top
     this.box(cols * MAZE_CELL + 0.6, 0.9, rows * MAZE_CELL + 0.6, this.wood('#3a2414'), 0, 0.45, c - 1.0);
     const board = this.box(cols * MAZE_CELL + 0.3, 0.06, rows * MAZE_CELL + 0.3, this.std('#1e2a44', { roughness: 0.5 }), 0, 0.93, c - 1.0);
@@ -837,6 +1119,11 @@ export class HanukkahWorld {
     this.mazeKeyTarget.copy(this.mazeKey.position);
     this.scene.add(this.mazeKey);
     this.halo(this.mazeKey, '#ffe08a', 0.5);
+    // an easy grip around the small key
+    const keyGrip = new THREE.Mesh(new THREE.SphereGeometry(0.36, 10, 8), new THREE.MeshBasicMaterial({ visible: false }));
+    keyGrip.position.x = 0.15;
+    keyGrip.userData['maze'] = 'key';
+    this.mazeKey.add(keyGrip);
     // magnetic rod
     const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.9, 10), this.std('#c03030', { metalness: 0.5 }));
     rod.rotation.z = 0.6;
@@ -850,7 +1137,16 @@ export class HanukkahWorld {
       arm.position.y = 0.25;
       const knob = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 8), this.std(['#c03030', '#3070c0', '#30a050'][k]));
       knob.position.y = 0.5;
-      lever.add(arm, knob);
+      // bigger levers with a clear grip
+      arm.scale.set(1.6, 1.3, 1.6);
+      arm.position.y = 0.32;
+      knob.scale.setScalar(1.7);
+      knob.position.y = 0.66;
+      const grip = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), new THREE.MeshBasicMaterial({ visible: false }));
+      grip.position.y = 0.55;
+      grip.userData['maze'] = 'lever' + k;
+      lever.add(arm, knob, grip);
+      lever.userData['knob'] = knob;
       lever.position.set(2.4, 1.0, c - 1.6 + k * 0.6);
       lever.rotation.z = 0.5;
       this.scene.add(lever);
@@ -863,16 +1159,32 @@ export class HanukkahWorld {
     this.scene.add(sb);
     this.scroll(-2.8, 1.02, c - 1.0, -0.2);
     this.box(0.8, 0.06, 0.6, this.wood(), -2.8, 0.97, c - 1.0);
-    // metal box at the end of the maze
-    this.box(0.5, 0.35, 0.4, this.std('#6a6a72', { metalness: 0.85, roughness: 0.35 }), 2.6, 1.12, c - 2.2);
+    // metal box at the end of the maze: bigger, gilded edges, a soft gold light and a halo once it can be opened
+    this.box(0.9, 0.06, 0.7, this.wood('#3a2414'), 3.3, 0.95, c - 2.25);
+    this.metalBox = this.box(0.66, 0.42, 0.5, this.std('#70707a', { metalness: 0.85, roughness: 0.32 }), 3.3, 1.19, c - 2.25);
+    this.metalBox.userData['maze'] = 'box';
+    for (const dx of [-0.34, 0.34]) this.box(0.03, 0.44, 0.52, this.gold(), 3.3 + dx, 1.19, c - 2.25);
+    const lockPlate = this.box(0.16, 0.16, 0.02, this.gold(), 3.3, 1.2, c - 1.99);
+    lockPlate.userData['maze'] = 'box';
+    this.boxHalo = this.halo(this.metalBox, '#ffd36b', 1.6);
+    this.boxHalo.material.opacity = 0.2;
+    this.addLight(3.3, 2.1, c - 1.6, '#ffd59a', 3.5, 4, false);
     const lid = new THREE.Group();
-    const lidMesh = this.box(0.5, 0.06, 0.4, this.std('#7a7a82', { metalness: 0.85, roughness: 0.3 }), 0, 0, 0.2, lid);
+    const lidMesh = this.box(0.68, 0.07, 0.52, this.std('#80808a', { metalness: 0.85, roughness: 0.3 }), 0, 0, 0.26, lid);
     lidMesh.castShadow = true;
-    lid.position.set(2.6, 1.32, c - 2.4);
+    lid.position.set(3.3, 1.43, c - 2.51);
     this.scene.add(lid);
     this.metalBoxLid = lid;
     this.openTargets.set(lid, { axis: 'x', kind: 'rot', from: 0, to: -1.6, on: false });
     this.addLight(0, 2.6, c - 1, '#9ab8ff', 5, 8);
+    // short instructions next to the mechanism, and the code plate of the collection compartment
+    const leverHint = this.label('לחצו על ידית כדי להזיז אותה', 1.3, 0.26, 3.75, 1.6, c - 0.55, -0.7, { bg: '#2a2016', color: '#ffd36b' });
+    const keyHint = this.label('גררו את המפתח על הלוח לאורך המסלול', 2.0, 0.3, 0, 1.5, c - 2.4, 0, { bg: '#2a2016', color: '#ffd36b' });
+    this.mazeHints.push(leverHint, keyHint);
+    this.mazeCodePlate = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.32), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 }));
+    this.mazeCodePlate.position.set(this.mazeOrigin.x + (cols - 1) * MAZE_CELL + 0.45, 1.3, this.mazeOrigin.z + 5 * MAZE_CELL);
+    this.mazeCodePlate.rotation.y = -0.5;
+    this.scene.add(this.mazeCodePlate);
   }
 
   // ---------------------------------------------------------------------- 4 · cipher room
@@ -882,8 +1194,9 @@ export class HanukkahWorld {
     this.desk(c, 6.0, 1.8, -1.1);
     // three number tablets on the back wall: 1 — 6 — 200, read from left to right
     ['1', '6', '200'].forEach((n, k) => {
-      const t = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), this.std('#ffffff', { map: sheetTexture([n], { bg: '#3a3446', color: '#9fd0ff', w: 256, h: 256, size: 110 }), emissive: '#0a1430' }));
-      t.position.set(-1.6 + k * 1.6, 2.4, c - H_HALF_D + 0.06);
+      const t = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), this.std('#ffffff', { map: numberTexture(n), emissive: '#0a1430' }));
+      // on the wall left of the door, still read from left to right
+      t.position.set(-5.2 + k * 1.4, 2.6, c - H_HALF_D + 0.06);
       this.scene.add(t);
     });
     // the gematria board on the left wall
@@ -892,14 +1205,48 @@ export class HanukkahWorld {
     gb.rotation.y = Math.PI / 2;
     gb.position.set(-H_HALF_W + 0.06, 2.2, c - 1.5);
     this.scene.add(gb);
-    // letter wheel: three rings on an axle, over a drawer with a three-wheel mechanism
+    // the letter wheel: a large mechanism on the desk — three engraved gilded rings on one axle between carved posts,
+    // with a dark wooden base, gold rims between the rings and a blue light under it
+    const wx = 0.45;
+    const wy = 1.72;
+    const wz = c - 1.35;
+    const darkWood = this.wood('#2e1a0c');
+    this.box(1.5, 0.16, 0.8, darkWood, wx, 1.08, wz);
+    this.box(1.6, 0.04, 0.9, this.gold(), wx, 1.0, wz);
+    const band = wheelBandTexture();
     for (let k = 0; k < 3; k++) {
-      const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.12, 22), this.std('#c9a24d', { metalness: 0.85, roughness: 0.3, map: glyphTexture('א ב ג', '#3a2410', 256, 'Frank Ruhl Libre, serif') }));
-      ring.rotation.z = Math.PI / 2;
-      ring.position.set(0.35 + k * 0.14, 1.22, c - 1.2);
-      this.scene.add(ring);
+      const ring = new THREE.Group();
+      const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.46, 0.26, LETTERS.length, 1, true), this.std('#c9b48a', { map: band, metalness: 0.35, roughness: 0.55 }));
+      const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.25, 32), this.std('#2a1a0c'));
+      ring.add(drum, disc);
+      // the holder lays the drum on the axle; the drum spins around it — the letter facing the player is the one that counts
+      const holder = new THREE.Group();
+      holder.rotation.z = Math.PI / 2;
+      holder.position.set(wx - 0.32 + k * 0.32, wy, wz);
+      holder.add(ring);
+      this.scene.add(holder);
       this.wheelRings.push(ring);
     }
+    for (let k = 0; k < 4; k++) {
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.49, 0.035, 10, 48), this.gold());
+      rim.rotation.y = Math.PI / 2;
+      rim.position.set(wx - 0.48 + k * 0.32, wy, wz);
+      this.scene.add(rim);
+    }
+    const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.5, 12), this.gold());
+    axle.rotation.z = Math.PI / 2;
+    axle.position.set(wx, wy, wz);
+    this.scene.add(axle);
+    for (const sx of [-1, 1]) {
+      this.box(0.12, 0.66, 0.24, darkWood, wx + sx * 0.7, 1.45, wz);
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 10), this.gold());
+      cap.position.set(wx + sx * 0.7, 1.8, wz);
+      this.scene.add(cap);
+    }
+    // a gilded reading window marks the letters that count
+    for (const dy of [-0.15, 0.15]) this.box(1.02, 0.025, 0.025, this.gold(), wx, wy + dy, wz + 0.47);
+    for (const dx of [-0.51, 0.51]) this.box(0.025, 0.32, 0.025, this.gold(), wx + dx, wy, wz + 0.47);
+    this.addLight(wx, 1.3, wz + 0.9, '#6aa8ff', 1.8, 3, false);
     this.box(0.9, 0.3, 0.5, this.wood('#4a2c16'), 0.5, 0.75, c - 1.2);
     this.scroll(-2.2, 1.02, c - 1.2, 0.3);
     const book = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.06, 0.42), this.std('#ffffff', { map: parchmentTexture() }));
@@ -918,9 +1265,9 @@ export class HanukkahWorld {
       this.scene.add(seal);
     }
     // the blue lamp lighting the numbers
-    this.addLight(0, 3.6, c - 5.4, '#6aa8ff', 9, 7, false);
+    this.addLight(-3.8, 3.6, c - 5.4, '#6aa8ff', 9, 7, false);
     const blue = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 12), new THREE.MeshBasicMaterial({ color: '#8fc4ff' }));
-    blue.position.set(0, 3.8, c - 5.6);
+    blue.position.set(-3.8, 3.9, c - 5.6);
     this.scene.add(blue);
     this.halo(blue, '#8fc4ff', 1.4);
     this.shelfWall(H_HALF_W - 0.3, c, -1.0, -Math.PI / 2, 21);
@@ -948,26 +1295,22 @@ export class HanukkahWorld {
     this.scene.add(big);
     this.animated.push((t) => (big.rotation.y = t * 0.35));
     this.addLight(0, 3.2, c - 2.4, '#ffcf80', 7, 8);
-    // wooden stand with four places (2×2), and the table with four hint cards
-    this.box(3.4, 0.08, 1.4, this.wood(), 2.8, 0.95, c - 1.2);
-    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) this.box(0.1, 0.9, 0.1, this.std('#3a2414'), 2.8 + sx * 1.5, 0.45, c - 1.2 + sz * 0.55);
-    const stand = this.box(1.1, 0.7, 0.2, this.wood('#6a4422'), 2.8, 1.35, c - 1.75);
-    stand.castShadow = true;
-    // physical positions as seen by a player standing in front of the stand (looking towards -z): left = -x
-    const pos: Record<string, [number, number]> = { tl: [-0.27, 0.17], tr: [0.27, 0.17], bl: [-0.27, -0.17], br: [0.27, -0.17] };
-    for (const [id, [dx, dy]] of Object.entries(pos)) {
-      const hole = new THREE.Mesh(new THREE.CircleGeometry(0.11, 18), this.std('#2a1a0c'));
-      hole.position.set(2.8 + dx, 1.35 + dy, c - 1.64);
-      this.scene.add(hole);
-      const slot = new THREE.Group();
-      slot.position.set(2.8 + dx, 1.35 + dy - 0.08, c - 1.55);
-      this.scene.add(slot);
-      this.standSlots.set(id, slot);
-    }
-    for (let k = 0; k < 4; k++) {
+    // the table with the dreidel stand: a large gilded 2×2 board, softly lit, and four hint cards beside it
+    this.box(3.6, 0.08, 1.9, this.wood(), 2.8, 0.95, c - 1.2);
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) this.box(0.1, 0.9, 0.1, this.std('#3a2414'), 2.8 + sx * 1.6, 0.45, c - 1.2 + sz * 0.8);
+    this.box(1.6, 0.05, 1.25, this.wood('#2e1a0c'), 2.8, 1.02, c - 1.4);
+    for (const dz of [-0.64, 0.64]) this.box(1.66, 0.07, 0.06, this.gold(), 2.8, 1.04, c - 1.4 + dz);
+    for (const dx of [-0.82, 0.82]) this.box(0.06, 0.07, 1.34, this.gold(), 2.8 + dx, 1.04, c - 1.4);
+    this.box(0.03, 0.02, 1.2, this.gold(), 2.8, 1.05, c - 1.4);
+    this.box(1.56, 0.02, 0.03, this.gold(), 2.8, 1.05, c - 1.4);
+    this.label('מתקן הסביבונים', 1.2, 0.26, 2.8, 1.35, c - 2.1, 0, { bg: '#2a2016', color: '#ffd36b' });
+    this.addLight(2.8, 2.6, c - 1.0, '#ffe2a8', 5, 5, false);
+    this.buildAssembly('h5-stand', 'square', (id) => this.dreidelModel(id, 0.2), 0.18);
+    const cards: [number, number][] = [[1.45, -1.65], [1.45, -1.0], [4.15, -1.65], [4.15, -1.0]];
+    for (const [x, z] of cards) {
       const card = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.24), this.std('#ffffff', { map: parchmentTexture() }));
       card.rotation.x = -Math.PI / 2;
-      card.position.set(1.7 + k * 0.6 + (k > 1 ? 0.2 : 0), 1.0, c - 0.75);
+      card.position.set(x, 1.0, c + z);
       this.scene.add(card);
     }
     // wooden box with a numeric lock
@@ -978,7 +1321,6 @@ export class HanukkahWorld {
     this.scene.add(lid);
     this.woodBoxLid = lid;
     this.openTargets.set(lid, { axis: 'x', kind: 'rot', from: 0, to: -1.7, on: false });
-    this.box(0.36, 0.16, 0.04, this.std('#b8913f', { metalness: 0.8 }), -2.8, 0.42, c - 1.28);
     // floor with direction marks, gears, coins and candlesticks
     const marks = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), new THREE.MeshBasicMaterial({ map: glyphTexture('⬆', '#c9a24d'), transparent: true, opacity: 0.35 }));
     marks.rotation.x = -Math.PI / 2;
@@ -1201,7 +1543,14 @@ export class HanukkahWorld {
     const newlyOpen = [...this.doors.keys()].filter((z) => s.unlockedZones.includes(z) && !this.unlocked.has(z));
     this.unlocked = new Set(s.unlockedZones);
     this.rects = hWalkable(this.unlocked);
-    for (const [zone] of this.doors) this.doorOpen.set(zone, this.unlocked.has(zone) ? 1 : 0);
+    for (const [zone, door] of this.doors) {
+      this.doorOpen.set(zone, this.unlocked.has(zone) ? 1 : 0);
+      // doors that were already open on arrival are shown open, without replaying the lock
+      if (!live && this.unlocked.has(zone)) {
+        door.userData['unlockT'] = 10;
+        this.doorProgress.set(zone, 1);
+      }
+    }
     if (live) newlyOpen.forEach((z) => this.doorGlow(z));
     const before = this.worldItems;
     this.worldItems = new Set(s.worldItems);
@@ -1214,9 +1563,11 @@ export class HanukkahWorld {
     const m = s.mechanisms ?? {};
 
     this.setOpen(this.drawerFront, solved('h1-riddle'));
-    // the lamp bench: parts on the assembly zones, the rest in the group's bag (laid out on the tray at the bench)
-    this.benchSlots = { ...(m['h2-lamp']?.slots ?? {}) };
+    // assembly tables: parts on their zones, the rest in the group's bag (laid out on the tray while at the table)
+    for (const [pid, a] of this.asm) a.slots = { ...(m[pid]?.slots ?? {}) };
     this.benchInv = new Set(s.inventory);
+    this.standSolved = solved('h5-stand');
+    this.standBacks = this.standSolved ? { ...(m['h5-stand']?.backs ?? {}) } : {};
     this.benchGuess.clear();
     const lampLit = solved('h2-lamp');
     // the lamp's success sequence plays once, live; on arrival (late join, reconnect) it is shown finished
@@ -1225,18 +1576,28 @@ export class HanukkahWorld {
     if (!lampLit) this.setOpen(this.wallPanel, false);
 
     const maze = m['h3-maze'];
-    if (maze?.key?.length === 2) this.mazeKeyTarget.set(this.mazeOrigin.x + maze.key[1] * MAZE_CELL, this.mazeOrigin.y + 0.05, this.mazeOrigin.z + maze.key[0] * MAZE_CELL);
+    if (maze?.key?.length === 2) {
+      this.mazeServerKey = [maze.key[0], maze.key[1]];
+      if (!this.mazeBusy) this.setMazeKey(this.mazeServerKey);
+    }
     if (maze) {
-      ['a', 'b', 'c'].forEach((g, i) => {
+      this.mazeLeverState = [...(maze.levers ?? [])];
+      this.mazeGateIds.forEach((g, i) => {
         const gate = this.mazeGates.get(g);
         if (gate) gate.position.y = this.mazeOrigin.y + (maze.levers[i] ? -0.12 : 0.04);
-        const lever = this.mazeLevers[i];
-        if (lever) lever.rotation.z = maze.levers[i] ? -0.5 : 0.5;
       });
+      if (maze.revealed && maze.revealed !== this.mazeCode && this.mazeCodePlate) {
+        this.mazeCode = maze.revealed;
+        const mat = this.mazeCodePlate.material as THREE.MeshBasicMaterial;
+        mat.map = labelTexture(maze.revealed, { color: '#ffd36b', bg: '#1a1208', width: 256, height: 164 });
+        mat.needsUpdate = true;
+      }
     }
+    this.mazeSolved = solved('h3-maze');
+    this.boxGlow = this.mazeSolved && !solved('h3-box');
     this.setOpen(this.metalBoxLid, solved('h3-box'));
-    if (solved('h4-wheel')) this.wheelRings.forEach((r, k) => (r.rotation.x = 0.6 + k * 0.4));
-    this.fillSlots([...this.standSlots.values()], [...this.standSlots.keys()], m['h5-stand'], (_slot, item) => this.dreidelModel(item, 0.16));
+    this.wheelSolved = solved('h4-wheel');
+    if (this.wheelSolved) this.setWheel(['א', 'ו', 'ר']);
     this.setOpen(this.woodBoxLid, solved('h5-lock'));
     if (this.jugGlow) (this.jugGlow.material as THREE.MeshBasicMaterial).opacity = solved('h6-jugs') ? 0.35 : 0;
 
@@ -1414,15 +1775,21 @@ export class HanukkahWorld {
     });
   }
 
-  // ======================================================================= lamp bench (room 2, spec 7)
+  // ======================================================================= assembly tables (lamp bench, dreidel stand)
 
   get isBench() {
     return this.mode === 'bench';
   }
 
-  /** Steps up to the workbench: the camera looks down at it and the parts can be dragged with the mouse or a finger. */
-  enterBench() {
-    if (this.mode !== 'play') return;
+  get benchPuzzle() {
+    return this.mode === 'bench' ? this.benchId : null;
+  }
+
+  /** Steps up to a table: the camera looks down at it and the parts can be dragged with the mouse or a finger. */
+  enterBench(puzzle: string) {
+    if (this.mode !== 'play' || !this.asm.has(puzzle)) return;
+    this.benchId = puzzle;
+    this.benchPlane.constant = -(ASSEMBLIES[puzzle].top + 0.18);
     this.mode = 'bench';
     this.modeTime = 0;
     this.keys.clear();
@@ -1434,6 +1801,7 @@ export class HanukkahWorld {
     if (this.mode !== 'bench') return;
     this.benchDrag = undefined;
     this.benchHover = null;
+    this.benchId = null;
     this.mode = 'play';
     this.snapCamera = false;
     this.canvas.style.cursor = 'grab';
@@ -1445,19 +1813,34 @@ export class HanukkahWorld {
     this.benchShake.set(item, this.time);
   }
 
+  /** A wrong arrangement: the zones of that table blink red for a moment. */
+  flashBench(puzzle: string) {
+    const a = this.asm.get(puzzle);
+    if (a) a.flash = this.time;
+  }
+
   private slotOf(item: string) {
-    return Object.keys(this.benchSlots).find((k) => this.benchSlots[k] === item) ?? null;
+    for (const a of this.asm.values()) {
+      const slot = Object.keys(a.slots).find((k) => a.slots[k] === item);
+      if (slot) return slot;
+    }
+    return null;
+  }
+
+  private benchLocked(puzzle: string) {
+    return puzzle === 'h2-lamp' ? this.lampSeq >= 0 : puzzle === 'h5-stand' ? this.standSolved : false;
   }
 
   private benchCamera(dt: number, t: number) {
-    const c = hCenter('workshop');
-    const look = new THREE.Vector3(0, BENCH_TOP, c - 1.15);
-    // far enough that the whole bench (±2 m) fits, also on a narrow phone screen
+    const def = ASSEMBLIES[this.benchId ?? 'h2-lamp'];
+    const c = hCenter(def.zone);
+    const look = new THREE.Vector3(def.look[0], def.top, c + def.look[1]);
+    // far enough that the whole table fits, also on a narrow phone screen
     const tanH = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * this.camera.aspect;
-    const d = Math.max(2.9, 2.2 / Math.max(0.2, tanH));
+    const d = Math.max(def.halfWidth * 1.32, def.halfWidth / Math.max(0.2, tanH));
     const goal = look.clone().add(new THREE.Vector3(0, 0.78, 0.63).multiplyScalar(d));
     // once the lamp is lit, the camera rises with its beam to the wall: the key symbol and the opening panel
-    if (this.lampSeq > 0 && this.lampSeq < 50) {
+    if (this.benchId === 'h2-lamp' && this.lampSeq > 0 && this.lampSeq < 50) {
       const k = THREE.MathUtils.smoothstep((this.lampSeq - 2.6) / 1.6, 0, 1);
       look.lerp(new THREE.Vector3(-0.3, 1.75, c - H_HALF_D), k);
       goal.lerp(new THREE.Vector3(0.2, 2.5, c + 1.4), k);
@@ -1465,71 +1848,99 @@ export class HanukkahWorld {
     this.camera.position.lerp(goal, Math.min(1, dt * 4));
     this.camera.lookAt(look);
     if (this.local) {
-      this.local.root.position.lerp(new THREE.Vector3(3.3, 0, c - 1.2), Math.min(1, dt * 5));
-      this.local.root.rotation.y = -Math.PI / 2;
+      this.local.root.position.lerp(new THREE.Vector3(def.stand[0], 0, c + def.stand[1]), Math.min(1, dt * 5));
+      this.local.root.rotation.y = def.stand[2];
       this.local.update(dt, 0, t);
     }
   }
 
   private updateBench(dt: number, t: number) {
-    const c = hCenter('workshop');
-    const benchOn = this.mode === 'bench';
     const solvedSeq = this.lampSeq >= 0;
     if (solvedSeq) this.lampSeq += dt;
     const seq = this.lampSeq;
-    for (const [id, part] of this.benchParts) {
-      const order = Object.keys(BENCH_STACK).indexOf(id);
-      const guess = this.benchGuess.has(id) ? this.benchGuess.get(id)! : undefined;
-      const slot = guess !== undefined ? guess : this.slotOf(id);
-      const inBag = this.benchInv.has(id);
-      let goal: THREE.Vector3 | null = null;
-      if (this.benchDrag?.id === id) goal = this.benchDrag.pos;
-      else if (solvedSeq) {
-        // the five parts lift off their zones one after another and join into one lamp on the middle zone
-        const [px, pz] = BENCH_PAD[BENCH_SLOTS[order]];
-        const [sx, sz] = BENCH_PAD['s3'];
-        const m = THREE.MathUtils.smoothstep(seq - order * 0.35, 0, 1);
-        goal = new THREE.Vector3(
-          THREE.MathUtils.lerp(px, sx, m),
-          BENCH_TOP + THREE.MathUtils.lerp(BENCH_REST[id], BENCH_STACK[id], m) + Math.sin(m * Math.PI) * 0.35,
-          c + THREE.MathUtils.lerp(pz, sz, m),
-        );
-        if (seq > 50) goal.set(sx, BENCH_TOP + BENCH_STACK[id], c + sz);
-      } else if (slot) {
-        const [px, pz] = BENCH_PAD[slot];
-        goal = new THREE.Vector3(px, BENCH_TOP + BENCH_REST[id], c + pz);
-      } else if (inBag && benchOn) {
-        const [tx, tz] = BENCH_TRAY[id];
-        goal = new THREE.Vector3(tx, BENCH_TOP + BENCH_REST[id], c + tz);
+    for (const [pid, a] of this.asm) {
+      const def = a.def;
+      const c = hCenter(def.zone);
+      const here = this.mode === 'bench' && this.benchId === pid;
+      const lampDone = pid === 'h2-lamp' && solvedSeq;
+      for (const [id, part] of a.parts) {
+        const guess = this.benchGuess.has(id) ? this.benchGuess.get(id)! : undefined;
+        const slot = guess !== undefined ? guess : Object.keys(a.slots).find((k) => a.slots[k] === id) ?? null;
+        let goal: THREE.Vector3 | null = null;
+        if (this.benchDrag?.id === id) goal = this.benchDrag.pos;
+        else if (lampDone) {
+          // the five parts lift off their zones one after another and join into one lamp on the middle zone
+          const order = Object.keys(BENCH_STACK).indexOf(id);
+          const [px, pz] = BENCH_PAD[BENCH_SLOTS[order]];
+          const [sx, sz] = BENCH_PAD['s3'];
+          const m = THREE.MathUtils.smoothstep(seq - order * 0.35, 0, 1);
+          goal = new THREE.Vector3(
+            THREE.MathUtils.lerp(px, sx, m),
+            BENCH_TOP + THREE.MathUtils.lerp(BENCH_REST[id], BENCH_STACK[id], m) + Math.sin(m * Math.PI) * 0.35,
+            c + THREE.MathUtils.lerp(pz, sz, m),
+          );
+          if (seq > 50) goal.set(sx, BENCH_TOP + BENCH_STACK[id], c + sz);
+        } else if (slot) {
+          const [px, pz] = def.pad[slot];
+          goal = new THREE.Vector3(px, def.top + def.rest[id], c + pz);
+        } else if (this.benchInv.has(id) && here) {
+          const [tx, tz] = def.tray[id];
+          goal = new THREE.Vector3(tx, def.top + def.rest[id], c + tz);
+        }
+        if (!goal) {
+          part.visible = false;
+          continue;
+        }
+        if (!part.visible) {
+          // appears on the tray by rising out of the bag
+          part.position.copy(goal).setY(goal.y - 0.3);
+          part.visible = true;
+        }
+        const fast = lampDone || this.benchDrag?.id === id;
+        part.position.lerp(goal, Math.min(1, dt * (fast ? 14 : 9)));
+        const shook = this.benchShake.get(id);
+        if (shook !== undefined) {
+          const age = t - shook;
+          if (age > 0.6) this.benchShake.delete(id);
+          else part.position.x += Math.sin(age * 45) * 0.04 * (1 - age / 0.6);
+        }
+        part.rotation.y = this.benchDrag?.id === id ? Math.sin(t * 3) * 0.2 : 0;
       }
-      if (!goal) {
-        part.visible = false;
-        continue;
+      // zones: glow where the dragged part would land, gold where a part sits, a red blink after a wrong arrangement
+      const flashing = t - a.flash < 1.2;
+      for (const [slot, ring] of a.pads) {
+        const mat = ring.material as THREE.MeshBasicMaterial;
+        const hot = here && this.benchHover === slot;
+        if (flashing) {
+          mat.color.set('#e8281a');
+          mat.opacity = 0.5 + Math.abs(Math.sin((t - a.flash) * 9)) * 0.5;
+        } else {
+          mat.color.set(hot ? '#9fe0ff' : a.slots[slot] ? '#ffd36b' : '#e2c27a');
+          mat.opacity = hot ? 0.95 : here ? 0.55 + Math.sin(t * 3 + slot.charCodeAt(1)) * 0.15 : 0.5;
+        }
+        ring.scale.setScalar(hot ? 1.15 : 1);
       }
-      if (!part.visible) {
-        // appears on the tray by rising out of the bag
-        part.position.copy(goal).setY(goal.y - 0.3);
-        part.visible = true;
-      }
-      const fast = solvedSeq || this.benchDrag?.id === id;
-      part.position.lerp(goal, Math.min(1, dt * (fast ? 14 : 9)));
-      const shook = this.benchShake.get(id);
-      if (shook !== undefined) {
-        const age = t - shook;
-        if (age > 0.6) this.benchShake.delete(id);
-        else part.position.x += Math.sin(age * 45) * 0.04 * (1 - age / 0.6);
-      }
-      part.rotation.y = this.benchDrag?.id === id ? Math.sin(t * 3) * 0.2 : 0;
     }
-    // assembly zones: glow where the dragged part would land, gold where a part already sits
-    for (const [slot, ring] of this.benchPads) {
-      const mat = ring.material as THREE.MeshBasicMaterial;
-      const hot = this.benchHover === slot;
-      mat.color.set(hot ? '#9fe0ff' : this.benchSlots[slot] ? '#ffd36b' : '#e2c27a');
-      mat.opacity = hot ? 0.95 : benchOn ? 0.5 + Math.sin(t * 3 + slot.charCodeAt(1)) * 0.15 : 0.45;
-      ring.scale.setScalar(hot ? 1.15 : 1);
-    }
-    // success: the lamp lights, its beam reaches the wall, the key symbol appears and the wall panel slides open
+    // the dreidel stand solved: the digit on each dreidel's back is shown beside it
+    if (this.standSolved) {
+      const a = this.asm.get('h5-stand')!;
+      const c = hCenter('dreidels');
+      for (const [slot, digit] of Object.entries(this.standBacks)) {
+        let plate = this.standDigits.get(slot);
+        if (!plate) {
+          plate = new THREE.Mesh(new THREE.CircleGeometry(0.1, 24), new THREE.MeshBasicMaterial({ map: glyphTexture(digit, '#2a1606', 128, 'Heebo, sans-serif'), color: '#ffe6a0', transparent: true, opacity: 0 }));
+          const [x, z] = a.def.pad[slot];
+          // the digit lies on the square beside its dreidel, where no other dreidel hides it
+          plate.position.set(x + 0.2, a.def.top + 0.03, c + z + 0.08);
+          plate.rotation.x = -1.15;
+          this.scene.add(plate);
+          this.standDigits.set(slot, plate);
+        }
+        const mat = plate.material as THREE.MeshBasicMaterial;
+        mat.opacity = Math.min(1, mat.opacity + dt * 0.8);
+      }
+    } else for (const plate of this.standDigits.values()) (plate.material as THREE.MeshBasicMaterial).opacity = 0;
+    // the lamp: it lights, its beam reaches the wall, the key symbol appears and the wall panel slides open
     const ramp = (from: number, len: number) => (solvedSeq ? THREE.MathUtils.clamp((seq - from) / len, 0, 1) : 0);
     const lit = ramp(2.2, 1.0);
     if (this.lampGlow) this.lampGlow.intensity = lit * (8 + Math.sin(t * 9) * 0.6);
@@ -1546,8 +1957,10 @@ export class HanukkahWorld {
   }
 
   private benchPick(): string | null {
+    const a = this.benchId ? this.asm.get(this.benchId) : undefined;
+    if (!a) return null;
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    const parts = [...this.benchParts.values()].filter((p) => p.visible);
+    const parts = [...a.parts.values()].filter((p) => p.visible);
     const hit = this.raycaster.intersectObjects(parts, true)[0];
     let o: THREE.Object3D | null = hit?.object ?? null;
     while (o && !o.userData['benchItem']) o = o.parent;
@@ -1560,12 +1973,12 @@ export class HanukkahWorld {
   }
 
   private benchDown(e: PointerEvent) {
-    if (this.lampSeq >= 0) return;
+    if (!this.benchId || this.benchLocked(this.benchId)) return;
     this.benchPointer(e);
     const id = this.benchPick();
     if (!id) return;
-    const part = this.benchParts.get(id)!;
-    this.benchDrag = { id, from: this.slotOf(id), pointerId: e.pointerId, pos: part.position.clone().setY(BENCH_TOP + 0.3) };
+    const part = this.asm.get(this.benchId)!.parts.get(id)!;
+    this.benchDrag = { id, from: this.slotOf(id), pointerId: e.pointerId, pos: part.position.clone().setY(ASSEMBLIES[this.benchId].top + 0.3) };
     this.canvas.style.cursor = 'grabbing';
     this.local?.reach(this.time);
   }
@@ -1573,21 +1986,22 @@ export class HanukkahWorld {
   private benchMove(e: PointerEvent) {
     this.benchPointer(e);
     const d = this.benchDrag;
-    if (!d || d.pointerId !== e.pointerId) {
-      this.canvas.style.cursor = this.lampSeq < 0 && this.benchPick() ? 'grab' : 'default';
+    if (!d || d.pointerId !== e.pointerId || !this.benchId) {
+      this.canvas.style.cursor = this.benchId && !this.benchLocked(this.benchId) && this.benchPick() ? 'grab' : 'default';
       return;
     }
+    const def = ASSEMBLIES[this.benchId];
     this.raycaster.setFromCamera(this.pointer, this.camera);
     const p = new THREE.Vector3();
     if (!this.raycaster.ray.intersectPlane(this.benchPlane, p)) return;
-    const c = hCenter('workshop');
-    p.x = THREE.MathUtils.clamp(p.x, -2.4, 2.4);
-    p.z = THREE.MathUtils.clamp(p.z, c - 2.1, c - 0.65);
-    d.pos.set(p.x, BENCH_TOP + 0.3, p.z);
+    const c = hCenter(def.zone);
+    p.x = THREE.MathUtils.clamp(p.x, def.bounds[0], def.bounds[1]);
+    p.z = THREE.MathUtils.clamp(p.z, c + def.bounds[2], c + def.bounds[3]);
+    d.pos.set(p.x, def.top + 0.3, p.z);
     let best: string | null = null;
-    let bestD = 0.42;
-    for (const slot of BENCH_SLOTS) {
-      const [x, z] = BENCH_PAD[slot];
+    let bestD = def.snap;
+    for (const slot of def.slots) {
+      const [x, z] = def.pad[slot];
       const dist = Math.hypot(p.x - x, p.z - (c + z));
       if (dist < bestD) {
         bestD = dist;
@@ -1599,20 +2013,202 @@ export class HanukkahWorld {
 
   private benchUp(e: PointerEvent) {
     const d = this.benchDrag;
-    if (!d || d.pointerId !== e.pointerId) return;
+    if (!d || d.pointerId !== e.pointerId || !this.benchId) return;
+    const puzzle = this.benchId;
+    const slots = this.asm.get(puzzle)!.slots;
     this.benchDrag = undefined;
     const slot = this.benchHover;
     this.benchHover = null;
     this.canvas.style.cursor = 'grab';
     // a part already sitting on that zone keeps it; the dropped part goes back
-    if (slot && this.benchSlots[slot] && this.benchSlots[slot] !== d.id) {
+    if (slot && slots[slot] && slots[slot] !== d.id) {
       this.benchRejected(d.id);
-      this.cb.onBenchDrop?.(d.id, slot, d.from);
+      this.cb.onBenchDrop?.(puzzle, d.id, slot, d.from);
       return;
     }
     if (slot === d.from) return;
     this.benchGuess.set(d.id, slot);
-    this.cb.onBenchDrop?.(d.id, slot, d.from);
+    this.cb.onBenchDrop?.(puzzle, d.id, slot, d.from);
+  }
+
+  // ======================================================================= maze table (room 3): key and levers used directly
+
+  get isMaze() {
+    return this.mode === 'maze';
+  }
+
+  /** Steps up to the maze table: the key is dragged on the board itself, the levers are pulled where they stand. */
+  enterMaze() {
+    if (this.mode !== 'play') return;
+    this.mode = 'maze';
+    this.modeTime = 0;
+    this.keys.clear();
+    this.hovered = null;
+    this.cb.onHover?.(null);
+  }
+
+  exitMaze() {
+    if (this.mode !== 'maze') return;
+    this.mazeDrag = undefined;
+    this.mazeAim = null;
+    this.mode = 'play';
+    this.canvas.style.cursor = 'grab';
+  }
+
+  private setMazeKey([r, col]: [number, number]) {
+    this.mazeKeyCell = [r, col];
+    this.mazeKeyTarget.set(this.mazeOrigin.x + col * MAZE_CELL, this.mazeOrigin.y + 0.05, this.mazeOrigin.z + r * MAZE_CELL);
+  }
+
+  private mazeOpen(r: number, col: number) {
+    const ch = this.mazeGrid[r]?.[col];
+    if (!ch || ch === '#') return false;
+    const gate = this.mazeGateIds.indexOf(ch);
+    return gate < 0 || !!this.mazeLeverState[gate];
+  }
+
+  private mazeCamera(dt: number, t: number) {
+    const c = hCenter('maze');
+    const look = new THREE.Vector3(0.9, 1.0, c - 0.75);
+    const tanH = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * this.camera.aspect;
+    const d = Math.max(4.4, 3.3 / Math.max(0.2, tanH));
+    const goal = look.clone().add(new THREE.Vector3(0, 0.84, 0.54).multiplyScalar(d));
+    this.camera.position.lerp(goal, Math.min(1, dt * 4));
+    this.camera.lookAt(look);
+    if (this.local) {
+      this.local.root.position.lerp(new THREE.Vector3(-2.0, 0, c + 0.9), Math.min(1, dt * 5));
+      this.local.root.rotation.y = Math.PI * 0.85;
+      this.local.update(dt, 0, t);
+    }
+  }
+
+  /** Levers swing to their state; the key follows the drag one open cell at a time, never through walls. */
+  private updateMaze(dt: number, t: number) {
+    this.mazeLevers.forEach((lever, i) => {
+      lever.rotation.z = THREE.MathUtils.lerp(lever.rotation.z, this.mazeLeverState[i] ? -0.5 : 0.5, Math.min(1, dt * 8));
+      const knob = lever.userData['knob'] as THREE.Mesh | undefined;
+      if (knob) (knob.material as THREE.MeshStandardMaterial).emissive.set(this.mode === 'maze' && this.mazeHover === 'lever' + i ? '#664400' : '#000000');
+    });
+    if (this.mazeKey) {
+      const lift = this.mazeDrag ? 0.05 : 0;
+      this.mazeKey.position.y = THREE.MathUtils.lerp(this.mazeKey.position.y, this.mazeKeyTarget.y + lift, Math.min(1, dt * 10));
+      const s = (this.mazeHover === 'key' || this.mazeDrag ? 0.52 : 0.45) * (this.mode === 'maze' && !this.mazeSolved ? 1 + Math.sin(t * 4) * 0.04 : 1);
+      this.mazeKey.scale.setScalar(THREE.MathUtils.lerp(this.mazeKey.scale.x, s, Math.min(1, dt * 10)));
+      const age = t - this.mazeShake;
+      if (age < 0.4) this.mazeKey.position.x += Math.sin(age * 50) * 0.015 * (1 - age / 0.4);
+    }
+    for (const h of this.mazeHints) h.visible = !this.mazeSolved;
+    if (this.mazeCodePlate) {
+      const mat = this.mazeCodePlate.material as THREE.MeshBasicMaterial;
+      mat.opacity = THREE.MathUtils.lerp(mat.opacity, this.mazeCode ? 1 : 0, Math.min(1, dt * 2));
+    }
+    if (this.boxHalo) this.boxHalo.material.opacity = this.boxGlow ? 0.45 + Math.sin(t * 3) * 0.2 : 0.12;
+    // while dragging — and after release, until the key reaches the release point or is stopped by a wall
+    if (this.mode !== 'maze' || !this.mazeAim || this.mazeBusy || this.mazeSolved || t - this.mazeLastStep < 0.13) return;
+    const [r, col] = this.mazeKeyCell;
+    const [tr, tc] = this.mazeAim;
+    if (tr === r && tc === col) {
+      if (!this.mazeDrag) this.mazeAim = null;
+      return;
+    }
+    const dr = Math.sign(tr - r);
+    const dc = Math.sign(tc - col);
+    const vert: [number, number, string] = [dr, 0, dr < 0 ? 'N' : 'S'];
+    const hor: [number, number, string] = [0, dc, dc > 0 ? 'E' : 'W'];
+    const tries = Math.abs(tr - r) >= Math.abs(tc - col) ? [vert, hor] : [hor, vert];
+    const options = tries.filter(([a, b]) => a !== 0 || b !== 0);
+    const step = options.find(([a, b]) => this.mazeOpen(r + a, col + b));
+    if (!step) {
+      if (!this.mazeDrag) this.mazeAim = null;
+      this.mazeLastStep = t;
+      this.mazeShake = t;
+      if (t - this.mazeBlockedAt > 1.5 && options.length) {
+        this.mazeBlockedAt = t;
+        const [a, b] = options[0];
+        this.cb.onMazeBlocked?.(this.mazeGrid[r + a]?.[col + b] === '#' ? 'קיר — המפתח לא יכול לעבור. נסו כיוון אחר.' : 'שער סגור חוסם את הדרך. הזיזו ידית כדי לפתוח אותו.');
+      }
+      return;
+    }
+    this.mazeBusy = true;
+    this.mazeLastStep = t;
+    this.setMazeKey([r + step[0], col + step[1]]);
+    Promise.resolve(this.cb.onMazeStep?.(step[2]) ?? false)
+      .then((ok) => {
+        if (ok) return;
+        this.setMazeKey(this.mazeServerKey);
+        this.mazeAim = this.mazeDrag ? this.mazeAim : null;
+      })
+      .catch(() => this.setMazeKey(this.mazeServerKey))
+      .finally(() => (this.mazeBusy = false));
+  }
+
+  private mazePick(): string | null {
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const targets: THREE.Object3D[] = [...this.mazeLevers];
+    if (this.mazeKey && !this.mazeSolved) targets.push(this.mazeKey);
+    if (this.metalBox) targets.push(this.metalBox);
+    for (const hit of this.raycaster.intersectObjects(targets, true)) {
+      let o: THREE.Object3D | null = hit.object;
+      while (o && !o.userData['maze']) o = o.parent;
+      if (o) return o.userData['maze'] as string;
+    }
+    return null;
+  }
+
+  private mazeDown(e: PointerEvent) {
+    this.benchPointer(e);
+    const what = this.mazePick();
+    if (what === 'key') {
+      this.mazeDrag = { pointerId: e.pointerId };
+      this.canvas.style.cursor = 'grabbing';
+      this.local?.reach(this.time);
+    } else if (what?.startsWith('lever')) {
+      this.local?.reach(this.time);
+      this.cb.onMazeLever?.(+what.slice(5));
+    } else if (what === 'box') this.cb.onMazeBox?.();
+  }
+
+  private mazeMove(e: PointerEvent) {
+    this.benchPointer(e);
+    if (!this.mazeDrag || this.mazeDrag.pointerId !== e.pointerId) {
+      this.mazeHover = this.mazePick();
+      this.canvas.style.cursor = this.mazeHover ? (this.mazeHover === 'key' ? 'grab' : 'pointer') : 'default';
+      return;
+    }
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const p = new THREE.Vector3();
+    if (!this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -(this.mazeOrigin.y + 0.05)), p)) return;
+    this.mazeAim = [Math.round((p.z - this.mazeOrigin.z) / MAZE_CELL), Math.round((p.x - this.mazeOrigin.x) / MAZE_CELL)];
+  }
+
+  private mazeUp(e: PointerEvent) {
+    if (!this.mazeDrag || this.mazeDrag.pointerId !== e.pointerId) return;
+    this.mazeMove(e);
+    this.mazeDrag = undefined;
+    this.canvas.style.cursor = 'grab';
+  }
+
+  // ======================================================================= letter wheel (room 4)
+
+  /** Turns the three rings so the given letters face the reading window. */
+  setWheel(letters: string[]) {
+    letters.forEach((l, k) => {
+      const i = LETTERS.indexOf(l);
+      if (i >= 0) this.wheelTarget[k] = -((i + 0.5) / LETTERS.length) * Math.PI * 2;
+    });
+  }
+
+  private updateWheel(dt: number, t: number) {
+    this.wheelRings.forEach((ring, k) => {
+      // the shortest way round to the target
+      let diff = this.wheelTarget[k] - ring.rotation.y;
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      ring.rotation.y += diff * Math.min(1, dt * 5);
+      const drum = ring.children[0] as THREE.Mesh;
+      const mat = drum.material as THREE.MeshStandardMaterial;
+      mat.emissive.set(this.wheelSolved ? '#3a6aff' : '#000000');
+      mat.emissiveIntensity = this.wheelSolved ? 0.25 + Math.sin(t * 2 + k) * 0.1 : 0;
+    });
   }
 
   setPlayers(players: PlayerDto[], myId: string | null, positions: Map<string, RemotePosition & { t: number }>) {
@@ -1708,19 +2304,16 @@ export class HanukkahWorld {
     this.updateFeedback(t, dt);
     for (const a of this.animated) a(t, dt);
     for (const h of this.hanukkiot) h.update(t);
-    for (const [zone, door] of this.doors) {
-      const target = this.doorOpen.get(zone) ?? 0;
-      const cur = this.doorProgress.get(zone) ?? target;
-      const next = THREE.MathUtils.lerp(cur, target, Math.min(1, dt * 1.2));
-      this.doorProgress.set(zone, next);
-      door.position.y = DOOR_H / 2 + next * (DOOR_H + 0.2);
-    }
+    for (const [zone, door] of this.doors) this.updateDoor(zone, door, dt, t);
     for (const [obj, o] of this.openTargets) {
       const goal = o.on ? o.to : o.from;
       if (o.kind === 'rot') obj.rotation[o.axis] = THREE.MathUtils.lerp(obj.rotation[o.axis], goal, Math.min(1, dt * 3));
       else obj.position[o.axis] = THREE.MathUtils.lerp(obj.position[o.axis], goal, Math.min(1, dt * 3));
     }
-    if (this.mazeKey) this.mazeKey.position.lerp(this.mazeKeyTarget, Math.min(1, dt * 10));
+    if (this.mazeKey) {
+      this.mazeKey.position.x = THREE.MathUtils.lerp(this.mazeKey.position.x, this.mazeKeyTarget.x, Math.min(1, dt * 12));
+      this.mazeKey.position.z = THREE.MathUtils.lerp(this.mazeKey.position.z, this.mazeKeyTarget.z, Math.min(1, dt * 12));
+    }
     this.gatePower = THREE.MathUtils.lerp(this.gatePower, this.gateTarget, Math.min(1, dt));
     if (this.hallGate) (this.hallGate.material as THREE.MeshBasicMaterial).opacity = 0.25 + this.gatePower * 0.5 + Math.sin(t * 2) * 0.05;
     if (this.particles) {
@@ -1737,8 +2330,11 @@ export class HanukkahWorld {
     else if (this.mode === 'outro') this.outroCamera(this.modeTime, t);
     else if (this.mode === 'cutscene' && this.cut) this.cutsceneCamera(dt, t);
     else if (this.mode === 'bench') this.benchCamera(dt, t);
+    else if (this.mode === 'maze') this.mazeCamera(dt, t);
     else this.playUpdate(dt, t);
     this.updateBench(dt, t);
+    this.updateMaze(dt, t);
+    this.updateWheel(dt, t);
 
     this.updateRemotes(dt, t);
     if (this.composer) this.composer.render();
@@ -1824,7 +2420,9 @@ export class HanukkahWorld {
     const roomish = this.rects.map((r) => ({ x0: r.x0 - 0.45, x1: r.x1 + 0.45, z0: r.z0 - 0.45, z1: r.z1 + 0.45 }));
     for (let dist = this.camDist; dist > 0.8; dist -= 0.2) {
       cam.copy(pivot).addScaledVector(dir, dist);
-      if (hInRects(roomish, cam.x, cam.z) && cam.y < H_WALL - 0.3) break;
+      // stay inside the player's room — or in line with the doorway — so walls and door leaves never block the view
+      const sameRoom = hZoneAt(cam.z) === hZoneAt(pivot.z) || Math.abs(cam.x) < DOOR_W / 2 - 0.25;
+      if (hInRects(roomish, cam.x, cam.z) && cam.y < H_WALL - 0.3 && sameRoom) break;
     }
     if (this.snapCamera) {
       this.camera.position.copy(cam);
@@ -1860,6 +2458,8 @@ export class HanukkahWorld {
     if (i <= 0 || this.mode !== 'play') return;
     const doorZ = hCenter(H_ZONES[i - 1]) - H_HALF_D;
     this.doorProgress.set(zone as HZone, 0);
+    const d = this.doors.get(zone as HZone);
+    if (d) d.userData['unlockT'] = 0;
     this.cut = { from: this.camera.position.clone(), to: new THREE.Vector3(2.2, 2.6, doorZ + 6), look: new THREE.Vector3(0, 1.9, doorZ - 2.5), t: 0, dur: 5 };
     this.mode = 'cutscene';
   }
@@ -1878,6 +2478,36 @@ export class HanukkahWorld {
       this.cut = undefined;
       this.mode = 'play';
     }
+  }
+
+  /**
+   * Doors: locked → the padlock (or code lock) stays; unlocked → the lock opens and drops away (or the dial turns),
+   * the gilded trim lights up and the two leaves fold back against the wall.
+   */
+  private updateDoor(zone: HZone, door: THREE.Object3D, dt: number, t: number) {
+    const u = door.userData as { leaves: THREE.Object3D[]; lock: THREE.Object3D; trim: THREE.MeshStandardMaterial; unlockT: number; lockY: number };
+    const target = this.doorOpen.get(zone) ?? 0;
+    if (target > 0) u.unlockT += dt;
+    else u.unlockT = 0;
+    const cur = this.doorProgress.get(zone) ?? target;
+    // the leaves wait until the lock has opened
+    const goal = target > 0 && u.unlockT > 1.0 ? 1 : 0;
+    const next = THREE.MathUtils.lerp(cur, goal, Math.min(1, dt * 1.3));
+    this.doorProgress.set(zone, next);
+    // the leaves fold back against the wall of the room the group is leaving, clear of the corridor and the camera
+    u.leaves[0].rotation.y = -next * 3.08;
+    u.leaves[1].rotation.y = next * 3.08;
+    const k = THREE.MathUtils.clamp(u.unlockT / 1.0, 0, 1);
+    if (u.lock === this.doorLockPlate) {
+      if (this.doorLockDial) this.doorLockDial.rotation.y = k * Math.PI * 4;
+      u.lock.visible = next < 0.05;
+    } else {
+      const shackle = u.lock.userData['shackle'] as THREE.Object3D;
+      shackle.position.y = 0.085 + Math.min(1, k * 2) * 0.05;
+      u.lock.position.y = u.lockY - Math.max(0, k - 0.5) * 2 * 1.1;
+      u.lock.visible = target === 0 || k < 1;
+    }
+    u.trim.emissiveIntensity = target > 0 ? 0.35 + Math.sin(t * 2) * 0.1 : 0;
   }
 
   /** Moves the local player to the entrance of a room (group transition or reconnect). */
@@ -1932,7 +2562,7 @@ export class HanukkahWorld {
 
   private onKeyDown = (e: KeyboardEvent) => {
     if ((e.target as HTMLElement)?.closest?.('input, textarea, select')) return;
-    if (this.mode === 'bench') {
+    if (this.mode === 'bench' || this.mode === 'maze') {
       if (e.code === 'Escape') this.cb.onBenchExit?.();
       return;
     }
@@ -1954,10 +2584,12 @@ export class HanukkahWorld {
     c.addEventListener('pointerdown', (e) => {
       c.setPointerCapture(e.pointerId);
       if (this.mode === 'bench') return this.benchDown(e);
+      if (this.mode === 'maze') return this.mazeDown(e);
       this.drag = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId };
     });
     c.addEventListener('pointermove', (e) => {
       if (this.mode === 'bench') return this.benchMove(e);
+      if (this.mode === 'maze') return this.mazeMove(e);
       const rect = c.getBoundingClientRect();
       this.pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
       if (this.drag && this.drag.id === e.pointerId) {
@@ -1974,6 +2606,7 @@ export class HanukkahWorld {
     });
     c.addEventListener('pointerup', (e) => {
       if (this.mode === 'bench') return this.benchUp(e);
+      if (this.mode === 'maze') return this.mazeUp(e);
       const d = this.drag;
       this.drag = undefined;
       if (d && !d.moved && this.mode === 'play') {

@@ -116,11 +116,21 @@ public class HanukkahEngineTests
         Assert.Equal(PuzzleStatus.Locked, Status(r, "h5-lock"));
         // נ top-left, ג top-right, פ bottom-left, ה bottom-right — by physical position, not by text order
         Op(e, r, ps[0], "h5-stand", new { op = "place", slot = "tl", item = "dreidel-nun" });
+        // the check button explains that the stand is not complete yet
+        var partial = Op(e, r, ps[0], "h5-stand", new { op = "activate" });
+        Assert.False(partial.Ok);
+        Assert.Equal("החידה עדיין לא הושלמה. הניחו את כל ארבעת הסביבונים במקומות המתאימים.", partial.Message);
         Op(e, r, ps[0], "h5-stand", new { op = "place", slot = "tr", item = "dreidel-gimel" });
         Op(e, r, ps[1], "h5-stand", new { op = "place", slot = "bl", item = "dreidel-he" });
         var wrong = Op(e, r, ps[1], "h5-stand", new { op = "place", slot = "br", item = "dreidel-pe" });
         Assert.Equal("placed-wrong", wrong.Code);
+        Assert.Equal("הסידור אינו נכון. בדקו את הרמזים ונסו שוב.", wrong.Message);
         Assert.Equal(PuzzleStatus.Active, Status(r, "h5-stand"));
+        var check = Op(e, r, ps[0], "h5-stand", new { op = "activate" });
+        Assert.Equal("הסידור אינו נכון. בדקו את הרמזים ונסו שוב.", check.Message);
+        Assert.Equal(PuzzleStatus.Active, Status(r, "h5-stand"));
+        // the door lock stays shut while the arrangement is wrong
+        Assert.False(e.SubmitAnswer(r, ps[0].Id, "h5-lock", J("4826"), T0).Ok);
         Op(e, r, ps[1], "h5-stand", new { op = "remove", slot = "bl" });
         Op(e, r, ps[1], "h5-stand", new { op = "remove", slot = "br" });
         Op(e, r, ps[1], "h5-stand", new { op = "place", slot = "bl", item = "dreidel-pe" });

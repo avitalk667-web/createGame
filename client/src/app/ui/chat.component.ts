@@ -19,7 +19,7 @@ const PHRASES = ['מצאתי רמז!', 'בואו לכאן', 'מישהו ראה �
             <div class="msg system">{{ m.text }}</div>
           } @else {
             <div class="msg" [class.mine]="m.playerId === game.playerId()">
-              <b>{{ m.nickname }}</b>
+              <b>{{ m.nickname }}</b><small class="time">{{ hhmm(m.t) }}</small>
               @if (m.emote) { <span class="emote">{{ m.emote }}</span> } @else { <span>{{ m.text }}</span> }
             </div>
           }
@@ -36,19 +36,20 @@ const PHRASES = ['מצאתי רמז!', 'בואו לכאן', 'מישהו ראה �
         @for (p of phrases; track p) { <button class="phrase" (click)="send(p)">{{ p }}</button> }
       </div>
       <form (submit)="$event.preventDefault(); send(text())">
-        <input [value]="text()" (input)="text.set($any($event.target).value)" maxlength="140" placeholder="כתבו הודעה לקבוצה..." aria-label="הודעה לקבוצה" />
+        <input [value]="text()" (input)="text.set($any($event.target).value)" (keydown.enter)="onEnter($any($event))" maxlength="140" placeholder="כתבו הודעה לקבוצה..." aria-label="הודעה לקבוצה" />
         <button class="btn small primary" type="submit" [disabled]="!text().trim()">שלח</button>
       </form>
       @if (error()) { <div class="err" role="alert">{{ error() }}</div> }
     </div>
   `,
   styles: [`
-    :host { display:block; min-width:0; }
-    .chat { min-width:0; display:flex; flex-direction:column; gap:.4rem; height:100%; }
-    .log { flex:1; min-height: 110px; overflow:auto; display:flex; flex-direction:column; gap:.3rem; padding:.3rem; }
+    :host { display:flex; flex-direction:column; min-width:0; min-height:0; }
+    .chat { min-width:0; min-height:0; flex:1; display:flex; flex-direction:column; gap:.4rem; }
+    .log { flex:1; min-height: 60px; overflow:auto; display:flex; flex-direction:column; gap:.3rem; padding:.3rem; }
     .compact .log { max-height: 180px; }
     .msg { background: rgba(255,255,255,.05); border-radius: 10px; padding: .3rem .6rem; font-size:.95rem; line-height:1.4; }
     .msg b { color: var(--gold-2); margin-inline-end: .4em; }
+    .time { color: var(--muted); font-size:.72rem; margin-inline-end:.4em; }
     .msg.mine { background: rgba(224,185,92,.12); }
     .msg.system { background: rgba(106,168,255,.1); border: 1px solid rgba(106,168,255,.35); color: #d8e6ff; font-size:.88rem; }
     .emote { font-size: 1.4rem; }
@@ -99,6 +100,19 @@ export class ChatComponent {
       this.text.set('');
       this.error.set(null);
     } else this.error.set(r.message);
+  }
+
+  /** Enter sends at once (not through the form's implicit submit), except while a word is still being composed. */
+  hhmm(t: number) {
+    const d = new Date(t);
+    return isNaN(d.getTime()) ? '' : String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+
+  onEnter(e: KeyboardEvent) {
+    if (e.isComposing) return;
+    e.preventDefault();
+    e.stopPropagation();
+    this.send(this.text());
   }
 
   async sendEmote(id: string) {

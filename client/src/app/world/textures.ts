@@ -142,6 +142,14 @@ export function labelTexture(text: string, opts: { color?: string; bg?: string; 
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.font = opts.font ?? `bold ${Math.floor(h * 0.48)}px Heebo, Arial, sans-serif`;
+  // long text shrinks to fit inside the label instead of being cut at its edges
+  if (!opts.font) {
+    let size = Math.floor(h * 0.48);
+    while (size > 10 && g.measureText(text).width > w - h * 0.6) {
+      size -= 2;
+      g.font = `bold ${size}px Heebo, Arial, sans-serif`;
+    }
+  }
   g.fillStyle = opts.color ?? '#fff';
   g.fillText(text, w / 2, h / 2 + 2);
   const t = new THREE.CanvasTexture(c);

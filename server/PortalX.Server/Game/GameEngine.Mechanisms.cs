@@ -93,6 +93,8 @@ public sealed partial class GameEngine
         var accepts = puzzle.PublicData["accepts"]!.AsArray().Select(n => n!.GetValue<string>()).ToHashSet();
         var activateMode = puzzle.PublicData["mode"]?.GetValue<string>() == "activate";
         var checkEach = puzzle.PublicData["checkEach"]?.GetValue<bool>() == true;
+        // an automatic mechanism may still offer a "check" button that explains what is wrong (the dreidel stand)
+        var checkButton = puzzle.PublicData["checkButton"]?.GetValue<bool>() == true;
         var solution = puzzle.Solution["slots"]!.AsObject();
         bool Correct() => slotIds.All(id => mech.Slots.TryGetValue(id, out var it) && solution[id]!.GetValue<string>() == it);
 
@@ -158,9 +160,11 @@ public sealed partial class GameEngine
             case "activate":
             {
                 // "Check assembly": says what is missing, or completes the mechanism when everything is in place
-                if (!activateMode && !checkEach) return ActionOutcome.Fail("wrong-action", "המתקן הזה פועל מעצמו כשהכול במקומו.");
+                if (!activateMode && !checkEach && !checkButton) return ActionOutcome.Fail("wrong-action", "המתקן הזה פועל מעצמו כשהכול במקומו.");
                 var missing = slotIds.Count - mech.Slots.Count;
-                if (missing > 0) return ActionOutcome.Fail("not-ready", missing == 1 ? "חסר עוד חלק אחד." : $"חסרים עוד {missing} חלקים.");
+                if (missing > 0)
+                    return ActionOutcome.Fail("not-ready", puzzle.PublicData["incompleteMessage"]?.GetValue<string>()
+                        ?? (missing == 1 ? "חסר עוד חלק אחד." : $"חסרים עוד {missing} חלקים."));
                 if (!mech.Ready || !Correct()) return ActionOutcome.Fail("not-ready", puzzle.Failure);
                 state.Attempts++;
                 return Solve(room, scenario, puzzle, state, player, now);
