@@ -15,6 +15,3 @@ services:
         sync: false
       - key: ASPNETCORE_ENVIRONMENT
         value: Production
-      # Spec minimum is 4 players. "2" allows a two-player test; delete this variable to require 4.
-      - key: Game__MinPlayersOverride
-        value: "2"

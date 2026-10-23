@@ -17,7 +17,8 @@ export interface Dashboard {
   currency: string;
   includesTest: boolean;
   revenue: Money;
-  byProduct: { productId: string; name: string; money: Money; games: number }[];
+  byProduct: { productId: string; name: string; isFree: boolean; money: Money; games: number }[];
+  freeGame?: FreeGameReport | null;
   buyersWithEmail: number;
   orders: { pending: number; failed: number; cancelled: number };
   games: {
@@ -26,6 +27,12 @@ export interface Dashboard {
   };
   participants: number;
   testPaidOrders?: number | null;
+}
+
+export interface FreeGameReport {
+  productId: string; name: string; kind: 'free'; created: number; started: number; notStarted: number; completed: number;
+  participants: number; participantsInStarted: number; lastStartedAt?: string | null;
+  today: { started: number; completed: number; joined: number };
 }
 
 export interface AdminOrder {

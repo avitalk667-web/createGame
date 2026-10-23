@@ -326,5 +326,5 @@ export function formatPrice(p: Product): string | null {
 }
 
 export function playersLabel(p: Product): string {
-  return `עד ${p.maxPlayers} משתתפים`;
+  return p.minPlayers > 1 ? `${p.minPlayers}–${p.maxPlayers} משתתפים` : `1–${p.maxPlayers} משתתפים`;
 }

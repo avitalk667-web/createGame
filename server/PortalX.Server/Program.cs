@@ -166,7 +166,8 @@ api.MapGet("/rooms/{code}", async (string code, RoomService rooms, ScenarioCatal
     return Results.Ok(new
     {
         code = room.Code, scenarioId = room.ScenarioId, scenarioName = scenario.Name,
-        phase = room.Phase.ToString().ToLowerInvariant(), playerCount = taken, maxPlayers = rooms.Engine.MaxPlayers(room),
+        phase = room.Phase.ToString().ToLowerInvariant(), playerCount = taken,
+        minPlayers = rooms.Engine.MinPlayers(scenario), maxPlayers = rooms.Engine.MaxPlayers(room),
         // open until the game is finished, also in the middle of it, while a seat is free (spec 3)
         canJoin = GameEngine.IsOpenForJoining(room) && taken < rooms.Engine.MaxPlayers(room),
     });

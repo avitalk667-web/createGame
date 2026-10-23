@@ -198,7 +198,7 @@ public class ExtensionsTests
         var list = (await Body(await http.GetAsync("/api/faq"))).EnumerateArray().ToList();
         Assert.True(list.Count >= 10);
         Assert.Equal("מהו PORTAL X?", list[0].GetProperty("question").GetString());
-        Assert.Equal("בכל משחק יכולים להשתתף עד 4 שחקנים, כולל המארח.", list[1].GetProperty("answer").GetString());
+        Assert.Equal("בכל משחק יכולים להשתתף בין שחקן אחד לארבעה שחקנים, כולל המארח. אפשר לשחק גם לבד.", list[1].GetProperty("answer").GetString());
         Assert.All(list.Take(10), q => Assert.True(q.GetProperty("isFixed").GetBoolean()));
 
         // a visitor cannot add questions

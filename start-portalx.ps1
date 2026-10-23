@@ -5,7 +5,7 @@
 #   .\start-portalx.ps1            # build the client (if needed) and run
 #   .\start-portalx.ps1 -Rebuild   # force a fresh client build
 #   .\start-portalx.ps1 -Lan       # also listen on the local network (other computers can join)
-#   .\start-portalx.ps1 -MinPlayers 2   # TESTING ONLY: allow starting with fewer than 4 players (spec default is 4)
+#   .\start-portalx.ps1 -MinPlayers 1   # TESTING ONLY: may only lower a game's minimum (every game already starts with 1 player)
 param([switch]$Rebuild, [switch]$Lan, [int]$Port = 5080, [int]$MinPlayers = 0)
 
 $ErrorActionPreference = 'Stop'
@@ -46,7 +46,7 @@ $bind = if ($Lan) { "http://0.0.0.0:$Port" } else { "http://localhost:$Port" }
 $env:ASPNETCORE_URLS = $bind
 if ($MinPlayers -gt 0) {
   $env:Game__MinPlayersOverride = "$MinPlayers"
-  Write-Host "TEST MODE: minimum players set to $MinPlayers (spec default: 4)"
+  Write-Host "TEST MODE: minimum players lowered to $MinPlayers where a game asks for more (every game already starts with 1)"
 } else { Remove-Item Env:Game__MinPlayersOverride -ErrorAction SilentlyContinue }
 # Local runs use the TEST payment provider: no money is charged and nothing counts as revenue.
 # The server refuses the test provider in the Production environment, so local runs use "Local".

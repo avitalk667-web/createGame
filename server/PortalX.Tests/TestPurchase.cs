@@ -24,7 +24,7 @@ public static class TestPurchase
         db.Products.Add(new Product
         {
             Id = ProductId, Name = "מוצר בדיקה", PriceIls = Price, Status = ProductStatus.Published,
-            ScenarioId = "last-portal", MinPlayers = 4, MaxPlayers = 8, SortOrder = 99,
+            ScenarioId = "last-portal", MinPlayers = 1, MaxPlayers = 4, SortOrder = 99,
             CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
         });
         try { await db.SaveChangesAsync(); } catch (DbUpdateException) { /* created by a parallel test */ }

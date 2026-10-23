@@ -67,7 +67,7 @@ import { IconComponent } from '../ui/icon.component';
 
       <div class="bottom">
         <section class="card controls">
-          <p class="muted">צריך {{ s.minPlayers }}–{{ s.maxPlayers }} משתתפים. מקומות תפוסים: <b>{{ s.seatsTaken ?? s.players.length }}</b> מתוך {{ s.maxPlayers }}.</p>
+          <p class="muted">אפשר לשחק עם {{ s.minPlayers }}–{{ s.maxPlayers }} משתתפים, כולל המארח. מקומות תפוסים: <b>{{ s.seatsTaken ?? s.players.length }}</b> מתוך {{ s.maxPlayers }}.</p>
           @if (game.isHost()) {
             <button class="btn primary big" (click)="start()" [disabled]="!!s.startBlocker || busy()">מתחילים! ‹</button>
             @if (s.startBlocker) { <p class="muted small">{{ s.startBlocker }}</p> }

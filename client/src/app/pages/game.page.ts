@@ -90,7 +90,7 @@ import { CouponQuote, Product, formatPrice, playersLabel } from '../core/models'
                     } @else {
                       <dt>מחיר</dt><dd>{{ price(p) }}</dd>
                     }
-                    <dt>כולל</dt><dd>משחק קבוצתי אחד, עד {{ p.maxPlayers }} משתתפים. המשתתפים לא משלמים.</dd>
+                    <dt>כולל</dt><dd>משחק קבוצתי אחד, 1–{{ p.maxPlayers }} משתתפים. המשתתפים לא משלמים.</dd>
                   </dl>
                   <div class="coupon">
                     <label for="coupon">יש לך קוד קופון?</label>

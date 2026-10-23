@@ -127,7 +127,6 @@ const ACTIONS: Record<string, string> = {
                 <div class="stat card"><span>הכנסות לאחר החזרים</span><b>{{ d.revenue.afterRefunds | number: '1.0-2' }} ₪</b><small>לפני עמלות סליקה, מסים והוצאות</small></div>
                 <div class="stat card"><span>משחקים שנפתחו</span><b>{{ d.games.opened }}</b><small>{{ d.games.started }} התחילו · {{ d.games.completed }} הושלמו</small></div>
                 <div class="stat card"><span>משחקים ששולמו והתחילו</span><b>{{ d.games.paidStarted }}</b><small>{{ d.games.purchasedNotStarted }} נרכשו וטרם התחילו</small></div>
-                <div class="stat card"><span>משחק ההתנסות החינמי</span><b>{{ d.games.freeSample }}</b><small>{{ d.games.freeSampleStarted }} התחילו · {{ d.games.freeSampleCompleted }} הושלמו · {{ d.games.freeSamplePlayers }} משתתפים · לא נספר בהכנסות</small></div>
                 <div class="stat card"><span>משחקים חינמיים של המנהל</span><b>{{ d.games.adminFree }}</b><small>{{ d.games.adminFreeStarted }} התחילו</small></div>
                 <div class="stat card"><span>משתתפים</span><b>{{ d.participants }}</b><small>ללא ספירה כפולה בתוך אותו משחק</small></div>
                 <div class="stat card"><span>רוכשים (דוא״ל ייחודי)</span><b>{{ d.buyersWithEmail }}</b><small>אין חשבונות לקוח — נספרים רק מי שהשאירו דוא״ל</small></div>
@@ -136,14 +135,35 @@ const ACTIONS: Record<string, string> = {
                 הזמנות שלא הושלמו: {{ d.orders.pending }} ממתינות · {{ d.orders.failed }} נכשלו · {{ d.orders.cancelled }} בוטלו.
                 @if (d.testPaidOrders) { רכישות בדיקה ({{ d.testPaidOrders }}) אינן נכללות בהכנסות. }
               </p>
+              @if (d.freeGame; as g) {
+                <section class="free-report card" aria-labelledby="free-report-title">
+                  <div class="bar">
+                    <h2 id="free-report-title">„{{ g.name }}” — משחק חינמי</h2>
+                    <button class="btn small" type="button" (click)="freeGameHistory(g.productId)">להיסטוריית המשחקים ‹</button>
+                  </div>
+                  <div class="cards">
+                    <div class="stat card"><span>משחקים שנוצרו</span><b>{{ g.created }}</b><small>{{ g.notStarted }} נוצרו ולא התחילו</small></div>
+                    <div class="stat card"><span>משחקים שהתחילו בפועל</span><b>{{ g.started }}</b><small>היום: {{ g.today.started }}</small></div>
+                    <div class="stat card"><span>משחקים שהושלמו</span><b>{{ g.completed }}</b><small>היום: {{ g.today.completed }}</small></div>
+                    <div class="stat card"><span>משתתפים שהצטרפו</span><b>{{ g.participants }}</b><small>היום: {{ g.today.joined }} · חיבור מחדש לא נספר שוב</small></div>
+                    <div class="stat card"><span>משתתפים במשחקים שהתחילו</span><b>{{ g.participantsInStarted }}</b><small>סך ההשתתפויות בכל ההרצות שהתחילו</small></div>
+                    <div class="stat card"><span>הפעלה אחרונה</span><b class="date">{{ g.lastStartedAt ? (g.lastStartedAt | date: 'd.M.yy HH:mm') : '—' }}</b><small>חינמי · לא נספר בהכנסות</small></div>
+                  </div>
+                  <p class="muted small">משחק נספר פעם אחת לפי קוד המשחק, גם אם רעננו את הדף או נכנסו שוב. משתתף נספר פעם אחת בכל משחק, כי חיבור מחדש מחזיר אותו למקום שלו. אין חשבונות משתמש, ולכן אותו אדם בשני משחקים שונים נספר פעמיים. סינון התאריכים חל על מועד יצירת המשחק; נתוני „היום” לפי שעון ישראל.</p>
+                </section>
+              }
               <h2>לפי משחק</h2>
               <div class="table-wrap">
                 <table>
                   <thead><tr><th>משחק</th><th>ברוטו</th><th>החזרים</th><th>לאחר החזרים</th><th>עסקאות</th><th>משחקים שנפתחו</th></tr></thead>
                   <tbody>
                     @for (p of d.byProduct; track p.productId) {
+                      @if (p.isFree) {
+                        <tr><td>{{ p.name }} <span class="st" data-s="free">חינמי</span></td><td colspan="4" class="muted">משחק חינמי — אין מכירות ואין הכנסות</td><td>{{ p.games }}</td></tr>
+                      } @else {
                       <tr><td>{{ p.name }}</td><td>{{ p.money.gross | number: '1.0-2' }} ₪</td><td>{{ p.money.refunds | number: '1.0-2' }} ₪</td>
                         <td>{{ p.money.afterRefunds | number: '1.0-2' }} ₪</td><td>{{ p.money.paidCount }}</td><td>{{ p.games }}</td></tr>
+                      }
                     }
                   </tbody>
                 </table>
@@ -380,6 +400,9 @@ const ACTIONS: Record<string, string> = {
     .filters label.check { flex-direction:row; align-items:center; gap:.4rem; }
     .cards { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:.8rem; }
     .stat { display:flex; flex-direction:column; gap:.2rem; padding:1rem; }
+    .free-report { padding:1rem; margin:1.2rem 0; border-color:var(--gold); }
+    .free-report h2 { margin:0; font-size:1.2rem; } .free-report .cards { grid-template-columns:repeat(3, minmax(0,1fr)); margin:.8rem 0 .4rem; }
+    .stat b.date { font-size:1.15rem; }
     .stat span { color:var(--muted); font-size:.9rem; } .stat b { font-size:1.7rem; color:var(--gold-2); } .stat small { color:var(--muted); }
     .table-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:var(--radius); }
     table { width:100%; border-collapse:collapse; font-size:.9rem; }
@@ -412,8 +435,8 @@ const ACTIONS: Record<string, string> = {
     @media (max-width: 560px) { .grid3 { grid-template-columns:1fr; } }
     .ok { color:#9be3b4; } .small { font-size:.8rem; }
     select { background:var(--panel-solid); color:var(--text); border:1px solid var(--line); border-radius:10px; padding:.45rem .6rem; min-height:40px; }
-    @media (max-width: 900px) { .cards { grid-template-columns:repeat(2, minmax(0,1fr)); } .products { grid-template-columns:1fr; } }
-    @media (max-width: 560px) { .cards { grid-template-columns:1fr; } .row3 { grid-template-columns:1fr; } }
+    @media (max-width: 900px) { .cards, .free-report .cards { grid-template-columns:repeat(2, minmax(0,1fr)); } .products { grid-template-columns:1fr; } }
+    @media (max-width: 560px) { .cards, .free-report .cards { grid-template-columns:1fr; } .row3 { grid-template-columns:1fr; } }
   `],
 })
 export class AdminPage {
@@ -485,6 +508,14 @@ export class AdminPage {
   go(t: Tab) {
     this.tab.set(t);
     this.f.update((f) => ({ ...f, status: undefined, access: undefined, search: undefined }));
+    this.game.set(null);
+    this.reload();
+  }
+
+  /** The games table filtered to the free trial: every run with its dates, players and status. */
+  freeGameHistory(productId: string) {
+    this.tab.set('games');
+    this.f.update((f) => ({ ...f, productId, status: undefined, access: 'free-sample', search: undefined }));
     this.game.set(null);
     this.reload();
   }

@@ -12,7 +12,7 @@ public sealed class ScenarioContent
     public required string Description { get; init; }
     public required string DurationMinutes { get; init; }
     public required string Difficulty { get; init; }
-    public int MinPlayers { get; init; } = 4;
+    public int MinPlayers { get; init; } = 1;
     public int MaxPlayers { get; init; } = 4;
     public required string FinalWord { get; init; }
     public required List<ZoneContent> Zones { get; init; }

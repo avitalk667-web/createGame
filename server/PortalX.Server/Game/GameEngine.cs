@@ -9,7 +9,12 @@ namespace PortalX.Server.Game;
 
 public sealed class GameOptions
 {
-    /// <summary>Overrides the scenario's minimum group size (e.g. 1 for solo testing). Null = use the scenario value (4).</summary>
+    /// <summary>
+    /// The smallest group that may start any game, the host included (spec: 1–4 players in every game).
+    /// A scenario may ask for more, never for fewer.
+    /// </summary>
+    public int MinPlayers { get; set; } = 1;
+    /// <summary>Testing only: may lower a scenario's minimum, never raise it above the scenario's own value.</summary>
     public int? MinPlayersOverride { get; set; }
     /// <summary>
     /// The one place that sets how many participants a game may have, the host included (spec: 4 in every game).
@@ -50,7 +55,8 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
     public ScenarioCatalog Catalog => catalog;
     public GameOptions Options => options;
 
-    public int MinPlayers(ScenarioContent s) => Math.Min(options.MinPlayersOverride ?? s.MinPlayers, options.MaxPlayers);
+    public int MinPlayers(ScenarioContent s) =>
+        Math.Clamp(Math.Min(options.MinPlayersOverride ?? s.MinPlayers, s.MinPlayers), Math.Max(1, options.MinPlayers), options.MaxPlayers);
 
     /// <summary>The participant limit of this game: fixed when the game was opened, never above the central limit.</summary>
     public int MaxPlayers(GameRoom room) => room.MaxPlayers is > 0 and var m ? Math.Min(m, options.MaxPlayers) : options.MaxPlayers;

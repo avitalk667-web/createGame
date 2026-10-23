@@ -124,10 +124,12 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
             revenue = Money(confirmed, refunded),
             byProduct = products.Where(p => f.ProductId == null || p.Id == f.ProductId).Select(p => new
             {
-                productId = p.Id, name = p.Name,
-                money = Money(confirmed.Where(o => o.ProductId == p.Id), refunded.Where(o => o.ProductId == p.Id)),
-                games = managed.Count(r => r.Room.ProductId == p.Id),
+                productId = p.Id, name = p.Name, p.IsFree,
+                // a free game has no sales: its money is always zero and its games are the free trial runs
+                money = p.IsFree ? Money([], []) : Money(confirmed.Where(o => o.ProductId == p.Id), refunded.Where(o => o.ProductId == p.Id)),
+                games = p.IsFree ? sampleRooms.Count(r => r.Room.ProductId == p.Id) : managed.Count(r => r.Room.ProductId == p.Id),
             }),
+            freeGame = await FreeGameReportAsync(sampleRooms, products.FirstOrDefault(p => p.IsFree)),
             buyersWithEmail = confirmed.Where(o => o.Email != null).Select(o => o.Email!.ToLowerInvariant()).Distinct().Count(),
             orders = new
             {
@@ -154,6 +156,55 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
             // without customer accounts a person is counted once per game they joined (a reconnect keeps the same seat)
             participants = managed.Sum(r => r.Players),
             testPaidOrders = f.IncludeTest ? (int?)null : await db.Orders.CountAsync(o => o.IsTest && (o.Status == OrderStatus.Paid || o.Status == OrderStatus.Refunded)),
+        };
+    }
+
+    /// <summary>Start of today in Israel, as UTC (the "today" figures of the reports).</summary>
+    public static DateTime IsraelTodayStartUtc(DateTime utcNow)
+    {
+        TimeZoneInfo zone;
+        try { zone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Jerusalem"); }
+        catch (Exception) { zone = TimeZoneInfo.CreateCustomTimeZone("IL", TimeSpan.FromHours(2), "IL", "IL"); }
+        var local = TimeZoneInfo.ConvertTimeFromUtc(utcNow, zone).Date;
+        return TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(local, DateTimeKind.Unspecified), zone);
+    }
+
+    /// <summary>
+    /// Report of the free trial game (spec 3): games and players are counted apart. A game counts once by its room,
+    /// however often players refresh or come back; a player counts once per game by their seat, because a reconnect
+    /// returns to the same seat. Without customer accounts the same person in two different games counts twice.
+    /// The period filter applies to when a game was opened; the "today" figures always cover today in Israel.
+    /// </summary>
+    private async Task<object?> FreeGameReportAsync(List<RoomRow> sampleRooms, Product? product)
+    {
+        if (product == null) return null;
+        var rows = sampleRooms.Where(r => r.Room.ProductId == product.Id || r.Room.ScenarioId == product.ScenarioId).ToList();
+        var ids = rows.Select(r => r.Room.Id).ToList();
+        var startedIds = rows.Where(Started).Select(r => r.Room.Id).ToHashSet();
+        // everyone who took a seat, also players who later left the game
+        var seats = await db.Players.AsNoTracking().Where(p => ids.Contains(p.RoomId)).Select(p => new { p.Id, p.RoomId }).ToListAsync();
+
+        var today = IsraelTodayStartUtc(DateTime.UtcNow);
+        var all = db.Rooms.AsNoTracking().Where(r => r.AccessSource == "free-sample");
+        var startedToday = await all.CountAsync(r => (r.IntroStartedAt ?? r.StartedAt) >= today);
+        var completedToday = await all.CountAsync(r => r.Phase == RoomPhase.Completed && r.EndedAt >= today);
+        var joinedToday = await db.Players.AsNoTracking().CountAsync(p => p.JoinedAt >= today
+            && db.Rooms.Any(r => r.Id == p.RoomId && r.AccessSource == "free-sample"));
+        var lastStarted = await all.Where(r => r.IntroStartedAt != null || r.StartedAt != null)
+            .MaxAsync(r => (DateTime?)(r.IntroStartedAt ?? r.StartedAt));
+
+        return new
+        {
+            productId = product.Id, name = product.Name, kind = "free",
+            created = rows.Count,
+            started = startedIds.Count,
+            notStarted = rows.Count - startedIds.Count,
+            completed = rows.Count(Completed),
+            participants = seats.Select(s => s.Id).Distinct().Count(),
+            participantsInStarted = seats.Where(s => startedIds.Contains(s.RoomId)).Select(s => s.Id).Distinct().Count(),
+            lastStartedAt = lastStarted,
+            today = new { started = startedToday, completed = completedToday, joined = joinedToday },
+            revenue = 0,
         };
     }
 
