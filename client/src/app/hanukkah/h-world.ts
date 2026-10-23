@@ -1831,6 +1831,25 @@ export class HanukkahWorld {
     return puzzle === 'h2-lamp' ? this.lampSeq >= 0 : puzzle === 'h5-stand' ? this.standSolved : false;
   }
 
+  /**
+   * Where the camera stands to look down at a table from distance d: never above the chandeliers or behind the room's
+   * front wall — on a tall phone screen it backs away instead of climbing — and, on a portrait screen, aimed a little
+   * nearer so the table sits above the instruction card.
+   */
+  private focusCamera(look: THREE.Vector3, d: number, rise: number, c: number) {
+    const portrait = this.camera.aspect < 1;
+    if (portrait) look.z += 0.9;
+    let h = d * rise;
+    let back = Math.sqrt(Math.max(0, d * d - h * h));
+    const maxH = 4.4 - look.y;
+    if (h > maxH) {
+      h = maxH;
+      back = Math.sqrt(Math.max(0, d * d - h * h));
+    }
+    const goal = new THREE.Vector3(look.x, look.y + h, Math.min(look.z + back, c + H_HALF_D - 0.4));
+    return goal;
+  }
+
   private benchCamera(dt: number, t: number) {
     const def = ASSEMBLIES[this.benchId ?? 'h2-lamp'];
     const c = hCenter(def.zone);
@@ -1838,7 +1857,7 @@ export class HanukkahWorld {
     // far enough that the whole table fits, also on a narrow phone screen
     const tanH = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * this.camera.aspect;
     const d = Math.max(def.halfWidth * 1.32, def.halfWidth / Math.max(0.2, tanH));
-    const goal = look.clone().add(new THREE.Vector3(0, 0.78, 0.63).multiplyScalar(d));
+    const goal = this.focusCamera(look, d, 0.78, c);
     // once the lamp is lit, the camera rises with its beam to the wall: the key symbol and the opening panel
     if (this.benchId === 'h2-lamp' && this.lampSeq > 0 && this.lampSeq < 50) {
       const k = THREE.MathUtils.smoothstep((this.lampSeq - 2.6) / 1.6, 0, 1);
@@ -2072,7 +2091,7 @@ export class HanukkahWorld {
     const look = new THREE.Vector3(0.9, 1.0, c - 0.75);
     const tanH = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * this.camera.aspect;
     const d = Math.max(4.4, 3.3 / Math.max(0.2, tanH));
-    const goal = look.clone().add(new THREE.Vector3(0, 0.84, 0.54).multiplyScalar(d));
+    const goal = this.focusCamera(look, d, 0.84, c);
     this.camera.position.lerp(goal, Math.min(1, dt * 4));
     this.camera.lookAt(look);
     if (this.local) {

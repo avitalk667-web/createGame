@@ -228,6 +228,11 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
     .bench header { display:flex; justify-content:space-between; align-items:center; gap:.6rem; } .bench header b { font-family: var(--font-title); color: var(--gold-2); font-size:1.2rem; }
     .b-ins { margin:0; line-height:1.6; } .b-msg { margin:0; color:#9be3b4; } .b-msg.bad { color:#ffb4a3; } .b-ok { margin:0; color:#9be3b4; font-size:1.1rem; }
     .b-hint { margin:0; color:#cfe2ff; } .b-actions { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; }
+    @media (max-width: 760px) {
+      .bench { bottom:8px; padding:.6rem .7rem; gap:.3rem; }
+      .bench .b-ins { font-size:.84rem; line-height:1.45; max-height:4.4em; overflow:auto; }
+      .bench .b-actions .btn { padding:.45em .8em; font-size:.88rem; }
+    }
     .letterbox { position:fixed; inset-inline:0; height:9vh; background:#000; z-index:5; } .letterbox.top { top:0 } .letterbox.bottom { bottom:0 }
     .title-card { position:fixed; inset:0; display:grid; place-content:center; text-align:center; z-index:6; pointer-events:none; animation: fadein 2s ease; }
     .title-card h1 { font-size: clamp(3rem, 12vw, 7rem); font-weight:900; } .title-card p { font-family: var(--font-title); font-size: clamp(1.2rem, 4vw, 2rem); color: var(--gold-2); text-shadow: 0 2px 10px #000; }
@@ -292,7 +297,7 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
       border-radius:999px; padding:.3rem .5rem .3rem 1rem; display:flex; gap:.6rem; align-items:center; }
     @media (max-width: 760px) {
       .objectives { top:auto; bottom:150px; width:calc(100% - 20px); max-height:30vh; overflow:auto; } .objectives.collapsed { width:auto; }
-      .score { top:58px; width:170px; font-size:.85rem; } .hover-label { display:none; } .inventory { max-width: calc(100% - 150px); }
+      .score { top:104px; width:170px; font-size:.85rem; } .hover-label { display:none; } .inventory { max-width: calc(100% - 150px); }
     }
   `],
 })
