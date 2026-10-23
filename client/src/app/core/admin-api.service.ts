@@ -20,14 +20,18 @@ export interface Dashboard {
   byProduct: { productId: string; name: string; money: Money; games: number }[];
   buyersWithEmail: number;
   orders: { pending: number; failed: number; cancelled: number };
-  games: { opened: number; started: number; completed: number; paidStarted: number; adminFree: number; adminFreeStarted: number; purchasedNotStarted: number };
+  games: {
+    opened: number; started: number; completed: number; paidStarted: number; adminFree: number; adminFreeStarted: number; purchasedNotStarted: number;
+    freeSample: number; freeSampleStarted: number; freeSampleCompleted: number; freeSamplePlayers: number;
+  };
   participants: number;
   testPaidOrders?: number | null;
 }
 
 export interface AdminOrder {
   id: string; number: number; createdAt: string; email?: string | null; productId: string; productName: string;
-  amount: number; currency: string; status: string; provider: string; transactionId?: string | null; isTest: boolean;
+  amount: number; originalPrice: number; discount: number; couponCode?: string | null;
+  currency: string; status: string; provider: string; transactionId?: string | null; isTest: boolean;
   refundedAmount?: number | null; gameCode?: string | null; players: number; gameStatus?: string | null;
 }
 
@@ -41,6 +45,21 @@ export interface AdminGame {
 export interface AdminProduct {
   id: string; name: string; tagline: string; description: string; coverImage: string; price?: number | null; currency: string;
   status: string; minPlayers: number; maxPlayers: number; scenarioId?: string | null; updatedAt: string; playable: boolean; warnings: string[];
+  isFree: boolean; maxPlayersLimit: number;
+}
+
+export interface FaqRow { id: string; question: string; answer: string; sortOrder: number; published: boolean; createdBy: string; createdAt: string; updatedAt: string }
+
+export interface CouponRow {
+  id: string; code: string; name: string; note?: string | null; kind: 'percent' | 'fixed'; value: number;
+  products: { id: string; name: string }[]; startsAt?: string | null; endsAt?: string | null; maxRedemptions?: number | null;
+  active: boolean; createdAt: string; updatedAt: string; state: 'active' | 'scheduled' | 'expired' | 'disabled';
+  redeemed: number; reserved: number; refunded: number; discountGiven: number; paidTotal: number;
+}
+
+export interface CouponUse {
+  orderNumber?: number | null; productName?: string | null; productId: string; originalPrice: number; discount: number; finalPrice: number;
+  redemption: string; orderStatus?: string | null; isTest?: boolean | null; createdAt: string;
 }
 
 export interface AuditEntry { id: number; adminName: string; action: string; targetType?: string | null; targetId?: string | null; details: unknown; createdAt: string }
@@ -90,4 +109,13 @@ export class AdminApiService {
   freeGame(productId: string) { return this.request<{ code: string; hostClaim: string }>('POST', '/api/admin/free-game', { productId }); }
   reclaim(code: string) { return this.request<{ code: string; hostClaim?: string | null }>('POST', `/api/admin/games/${encodeURIComponent(code)}/host-claim`); }
   audit() { return this.request<AuditEntry[]>('GET', '/api/admin/audit'); }
+  faq() { return this.request<{ builtIn: { question: string; answer: string }[]; custom: FaqRow[] }>('GET', '/api/admin/faq'); }
+  addFaq(body: object) { return this.request<FaqRow>('POST', '/api/admin/faq', body); }
+  updateFaq(id: string, body: object) { return this.request<FaqRow>('PUT', `/api/admin/faq/${id}`, body); }
+  deleteFaq(id: string) { return this.request<void>('DELETE', `/api/admin/faq/${id}`); }
+  coupons() { return this.request<CouponRow[]>('GET', '/api/admin/coupons'); }
+  createCoupon(body: object) { return this.request<{ id: string; code: string }>('POST', '/api/admin/coupons', body); }
+  updateCoupon(id: string, body: object) { return this.request<{ id: string; code: string }>('PUT', `/api/admin/coupons/${id}`, body); }
+  setCouponActive(id: string, active: boolean) { return this.request<void>('POST', `/api/admin/coupons/${id}/status`, { active }); }
+  couponOrders(id: string) { return this.request<CouponUse[]>('GET', `/api/admin/coupons/${id}/orders`); }
 }

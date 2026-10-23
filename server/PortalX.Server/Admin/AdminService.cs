@@ -105,6 +105,8 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
         var managed = roomRows.Where(r => r.Room.AccessSource is "purchase" or "admin-free").ToList();
         var paidRooms = managed.Where(r => r.Room.AccessSource == "purchase").ToList();
         var freeRooms = managed.Where(r => r.Room.AccessSource == "admin-free").ToList();
+        // free trial games: shown separately, never part of the revenue or of the paid games
+        var sampleRooms = roomRows.Where(r => r.Room.AccessSource == "free-sample").ToList();
         var paidWithRoom = paidRooms.Where(r => r.Order != null).Select(r => r.Order!.Id).ToHashSet();
         var products = await db.Products.AsNoTracking().OrderBy(p => p.SortOrder).ToListAsync();
 
@@ -141,6 +143,10 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
                 paidStarted = paidRooms.Count(Started),
                 adminFree = freeRooms.Count,
                 adminFreeStarted = freeRooms.Count(Started),
+                freeSample = sampleRooms.Count,
+                freeSampleStarted = sampleRooms.Count(Started),
+                freeSampleCompleted = sampleRooms.Count(Completed),
+                freeSamplePlayers = sampleRooms.Sum(r => r.Players),
                 // paid but not started: a room still in the lobby, or a paid order whose game was never opened
                 purchasedNotStarted = paidRooms.Count(r => !Started(r))
                     + confirmed.Count(o => o.Status == OrderStatus.Paid && !paidWithRoom.Contains(o.Id)),
@@ -171,6 +177,7 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
                 ["id"] = o.Id, ["number"] = o.Number, ["createdAt"] = o.CreatedAt, ["email"] = o.Email,
                 ["productId"] = o.ProductId, ["productName"] = o.ProductName, ["amount"] = o.PriceSnapshot, ["currency"] = o.Currency,
                 ["status"] = o.Status.ToString().ToLowerInvariant(), ["provider"] = o.Provider, ["transactionId"] = o.ProviderTransactionId,
+                ["originalPrice"] = o.OriginalPrice ?? o.PriceSnapshot, ["discount"] = o.DiscountAmount, ["couponCode"] = o.CouponCode,
                 ["isTest"] = o.IsTest, ["paidAt"] = o.PaidAt, ["refundedAt"] = o.RefundedAt, ["refundedAmount"] = o.RefundedAmount,
                 ["gameCode"] = room?.Code, ["players"] = row?.Players ?? 0,
                 ["gameStatus"] = row == null ? (o.Status == OrderStatus.Paid ? "not-opened" : null) : GameStatus(row),
@@ -202,7 +209,8 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
         }
         var cols = new (string Key, string Title)[]
         {
-            ("number", "מספר הזמנה"), ("createdAt", "תאריך"), ("email", "דוא\"ל"), ("productName", "משחק"), ("amount", "סכום"),
+            ("number", "מספר הזמנה"), ("createdAt", "תאריך"), ("email", "דוא\"ל"), ("productName", "משחק"), ("originalPrice", "מחיר מקורי"),
+            ("discount", "הנחה"), ("couponCode", "קופון"), ("amount", "סכום ששולם"),
             ("currency", "מטבע"), ("status", "סטטוס תשלום"), ("provider", "ספק סליקה"), ("transactionId", "מזהה עסקה"),
             ("isTest", "בדיקה"), ("refundedAmount", "סכום החזר"), ("gameCode", "קוד משחק"), ("players", "משתתפים"), ("gameStatus", "סטטוס משחק"),
         };
@@ -229,7 +237,7 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
             access = r.Room.AccessSource,
             isTest = r.Ent?.IsTest ?? false,
             orderNumber = r.Order?.Number,
-            owner = r.Room.AccessSource == "admin-free" ? "מנהל" : r.Order != null ? $"הזמנה {r.Order.Number}" : null,
+            owner = r.Room.AccessSource switch { "admin-free" => "מנהל", "free-sample" => "משחק התנסות חינמי", _ => r.Order != null ? $"הזמנה {r.Order.Number}" : null },
             r.Room.CreatedAt,
             startedAt = r.Room.IntroStartedAt ?? r.Room.StartedAt,
             r.Room.EndedAt,
@@ -282,7 +290,8 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
     private object ProductRow(Product p) => new
         {
             p.Id, p.Name, p.Tagline, p.Description, p.CoverImage, price = p.PriceIls, p.Currency,
-            status = p.Status.ToString().ToLowerInvariant(), p.MinPlayers, p.MaxPlayers, p.ScenarioId, p.UpdatedAt,
+            status = p.Status.ToString().ToLowerInvariant(), p.MinPlayers, p.MaxPlayers, p.ScenarioId, p.UpdatedAt, p.IsFree,
+            maxPlayersLimit = rooms.Engine.MaxPlayersLimit,
             playable = PurchaseService.IsPlayable(p, scenarios),
             warnings = Warnings(p),
         };
@@ -319,7 +328,8 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
         }
         if (u.MaxPlayers is { } max)
         {
-            if (max < 1 || max > 8 || max < p.MinPlayers) return (null, $"מספר המשתתפים המרבי צריך להיות בין {Math.Max(1, p.MinPlayers)} ל־8.");
+            var cap = rooms.Engine.MaxPlayersLimit;
+            if (max < 1 || max > cap || max < p.MinPlayers) return (null, $"מספר המשתתפים המרבי צריך להיות בין {Math.Max(1, p.MinPlayers)} ל־{cap}.");
             p.MaxPlayers = max;
         }
         if (u.Status != null)
@@ -328,7 +338,7 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
             p.Status = st;
         }
         // spec §6: a paid product cannot be published without a positive price
-        if (p.Status == ProductStatus.Published && p.PriceIls is not > 0 && (u.Status != null || u.ClearPrice))
+        if (p.Status == ProductStatus.Published && !p.IsFree && p.PriceIls is not > 0 && (u.Status != null || u.ClearPrice))
             return (null, "אי אפשר לפרסם מוצר בלי מחיר חיובי. קבעו מחיר או הסתירו את המוצר.");
 
         p.UpdatedAt = DateTime.UtcNow;
@@ -361,6 +371,7 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
         var (room, claim) = await rooms.CreateRoomAsync(product.ScenarioId!, r =>
         {
             r.ProductId = product.Id;
+            r.MaxPlayers = rooms.Engine.MaxPlayersFor(product.MaxPlayers);
             r.EntitlementId = ent.Id;
             r.AccessSource = "admin-free";
         });

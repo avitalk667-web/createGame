@@ -37,7 +37,7 @@ public class ProductCatalogTests
         var hanukkah = byId["hanukkah-oil"];
         Assert.Equal(90m, hanukkah.GetProperty("price").GetDecimal());
         Assert.Equal("ILS", hanukkah.GetProperty("currency").GetString());
-        Assert.Equal(8, hanukkah.GetProperty("maxPlayers").GetInt32());
+        Assert.Equal(4, hanukkah.GetProperty("maxPlayers").GetInt32());
         Assert.Equal(8, hanukkah.GetProperty("gallery").GetArrayLength());
         Assert.True(hanukkah.GetProperty("playable").GetBoolean());
 

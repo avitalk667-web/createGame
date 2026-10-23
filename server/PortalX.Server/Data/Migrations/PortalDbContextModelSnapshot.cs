@@ -58,6 +58,125 @@ namespace PortalX.Server.Data.Migrations
                     b.ToTable("AdminAuditLog");
                 });
 
+            modelBuilder.Entity("PortalX.Server.Domain.Coupon", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("EndsAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("MaxRedemptions")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("StartsAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("Value")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("Coupons", t =>
+                        {
+                            t.HasCheckConstraint("CK_Coupons_Value", "\"Value\" > 0 AND (\"Kind\" <> 0 OR \"Value\" < 100)");
+                        });
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.CouponProduct", b =>
+                {
+                    b.Property<Guid>("CouponId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ProductId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("CouponId", "ProductId");
+
+                    b.ToTable("CouponProducts");
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.CouponRedemption", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CouponId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("Discount")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
+                    b.Property<decimal>("FinalPrice")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("OriginalPrice")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
+                    b.Property<string>("ProductId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("ReservedUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId")
+                        .IsUnique();
+
+                    b.HasIndex("CouponId", "Status");
+
+                    b.ToTable("CouponRedemptions");
+                });
+
             modelBuilder.Entity("PortalX.Server.Domain.Entitlement", b =>
                 {
                     b.Property<Guid>("Id")
@@ -107,6 +226,44 @@ namespace PortalX.Server.Data.Migrations
                         .HasFilter("\"OrderId\" IS NOT NULL");
 
                     b.ToTable("Entitlements");
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.FaqEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Answer")
+                        .IsRequired()
+                        .HasMaxLength(3000)
+                        .HasColumnType("character varying(3000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<bool>("Published")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Question")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SortOrder");
+
+                    b.ToTable("Faq");
                 });
 
             modelBuilder.Entity("PortalX.Server.Domain.GameEvent", b =>
@@ -235,6 +392,11 @@ namespace PortalX.Server.Data.Migrations
                     b.Property<DateTime?>("IntroStartedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int>("MaxPlayers")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(4);
+
                     b.Property<int>("Phase")
                         .HasColumnType("integer");
 
@@ -312,6 +474,13 @@ namespace PortalX.Server.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("CouponCode")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid?>("CouponId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -319,6 +488,10 @@ namespace PortalX.Server.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(3)
                         .HasColumnType("character varying(3)");
+
+                    b.Property<decimal>("DiscountAmount")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
 
                     b.Property<string>("Email")
                         .HasMaxLength(200)
@@ -336,6 +509,10 @@ namespace PortalX.Server.Data.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Number"));
                     NpgsqlPropertyBuilderExtensions.HasIdentityOptions(b.Property<long>("Number"), 1001L, null, null, null, null, null);
+
+                    b.Property<decimal?>("OriginalPrice")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
 
                     b.Property<DateTime?>("PaidAt")
                         .HasColumnType("timestamp with time zone");
@@ -382,6 +559,8 @@ namespace PortalX.Server.Data.Migrations
                         .HasColumnName("xmin");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CouponId");
 
                     b.HasIndex("CreatedAt");
 
@@ -600,6 +779,9 @@ namespace PortalX.Server.Data.Migrations
                         .IsRequired()
                         .HasColumnType("jsonb");
 
+                    b.Property<bool>("IsFree")
+                        .HasColumnType("boolean");
+
                     b.Property<int>("MaxPlayers")
                         .HasColumnType("integer");
 
@@ -727,6 +909,24 @@ namespace PortalX.Server.Data.Migrations
                     b.ToTable("PuzzleStates");
                 });
 
+            modelBuilder.Entity("PortalX.Server.Domain.CouponProduct", b =>
+                {
+                    b.HasOne("PortalX.Server.Domain.Coupon", null)
+                        .WithMany("Products")
+                        .HasForeignKey("CouponId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.CouponRedemption", b =>
+                {
+                    b.HasOne("PortalX.Server.Domain.Coupon", null)
+                        .WithMany()
+                        .HasForeignKey("CouponId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("PortalX.Server.Domain.PlayerSession", b =>
                 {
                     b.HasOne("PortalX.Server.Domain.GameRoom", null)
@@ -743,6 +943,11 @@ namespace PortalX.Server.Data.Migrations
                         .HasForeignKey("RoomId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.Coupon", b =>
+                {
+                    b.Navigation("Products");
                 });
 
             modelBuilder.Entity("PortalX.Server.Domain.GameRoom", b =>

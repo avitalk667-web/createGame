@@ -8,12 +8,15 @@ import { HPanel } from './h-layout';
 const PANEL_PUZZLE: Record<HPanel, string> = {
   riddle: 'h1-riddle', lamp: 'h2-lamp', maze: 'h3-maze', box: 'h3-box', wheel: 'h4-wheel', stand: 'h5-stand',
   lock: 'h5-lock', jugs: 'h6-jugs', mosaic: 'h7-mosaic', pedestals: 'h8-pedestals', final: 'h8-final',
+  map: 'g1-map', symbols: 'g1-symbols', cabinet: 'g1-cabinet', gears: 'g2-gears', mirror: 'g2-mirrors',
 };
 
 export const ITEM_EMOJI: Record<string, string> = {
   'antique-key': '🗝️', 'lamp-base': '⚱️', 'lamp-tank': '🫙', 'lamp-wick': '🧵', 'lamp-glass': '🔮', 'lamp-cover': '🔔',
   'menorah-symbol': '🕎', 'golden-key': '🔑', 'light-stone': '💎', 'dreidel-nun': 'נ', 'dreidel-gimel': 'ג', 'dreidel-he': 'ה',
   'dreidel-pe': 'פ', 'flame-symbol': '🔥', 'golden-jug': '🏺', 'blue-crystal': '🔷',
+  'map-left': '🗺️', 'map-middle': '🗺️', 'map-right': '🗺️', 'sym-compass': '🧭', 'sym-key': '🗝️', 'sym-book': '📖', 'sym-lamp': '🪔',
+  'gs-golden-key': '🔑', 'gear-large': '⚙️', 'gear-small': '⚙️', 'gear-medium': '⚙️',
 };
 
 const LETTERS = 'אבגדהוזחטיכלמנסעפצקרשת'.split('');
@@ -98,6 +101,19 @@ const MAZE_SYMBOLS: Record<string, string> = { '*': '⭐', F: '🔥', M: '🕎',
               @if (mech()?.revealed) { <p class="reveal">תא האיסוף נפתח. הקוד: <b dir="ltr">{{ mech()!.revealed }}</b></p> }
             }
             @case ('box') { <ng-container *ngTemplateOutlet="digits" /> }
+            @case ('cabinet') {
+              @if (backsLine()) { <p class="reveal">בגב הסמלים, לפי סדר המקומות: <b dir="ltr">{{ backsLine() }}</b></p> }
+              <ng-container *ngTemplateOutlet="digits" />
+            }
+            @case ('mirror') {
+              <p class="muted small">אפשר ללחוץ על המראות בחדר עצמו, או כאן. כל לחיצה מסובבת מראה בשמינית סיבוב.</p>
+              <div class="options">
+                @for (d of data().dials; track $index; let i = $index) {
+                  <button class="btn" (click)="operate({ op: 'rotate', index: i, dir: -1 })" [disabled]="busy() || state()?.status === 'solved'">↺ {{ d.label }}</button>
+                  <button class="btn" (click)="operate({ op: 'rotate', index: i })" [disabled]="busy() || state()?.status === 'solved'">{{ d.label }} ↻</button>
+                }
+              </div>
+            }
             @case ('lock') {
               @if (backsLine()) { <p class="reveal">בגב הסביבונים: <b dir="ltr">{{ backsLine() }}</b></p> }
               <ng-container *ngTemplateOutlet="digits" />
@@ -325,9 +341,12 @@ export class HPanelComponent {
     return sec > 0 ? `המנגנון נעול עוד ${sec} שניות — נצלו את הזמן לחשוב יחד.` : null;
   });
   backsLine = computed(() => {
-    const b = this.game.snapshot()?.mechanisms?.['h5-stand']?.backs;
+    // the digits appear only once the arrangement is right
+    const src = this.panel() === 'cabinet' ? { id: 'g1-symbols', order: ['s1', 's2', 's3', 's4'] } : { id: 'h5-stand', order: ['tl', 'tr', 'bl', 'br'] };
+    if (this.game.snapshot()?.puzzles.find((p) => p.id === src.id)?.status !== 'solved') return '';
+    const b = this.game.snapshot()?.mechanisms?.[src.id]?.backs;
     if (!b || !Object.keys(b).length) return '';
-    return ['tl', 'tr', 'bl', 'br'].map((k) => b[k] ?? '?').join(' ');
+    return src.order.map((k) => b[k] ?? '?').join(' ');
   });
 
   mazeCols = computed(() => (this.data().grid?.[0] ?? '').length);

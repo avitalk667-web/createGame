@@ -13,7 +13,7 @@ public sealed class ScenarioContent
     public required string DurationMinutes { get; init; }
     public required string Difficulty { get; init; }
     public int MinPlayers { get; init; } = 4;
-    public int MaxPlayers { get; init; } = 8;
+    public int MaxPlayers { get; init; } = 4;
     public required string FinalWord { get; init; }
     public required List<ZoneContent> Zones { get; init; }
     public required List<ItemContent> Items { get; init; }
@@ -43,7 +43,8 @@ public sealed record RecipeContent(List<string> Inputs, string Output, string Me
 
 public sealed record AchievementContent(string Id, string Title, string Description);
 
-public sealed record ClueContent(string Id, string Zone, string Title, string Text);
+/// <summary>A clue; reading it first may reveal an item hidden in the room (e.g. a drawer that opens).</summary>
+public sealed record ClueContent(string Id, string Zone, string Title, string Text, string? RevealsItem = null);
 
 /// <summary>All score values in one place (spec Part G §18), so they can be changed without touching the puzzles.</summary>
 public sealed class ScoringRules

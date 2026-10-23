@@ -99,5 +99,7 @@ public static class AdminEndpoints
         });
 
         secured.MapGet("/audit", async (AdminService s) => Results.Ok(await s.AuditListAsync()));
+
+        secured.MapAdminContentEndpoints();
     }
 }

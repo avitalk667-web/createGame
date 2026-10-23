@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { OrderView, Product, ScenarioContent, ScenarioSummary } from './models';
+import { CouponQuote, FaqEntryView, OrderView, Product, ScenarioContent, ScenarioSummary } from './models';
 
 export class ApiError extends Error {
   constructor(public code: string, message: string) {
@@ -60,9 +60,23 @@ export class ApiService {
   }
 
   /** Guest checkout: the server reads the price from the catalog; the browser only names the product. */
-  createOrder(productId: string, email: string | null) {
-    return this.request<{ orderId: string; number: number; accessKey: string; checkoutUrl: string; isTest: boolean }>(
-      'POST', '/api/orders', { productId, email: email || undefined });
+  createOrder(productId: string, email: string | null, couponCode?: string | null) {
+    return this.request<{ orderId: string; number: number; accessKey: string; checkoutUrl: string; isTest: boolean; price: number; discount: number }>(
+      'POST', '/api/orders', { productId, email: email || undefined, couponCode: couponCode || undefined });
+  }
+
+  /** Prices a coupon for a product on the server (nothing is reserved until the order is created). */
+  checkCoupon(productId: string, code: string) {
+    return this.request<CouponQuote>('POST', '/api/coupons/check', { productId, code });
+  }
+
+  /** Opens the free trial game: no payment and no account (spec 1.5). */
+  freeGame(productId: string) {
+    return this.request<{ code: string; hostClaim: string }>('POST', `/api/products/${encodeURIComponent(productId)}/free-game`);
+  }
+
+  faq() {
+    return this.request<FaqEntryView[]>('GET', '/api/faq');
   }
 
   order(id: string, key: string) {

@@ -39,6 +39,7 @@ builder.Services.AddScoped<RoomService>();
 builder.Services.AddSingleton(sp => PaymentGateway.Create(
     sp.GetRequiredService<IConfiguration>().GetSection("Payments").Get<PaymentOptions>() ?? new PaymentOptions(),
     sp.GetRequiredService<IHostEnvironment>(), sp.GetRequiredService<ILoggerFactory>().CreateLogger("Payments")));
+builder.Services.AddScoped<CouponService>();
 builder.Services.AddScoped<PurchaseService>();
 builder.Services.Configure<AdminOptions>(builder.Configuration.GetSection("Admin"));
 builder.Services.AddScoped<AdminService>();
@@ -78,6 +79,11 @@ builder.Services.AddRateLimiter(o =>
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:CreatePerMinute", 10), Window = TimeSpan.FromMinutes(1) }));
     o.AddPolicy("join", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:JoinPerMinute", 40), Window = TimeSpan.FromMinutes(1) }));
+    o.AddPolicy("coupon", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:CouponPerMinute", 20), Window = TimeSpan.FromMinutes(1) }));
+    // free trial games: a few per address per hour, so the free game cannot be used to flood the server
+    o.AddPolicy("free-game", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:FreeGamesPerHour", 6), Window = TimeSpan.FromHours(1) }));
     o.AddPolicy("admin-login", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:AdminLoginPerMinute", 10), Window = TimeSpan.FromMinutes(1) }));
 });
@@ -148,6 +154,7 @@ api.MapGet("/products/{id}", async (string id, PortalDbContext db, ScenarioCatal
 
 // Group games are opened only through a paid order (POST /api/orders/{id}/game) — no free room creation.
 api.MapPurchaseEndpoints(app.Services.GetRequiredService<PaymentGateway>());
+api.MapSiteEndpoints();
 api.MapAdminEndpoints();
 
 api.MapGet("/rooms/{code}", async (string code, RoomService rooms, ScenarioCatalog catalog) =>
@@ -159,9 +166,9 @@ api.MapGet("/rooms/{code}", async (string code, RoomService rooms, ScenarioCatal
     return Results.Ok(new
     {
         code = room.Code, scenarioId = room.ScenarioId, scenarioName = scenario.Name,
-        phase = room.Phase.ToString().ToLowerInvariant(), playerCount = taken, maxPlayers = scenario.MaxPlayers,
+        phase = room.Phase.ToString().ToLowerInvariant(), playerCount = taken, maxPlayers = rooms.Engine.MaxPlayers(room),
         // open until the game is finished, also in the middle of it, while a seat is free (spec 3)
-        canJoin = GameEngine.IsOpenForJoining(room) && taken < scenario.MaxPlayers,
+        canJoin = GameEngine.IsOpenForJoining(room) && taken < rooms.Engine.MaxPlayers(room),
     });
 }).RequireRateLimiting("join");
 
@@ -176,7 +183,7 @@ api.MapGet("/rooms/{code}/seat", async (string code, HttpRequest http, RoomServi
     if (player == null) return Results.Ok(new { seat = (object?)null });
     var now = DateTime.UtcNow;
     var state = rooms.Engine.Seat(player, now);
-    var max = rooms.Engine.Catalog.Get(room.ScenarioId).MaxPlayers;
+    var max = rooms.Engine.MaxPlayers(room);
     var canReturn = state != GameEngine.SeatState.Released || rooms.Engine.SeatsTaken(room, now, player.Id) < max;
     return Results.Ok(new
     {

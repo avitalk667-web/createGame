@@ -11,6 +11,11 @@ public sealed class GameOptions
 {
     /// <summary>Overrides the scenario's minimum group size (e.g. 1 for solo testing). Null = use the scenario value (4).</summary>
     public int? MinPlayersOverride { get; set; }
+    /// <summary>
+    /// The one place that sets how many participants a game may have, the host included (spec: 4 in every game).
+    /// New games take this value unless their product sets a smaller one; the server enforces it on every join.
+    /// </summary>
+    public int MaxPlayers { get; set; } = 4;
     /// <summary>Length of the opening cinematic; after it any player may advance the room to play.</summary>
     public int IntroSeconds { get; set; } = 52;
     public int WrongAttemptsBeforeCooldown { get; set; } = 3;
@@ -45,7 +50,15 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
     public ScenarioCatalog Catalog => catalog;
     public GameOptions Options => options;
 
-    public int MinPlayers(ScenarioContent s) => options.MinPlayersOverride ?? s.MinPlayers;
+    public int MinPlayers(ScenarioContent s) => Math.Min(options.MinPlayersOverride ?? s.MinPlayers, options.MaxPlayers);
+
+    /// <summary>The participant limit of this game: fixed when the game was opened, never above the central limit.</summary>
+    public int MaxPlayers(GameRoom room) => room.MaxPlayers is > 0 and var m ? Math.Min(m, options.MaxPlayers) : options.MaxPlayers;
+
+    public int MaxPlayersLimit => options.MaxPlayers;
+
+    /// <summary>The limit a new game for a product gets: the product's own value, capped by the central limit.</summary>
+    public int MaxPlayersFor(int? productMax) => productMax is > 0 and var m ? Math.Min(m, options.MaxPlayers) : options.MaxPlayers;
 
     public int IntroSeconds(ScenarioContent s) => s.IntroSeconds ?? options.IntroSeconds;
 
@@ -61,6 +74,7 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
             ScenarioId = scenario.Id,
             Phase = RoomPhase.Lobby,
             HostClaimHash = hostClaimHash,
+            MaxPlayers = options.MaxPlayers,
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -77,8 +91,9 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
         if (!IsOpenForJoining(room)) return ActionOutcome.Fail("game-ended", "המשחק הזה כבר הסתיים. אי אפשר להצטרף אליו.");
         var active = ActivePlayers(room).ToList();
         // a disconnected player's reserved seat counts; an expired reservation does not
-        if (SeatsTaken(room, now) >= scenario.MaxPlayers)
-            return ActionOutcome.Fail("room-full", $"המשחק מלא — כל {scenario.MaxPlayers} המקומות תפוסים או שמורים לשחקנים שהתנתקו.");
+        // checked under the room's lock, so two players joining at the same moment can never both take the last seat
+        if (SeatsTaken(room, now) >= MaxPlayers(room))
+            return ActionOutcome.Fail("room-full", "המשחק מלא. אפשר להצטרף לאחר שמתפנה מקום.");
         ReleaseExpiredSeats(room, now);
 
         var nameError = ValidateNickname(nickname);

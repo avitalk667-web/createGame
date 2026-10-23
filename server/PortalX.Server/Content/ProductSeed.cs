@@ -23,7 +23,8 @@ public sealed class ProductSeed
     [System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter))]
     public ProductStatus Status { get; init; }
     public int MinPlayers { get; init; } = 1;
-    public int MaxPlayers { get; init; } = 8;
+    public int MaxPlayers { get; init; } = 4;
+    public bool IsFree { get; init; }
     public string? ScenarioId { get; init; }
     public int SortOrder { get; init; }
 
@@ -48,7 +49,7 @@ public sealed class ProductSeed
                 GalleryJson = JsonSerializer.Serialize(s.Gallery, ScenarioCatalog.JsonOptions),
                 FeaturesJson = JsonSerializer.Serialize(s.Features, ScenarioCatalog.JsonOptions),
                 IncludedJson = JsonSerializer.Serialize(s.Included, ScenarioCatalog.JsonOptions),
-                Status = s.Status, MinPlayers = s.MinPlayers, MaxPlayers = s.MaxPlayers,
+                Status = s.Status, MinPlayers = s.MinPlayers, MaxPlayers = s.MaxPlayers, IsFree = s.IsFree,
                 ScenarioId = s.ScenarioId, SortOrder = s.SortOrder, CreatedAt = now, UpdatedAt = now,
             });
         }
@@ -69,7 +70,7 @@ public static class ProductView
             Gallery = JsonNode.Parse(p.GalleryJson),
             Features = JsonNode.Parse(p.FeaturesJson),
             Included = JsonNode.Parse(p.IncludedJson),
-            p.MinPlayers, p.MaxPlayers, p.ScenarioId,
+            p.MinPlayers, p.MaxPlayers, p.ScenarioId, p.IsFree,
             // the game content exists on the server and can be played
             Playable = playable,
             PriceSet = p.PriceIls is > 0,

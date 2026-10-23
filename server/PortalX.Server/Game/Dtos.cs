@@ -56,7 +56,7 @@ public static class Snapshots
         }).ToList();
 
         return new RoomSnapshot(room.Id, room.Code, room.ScenarioId, room.Phase.ToString().ToLowerInvariant(), room.Round,
-            room.HostPlayerId, players, engine.MinPlayers(scenario), scenario.MaxPlayers,
+            room.HostPlayerId, players, engine.MinPlayers(scenario), engine.MaxPlayers(room),
             room.Phase == RoomPhase.Lobby ? engine.StartBlocker(room) : null,
             room.IntroStartedAt, room.StartedAt, room.EndedAt, now, engine.IntroSeconds(scenario),
             engine.UnlockedZones(room, scenario).ToList(), puzzles,

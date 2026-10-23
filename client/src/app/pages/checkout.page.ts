@@ -40,6 +40,10 @@ const POLL_LIMIT_MS = 90_000;
           </header>
           <h1>{{ o.productName }}</h1>
           <dl>
+            @if (o.discount && o.couponCode) {
+              <dt>מחיר המשחק</dt><dd>{{ o.originalPrice }} ₪</dd>
+              <dt>קופון</dt><dd dir="ltr">{{ o.couponCode }} · −{{ o.discount }} ₪</dd>
+            }
             <dt>סכום</dt><dd>{{ o.price }} {{ o.currency === 'ILS' ? '₪' : o.currency }} · משחק קבוצתי אחד, עד {{ o.maxPlayers }} משתתפים</dd>
             <dt>נוצרה</dt><dd>{{ o.createdAt | date: 'd.M.yyyy HH:mm' }}</dd>
           </dl>

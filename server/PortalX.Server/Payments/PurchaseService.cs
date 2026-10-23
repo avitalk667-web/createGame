@@ -25,21 +25,23 @@ public sealed record WebhookOutcome(WebhookStatus Status, string Result);
 /// one entitlement per paid order, and opening one group game per entitlement.
 /// </summary>
 public sealed class PurchaseService(
-    PortalDbContext db, PaymentGateway gateway, ScenarioCatalog scenarios, RoomService rooms,
+    PortalDbContext db, PaymentGateway gateway, ScenarioCatalog scenarios, RoomService rooms, CouponService coupons,
     IHostEnvironment env, ILogger<PurchaseService> logger)
 {
     public static bool IsPlayable(Product p, ScenarioCatalog scenarios) => p.ScenarioId != null && scenarios.Find(p.ScenarioId) != null;
 
     public static bool IsPurchasable(Product p, ScenarioCatalog scenarios, PaymentGateway gateway) =>
-        p.Status == ProductStatus.Published && p.PriceIls is > 0 && IsPlayable(p, scenarios) && gateway.Available;
+        p.Status == ProductStatus.Published && !p.IsFree && p.PriceIls is > 0 && IsPlayable(p, scenarios) && gateway.Available;
 
     // ------------------------------------------------------------------ orders
 
-    public async Task<(CreatedOrder? Created, ServiceError? Error)> CreateOrderAsync(string? productId, string? email)
+    public async Task<(CreatedOrder? Created, ServiceError? Error)> CreateOrderAsync(string? productId, string? email, string? couponCode = null)
     {
         var product = await db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == (productId ?? ""));
         if (product == null || product.Status != ProductStatus.Published)
             return (null, new ServiceError(404, "no-product", "המשחק לא נמצא."));
+        if (product.IsFree)
+            return (null, new ServiceError(409, "free-product", "המשחק הזה חינמי — אין צורך ברכישה."));
         if (product.PriceIls is not > 0)
             return (null, new ServiceError(409, "no-price", "המחיר של המשחק הזה טרם נקבע, ולכן אי אפשר לרכוש אותו עדיין."));
         if (!IsPlayable(product, scenarios))
@@ -53,13 +55,25 @@ public sealed class PurchaseService(
 
         var key = RoomService.NewToken();
         var now = DateTime.UtcNow;
+        // the discount is computed here from the catalog price and the coupon — never taken from the browser
+        CouponQuote? quote = null;
+        if (!string.IsNullOrWhiteSpace(couponCode))
+        {
+            var (q, qErr) = await coupons.QuoteAsync(couponCode, product, now);
+            if (qErr != null) return (null, qErr);
+            quote = q;
+        }
         var order = new Order
         {
             Id = Guid.NewGuid(),
             ProductId = product.Id,
             ProductName = product.Name,
             // the price always comes from the catalog at this moment, never from the browser
-            PriceSnapshot = product.PriceIls.Value,
+            PriceSnapshot = quote?.FinalPrice ?? product.PriceIls.Value,
+            OriginalPrice = product.PriceIls.Value,
+            DiscountAmount = quote?.Discount ?? 0,
+            CouponCode = quote?.Code,
+            CouponId = quote?.CouponId,
             Currency = product.Currency,
             Status = OrderStatus.Pending,
             Provider = provider.Name,
@@ -71,8 +85,27 @@ public sealed class PurchaseService(
         };
         var checkout = provider.CreateCheckout(order);
         order.ProviderSessionId = checkout.SessionId;
-        db.Orders.Add(order);
-        await db.SaveChangesAsync();
+        // the order and its coupon use are saved together; the database retry strategy re-runs the whole unit
+        ServiceError? reserveError = null;
+        await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            db.ChangeTracker.Clear();
+            reserveError = null;
+            await using var tx = await db.Database.BeginTransactionAsync();
+            db.Orders.Add(order);
+            if (quote != null && (reserveError = await coupons.ReserveAsync(quote, order, now)) != null)
+            {
+                await tx.RollbackAsync();
+                return;
+            }
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+        });
+        if (reserveError != null)
+        {
+            db.ChangeTracker.Clear();
+            return (null, reserveError);
+        }
         logger.LogInformation("Order {Number} created for {Product} ({Price} {Currency}, provider {Provider})",
             order.Number, product.Id, order.PriceSnapshot, order.Currency, provider.Name);
         return (new CreatedOrder(order, key, checkout.CheckoutUrl), null);
@@ -98,10 +131,11 @@ public sealed class PurchaseService(
         {
             order.Id, order.Number, order.ProductId, order.ProductName,
             Price = order.PriceSnapshot, order.Currency,
+            order.OriginalPrice, Discount = order.DiscountAmount, order.CouponCode,
             Status = order.Status.ToString().ToLowerInvariant(),
             order.IsTest, order.CreatedAt, order.PaidAt,
             EmailOnFile = order.Email != null,
-            MaxPlayers = product?.MaxPlayers ?? 8,
+            MaxPlayers = product?.MaxPlayers ?? 4,
             Game = room == null ? null : new
             {
                 room.Code,
@@ -227,6 +261,7 @@ public sealed class PurchaseService(
                 return $"ignored:{n.Type.ToString().ToLowerInvariant()}-while-{order.Status.ToString().ToLowerInvariant()}";
         }
         order.UpdatedAt = now;
+        await coupons.UpdateForOrderAsync(order.Id, order.Status, now);
         await db.SaveChangesAsync();
         return result;
     }
@@ -284,6 +319,7 @@ public sealed class PurchaseService(
                 var (room, hostClaim) = await rooms.CreateRoomAsync(product!.ScenarioId!, r =>
                 {
                     r.ProductId = product.Id;
+                    r.MaxPlayers = rooms.Engine.MaxPlayersFor(product.MaxPlayers);
                     r.EntitlementId = ent.Id;
                     r.AccessSource = ent.Source == EntitlementSource.AdminFree ? "admin-free" : "purchase";
                 });

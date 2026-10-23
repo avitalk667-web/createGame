@@ -4,7 +4,8 @@ using PortalX.Server.Domain;
 
 namespace PortalX.Server.Payments;
 
-public sealed record CreateOrderRequest(string? ProductId, string? Email);
+public sealed record CreateOrderRequest(string? ProductId, string? Email, string? CouponCode = null);
+public sealed record CouponCheckRequest(string? ProductId, string? Code);
 public sealed record SandboxOutcomeRequest(string? Outcome);
 
 public static class PurchaseEndpoints
@@ -20,7 +21,7 @@ public static class PurchaseEndpoints
     {
         api.MapPost("/orders", async (CreateOrderRequest req, PurchaseService purchases) =>
         {
-            var (created, error) = await purchases.CreateOrderAsync(req.ProductId, req.Email);
+            var (created, error) = await purchases.CreateOrderAsync(req.ProductId, req.Email, req.CouponCode);
             if (error != null) return Error(error);
             return Results.Ok(new
             {
@@ -29,8 +30,26 @@ public static class PurchaseEndpoints
                 accessKey = created.AccessKey,
                 checkoutUrl = created.CheckoutUrl,
                 isTest = created.Order.IsTest,
+                originalPrice = created.Order.OriginalPrice,
+                discount = created.Order.DiscountAmount,
+                price = created.Order.PriceSnapshot,
+                couponCode = created.Order.CouponCode,
             });
         }).RequireRateLimiting("create");
+
+        // "Apply coupon" before paying: shows the price the server will charge (spec 4.4–4.7). Nothing is reserved yet.
+        api.MapPost("/coupons/check", async (CouponCheckRequest req, PortalX.Server.Data.PortalDbContext db, CouponService coupons) =>
+        {
+            var product = await db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == (req.ProductId ?? "") && p.Status == ProductStatus.Published);
+            if (product == null) return Results.NotFound(new ApiError("no-product", "המשחק לא נמצא."));
+            var (quote, error) = await coupons.QuoteAsync(req.Code, product, DateTime.UtcNow);
+            if (error != null) return Error(error);
+            return Results.Ok(new
+            {
+                code = quote!.Code, kind = quote.Kind.ToString().ToLowerInvariant(), value = quote.Value,
+                originalPrice = quote.OriginalPrice, discount = quote.Discount, finalPrice = quote.FinalPrice, currency = product.Currency,
+            });
+        }).RequireRateLimiting("coupon");
 
         api.MapGet("/orders/{id:guid}", async (Guid id, HttpRequest http, PurchaseService purchases) =>
             await purchases.FindOrderAsync(id, http.Headers[OrderKeyHeader]) is { } order

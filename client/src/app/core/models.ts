@@ -285,7 +285,14 @@ export interface Product {
   paymentsAvailable: boolean;
   /** The active provider is a sandbox: no real charge. */
   testPayments: boolean;
+  /** A free trial game: started without payment (spec 1). */
+  isFree?: boolean;
 }
+
+export interface FaqEntryView { id: string; question: string; answer: string; isFixed: boolean }
+
+/** The price the server will charge with a coupon (computed on the server, shown before paying). */
+export interface CouponQuote { code: string; kind: 'percent' | 'fixed'; value: number; originalPrice: number; discount: number; finalPrice: number; currency: string }
 
 export type OrderStatus = 'pending' | 'paid' | 'failed' | 'cancelled' | 'refunded';
 
@@ -295,6 +302,10 @@ export interface OrderView {
   productId: string;
   productName: string;
   price: number;
+  /** Before a coupon (null on old orders), the discount and the code that was used. */
+  originalPrice?: number | null;
+  discount?: number;
+  couponCode?: string | null;
   currency: string;
   status: OrderStatus;
   isTest: boolean;
@@ -308,11 +319,12 @@ export interface OrderView {
 }
 
 export function formatPrice(p: Product): string | null {
+  if (p.isFree) return 'חינם';
   if (p.price == null) return null;
   const n = Number.isInteger(p.price) ? String(p.price) : p.price.toFixed(2);
   return p.currency === 'ILS' ? `${n} ₪` : `${n} ${p.currency}`;
 }
 
 export function playersLabel(p: Product): string {
-  return p.minPlayers > 1 ? `${p.minPlayers}–${p.maxPlayers} משתתפים` : `עד ${p.maxPlayers} משתתפים`;
+  return `עד ${p.maxPlayers} משתתפים`;
 }

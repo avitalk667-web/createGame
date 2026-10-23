@@ -12,7 +12,7 @@ namespace PortalX.Server.Game;
 /// </summary>
 public sealed partial class GameEngine
 {
-    public static readonly string[] MechanismTypes = ["slots", "maze", "mosaic"];
+    public static readonly string[] MechanismTypes = ["slots", "maze", "mosaic", "dials"];
 
     // ---------------------------------------------------------------- clues
 
@@ -32,6 +32,12 @@ public sealed partial class GameEngine
         Contribute(world, playerId);
         var notices = new List<GameNotice> { new("clue", $"{p.Nickname} גילה רמז!", p.Id.ToString(), Zone: clue.Zone) };
         Award(world, scenario, $"clue:{clue.Id}", p, scenario.Scoring?.Clue ?? 0, "clue", "נמצא רמז חדש", clue.Zone, null, now, notices);
+        // reading this clue opens a hiding place: its item appears in the room for everyone
+        if (clue.RevealsItem is { } hidden && !world.WorldItems.Contains(hidden) && !world.Inventory.Contains(hidden))
+        {
+            world.WorldItems.Add(hidden);
+            notices.Add(new("item-revealed", $"נפתח מקום מסתור — {scenario.Item(hidden)?.Name ?? hidden} מחכה בחדר", p.Id.ToString(), Zone: clue.Zone, ItemId: hidden));
+        }
         SaveWorld(room, world, now);
         return ActionOutcome.Done(clue.Text, notices.ToArray());
     }
@@ -56,6 +62,7 @@ public sealed partial class GameEngine
                 "slots" => OperateSlots(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
                 "maze" => OperateMaze(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
                 "mosaic" => OperateMosaic(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
+                "dials" => OperateDials(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
                 _ => ActionOutcome.Fail("wrong-action", "פעולה לא מוכרת."),
             };
         }
@@ -78,6 +85,7 @@ public sealed partial class GameEngine
                 m.Levers = puzzle.PublicData["levers"]!.AsArray().Select(_ => false).ToList();
                 break;
             case "mosaic":
+            case "dials":
                 m.Rotations = puzzle.PublicData["start"]!.AsArray().Select(n => n!.GetValue<int>()).ToList();
                 break;
         }
@@ -319,6 +327,31 @@ public sealed partial class GameEngine
         SaveWorld(room, world, now);
         var (_, reached) = TraceLight(puzzle.PublicData, mech.Rotations);
         if (!reached) return new ActionOutcome(true, "rotated", "", [], true);
+        state.Attempts++;
+        return Solve(room, scenario, puzzle, state, player, now);
+    }
+
+    // ---------------------------------------------------------------- dials (e.g. two mirrors that guide a light beam)
+
+    /// <summary>
+    /// Each dial turns one step at a time through its positions (either way). When every dial stands in its
+    /// solution position the mechanism completes; the positions themselves stay on the server.
+    /// </summary>
+    private ActionOutcome OperateDials(GameRoom room, ScenarioContent scenario, PuzzleContent puzzle, PuzzleState state,
+        PlayerSession player, WorldState world, MechanismState mech, string op, JsonElement action, DateTime now)
+    {
+        if (op != "rotate") return ActionOutcome.Fail("bad-action", "פעולה לא מוכרת.");
+        var i = action.GetProperty("index").GetInt32();
+        var dials = puzzle.PublicData["dials"]!.AsArray();
+        if (i < 0 || i >= mech.Rotations.Count || i >= dials.Count) return ActionOutcome.Fail("bad-dial", "החלק הזה לא קיים.");
+        var positions = dials[i]!["positions"]!.GetValue<int>();
+        var step = action.TryGetProperty("dir", out var d) && d.ValueKind == JsonValueKind.Number && d.GetInt32() < 0 ? -1 : 1;
+        mech.Rotations[i] = ((mech.Rotations[i] + step) % positions + positions) % positions;
+        Contribute(world, player.Id);
+        var target = puzzle.Solution["positions"]!.AsArray().Select(n => n!.GetValue<int>()).ToList();
+        var done = target.Count == mech.Rotations.Count && target.Zip(mech.Rotations).All(t => t.First == t.Second);
+        SaveWorld(room, world, now);
+        if (!done) return new ActionOutcome(true, "rotated", "", [], true);
         state.Attempts++;
         return Solve(room, scenario, puzzle, state, player, now);
     }

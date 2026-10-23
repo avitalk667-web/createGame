@@ -2,6 +2,7 @@ import {
   AfterViewInit, ChangeDetectionStrategy, Component, DestroyRef, ElementRef, NgZone, OnDestroy, computed, effect, inject, output, signal, untracked, viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { RouterLink } from '@angular/router';
 import { AudioService } from '../core/audio.service';
 import { GameService } from '../core/game.service';
 import { GameNotice, RoomSnapshot } from '../core/models';
@@ -11,7 +12,7 @@ import { JoystickComponent } from '../ui/joystick.component';
 import { SettingsPanelComponent } from '../ui/settings-panel.component';
 import { LeaveDialogComponent } from '../ui/leave-dialog.component';
 import { RoomOverlaysComponent } from '../ui/room-overlays.component';
-import { H_ZONES, HInteractable, HPanel, HZone } from './h-layout';
+import { H_ZONES, HInteractable, HPanel, HZone, useLayout } from './h-layout';
 import { HPanelComponent, ITEM_EMOJI } from './h-panel.component';
 import { HResultComponent } from './h-result.component';
 import { HanukkahWorld } from './h-world';
@@ -20,13 +21,14 @@ interface Toast { id: number; text: string; kind: string }
 
 const PUZZLE_PANEL: Record<string, HPanel> = {
   'h1-riddle': 'riddle', 'h2-lamp': 'lamp', 'h3-maze': 'maze', 'h3-box': 'box', 'h4-wheel': 'wheel', 'h5-stand': 'stand',
+  'g1-cabinet': 'cabinet', 'g2-mirrors': 'mirror',
   'h5-lock': 'lock', 'h6-jugs': 'jugs', 'h7-mosaic': 'mosaic', 'h8-pedestals': 'pedestals', 'h8-final': 'final',
 };
 
 /** The Hanukkah game: opening scene, eight rooms, puzzles, scores, chat, finale and results. */
 @Component({
   selector: 'px-h-play',
-  imports: [ChatComponent, JoystickComponent, SettingsPanelComponent, HPanelComponent, HResultComponent, RoomOverlaysComponent, LeaveDialogComponent],
+  imports: [RouterLink, ChatComponent, JoystickComponent, SettingsPanelComponent, HPanelComponent, HResultComponent, RoomOverlaysComponent, LeaveDialogComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="stage">
@@ -37,13 +39,13 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
     @if (phase() === 'intro') {
       <div class="letterbox top"></div><div class="letterbox bottom"></div>
       @if (introT() < 9) {
-        <div class="title-card"><h1 class="gold-title">PORTAL X</h1><p>סוד פך השמן — מסע בעקבות נס החנוכה</p></div>
+        <div class="title-card"><h1 class="gold-title">PORTAL X</h1><p>{{ texts().title }}</p></div>
       } @else {
         <div class="mission card">
           <span class="chip">המשימה שלכם</span>
-          <h2>גלו את סוד פך השמן</h2>
+          <h2>{{ texts().mission }}</h2>
           <ul>
-            <li>שמונה חדרים רציפים — כל חדר שנפתר פותח את הדלת לבא אחריו</li>
+            <li>{{ texts().rooms }}</li>
             <li>חקרו, אספו חפצים, פענחו רמזים והפעילו מנגנונים — יחד</li>
             <li>כל הקבוצה מתקדמת יחד, ולכל אחד ניקוד אישי משלו</li>
           </ul>
@@ -59,7 +61,7 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
       <header class="hud-top">
         <div class="zone card">
           <b>{{ zoneName(zone()) }}</b>
-          <span class="muted small">חדר {{ zoneIndex(zone()) }} מתוך 8</span>
+          <span class="muted small">חדר {{ zoneIndex(zone()) }} מתוך {{ zoneCount() }}</span>
           <span class="timer" aria-label="זמן משחק">{{ elapsed() }}</span>
         </div>
         <div class="tools">
@@ -108,14 +110,14 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
             <p class="b-ok">{{ FOCUS_DONE[f] }}</p>
           } @else {
             <p class="b-ins">{{ FOCUS_HELP[f] || focusPuzzle()?.instructions }}</p>
-            @if (f !== 'h3-maze' && !benchHasParts()) { <p class="muted small">{{ f === 'h2-lamp' ? 'אין חלקים על השולחן — חפשו את חלקי המנורה בחדר והרימו אותם.' : 'אין סביבונים בתיק — חפשו את ארבעת הסביבונים בחדר והרימו אותם.' }}</p> }
+            @if (f !== 'h3-maze' && !benchHasParts()) { <p class="muted small">{{ EMPTY_LABEL[f] }}</p> }
             @if (f === 'h3-maze') { <p class="muted small">סמלים שהמפתח עבר לפי הסדר: {{ game.snapshot()?.mechanisms?.['h3-maze']?.progress ?? 0 }} מתוך 3</p> }
             @if (benchMsg(); as m) { <p class="b-msg" [class.bad]="!m.ok" role="status">{{ m.text }}</p> }
             @for (h of focusState()?.hints ?? []; track $index) { <p class="b-hint">💡 {{ h }}</p> }
             <div class="b-actions">
               @if (f !== 'h3-maze') {
-                <button class="btn primary" (click)="checkBench()" [disabled]="benchBusy()">{{ f === 'h2-lamp' ? 'בדוק הרכבה' : 'בדוק סידור' }}</button>
-                <button class="btn" (click)="resetBench()" [disabled]="benchBusy()">{{ f === 'h2-lamp' ? 'החזר חלקים' : 'החזר סביבונים' }}</button>
+                <button class="btn primary" (click)="checkBench()" [disabled]="benchBusy()">{{ CHECK_LABEL[f] ?? 'בדוק סידור' }}</button>
+                <button class="btn" (click)="resetBench()" [disabled]="benchBusy()">{{ RESET_LABEL[f] ?? 'החזר חלקים' }}</button>
               }
               @if (benchMsg() && !benchMsg()!.ok) { <button class="btn" (click)="benchMsg.set(null)">נסה שוב</button> }
               @if ((focusState()?.hintsRevealed ?? 0) < (focusPuzzle()?.hintCount ?? 0)) {
@@ -210,12 +212,13 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
         @if (outroT() > 6) {
           <div class="success">
             <h1 class="gold-title">כל הכבוד!</h1>
-            <p>גיליתם את סוד פך השמן והשלמתם את מסע החנוכה.</p>
+            <p>{{ texts().done }}</p>
             <button class="btn primary" (click)="showResult.set(true)">לתוצאות ‹</button>
+            @if (isSample()) { <a class="btn" routerLink="/" fragment="games">גלו את שאר המשחקים</a> }
           </div>
         }
       } @else {
-        <px-h-result (home)="leave.emit()" />
+        <px-h-result (home)="leave.emit()" [freeGame]="isSample()" />
       }
     }
   `,
@@ -317,6 +320,20 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
 
   loading = signal(true);
   zone = signal<HZone>('library');
+  isSample = computed(() => this.game.snapshot()?.scenarioId === 'gate-of-secrets');
+  zoneCount = computed(() => this.game.scenario()?.zones.length ?? 8);
+  texts = computed(() => this.isSample()
+    ? { title: 'שער הסודות — משחק התנסות חינמי', mission: 'עברו את שער הסודות', rooms: 'שני חדרים — כל חדר שנפתר פותח את הדלת לבא אחריו', done: 'עברתם את שער הסודות! ראו את התוצאות, וגלו את המשחקים המלאים של PORTAL X.' }
+    : { title: 'סוד פך השמן — מסע בעקבות נס החנוכה', mission: 'גלו את סוד פך השמן', rooms: 'שמונה חדרים רציפים — כל חדר שנפתר פותח את הדלת לבא אחריו', done: 'גיליתם את סוד פך השמן והשלמתם את מסע החנוכה.' });
+  readonly CHECK_LABEL: Record<string, string> = { 'h2-lamp': 'בדוק הרכבה', 'g1-map': 'בדוק את המפה', 'g2-gears': 'הפעלת הידית' };
+  readonly RESET_LABEL: Record<string, string> = { 'h5-stand': 'החזר סביבונים', 'g1-symbols': 'החזר סמלים', 'g1-map': 'החזר חלקים', 'g2-gears': 'החזר גלגלים' };
+  readonly EMPTY_LABEL: Record<string, string> = {
+    'h2-lamp': 'אין חלקים על השולחן — חפשו את חלקי המנורה בחדר והרימו אותם.',
+    'h5-stand': 'אין סביבונים בתיק — חפשו את ארבעת הסביבונים בחדר והרימו אותם.',
+    'g1-map': 'אין חלקי מפה בתיק — חפשו אותם על השולחן, במגירה ובמדף.',
+    'g1-symbols': 'אין סמלים בתיק — חפשו בחדר את המצפן, המפתח, הספר והמנורה.',
+    'g2-gears': 'אין גלגלי שיניים בתיק — חפשו אותם בסדנה והרימו אותם.',
+  };
   hover = signal<HInteractable | null>(null);
   panel = signal<{ id: HPanel; ref?: string } | null>(null);
   note = signal<{ title: string; text: string; by?: string } | null>(null);
@@ -347,11 +364,17 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
   readonly FOCUS_HELP: Record<string, string> = {
     'h2-lamp': '',
     'h5-stand': 'גררו כל סביבון אל אחת מארבע המשבצות במתקן, לפי ארבעת הרמזים. אפשר להרים סביבון ולהניח אותו מחדש. כשסיימתם — לחצו „בדוק סידור”.',
+    'g1-map': 'גררו כל חלק מפה אל מקומו על השולחן — לכל חלק צד ישר אחד שמראה איפה הוא. כשהמפה שלמה, יופיע עליה רמז.',
+    'g1-symbols': 'גררו את ארבעת הסמלים אל ארבעת המקומות הממוספרים, לפי ההוראה שעל המפה. כשסיימתם — לחצו „בדוק סידור”.',
+    'g2-gears': 'גררו כל גלגל שיניים אל הציר המתאים לפי האיור שעל הקיר, ואז לחצו על הידית האדומה (או על „הפעלת הידית”).',
     'h3-maze': 'גררו את המפתח על הלוח לאורך המסלול — הוא לא עובר דרך קירות. לחצו על ידית כדי להזיז אותה ולפתוח או לסגור שער. התיבה שבצד נפתחת בקוד שיתגלה ביציאה.',
   };
   readonly FOCUS_DONE: Record<string, string> = {
     'h2-lamp': 'המנורה הורכבה ונדלקה! מאחורי לוח הקיר נחשף המפתח.',
     'h5-stand': 'כל הסביבונים במקומם! קראו את הספרות שלפניהם משמאל לימין, שורה אחר שורה, והזינו את הקוד במנעול שבדלת.',
+    'g1-map': 'המפה שלמה! עליה כתוב: „התחילו במה שמראה כיוון, המשיכו במה שפותח מנעול, אחר כך חפשו את מה שקוראים בו, וסיימו במה שמפיצה אור.”',
+    'g1-symbols': 'הסמלים במקומם! הספרות מופיעות לפני הסמלים — קראו אותן לפי סדר המקומות והזינו בארון.',
+    'g2-gears': 'המנגנון מסתובב ומקור האור הכחול נדלק! עכשיו כוונו את שתי המראות בחדר.',
     'h3-maze': 'המפתח הגיע ליציאה! הקוד שהתגלה מוצג ליד הלוח — לחצו על התיבה שבצד כדי להזין אותו.',
   };
   tick = signal(0);
@@ -466,6 +489,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
         onMazeLever: (i) => this.ngZone.run(() => this.mazeLever(i)),
         onMazeBlocked: (text) => this.ngZone.run(() => this.benchMsg.set({ ok: false, text })),
         onMazeBox: () => this.ngZone.run(() => this.openBox('h3-box', 'box')),
+        onBenchLever: () => this.ngZone.run(() => this.checkBench()),
       }));
       this.world.sensitivity = this.settings.settings().lookSensitivity;
       if (this.game.scenario()) this.buildWorld();
@@ -477,6 +501,9 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
 
   private buildWorld() {
     if (!this.world || !this.loading()) return;
+    // the rooms and objects of this game (the Hanukkah journey or the free trial)
+    useLayout(this.game.scenario()?.id);
+    this.zone.set(H_ZONES[0]);
     this.ngZone.runOutsideAngular(() => {
       this.world!.build(this.game.scenario());
       this.world!.start();
@@ -568,8 +595,12 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
       case 'wrong-answer':
         this.audio.sfx('wrong');
         // a wrong arrangement on the dreidel stand blinks red for everyone
-        if (n.puzzleId === 'h5-stand') this.world?.flashBench('h5-stand');
+        if (n.puzzleId === 'h5-stand' || n.puzzleId === 'g1-symbols') this.world?.flashBench(n.puzzleId);
         if (!mine) this.toast(n.message, n.kind);
+        break;
+      case 'item-revealed':
+        this.audio.sfx('door');
+        this.systemLine(n.message, 'clue');
         break;
       case 'item-picked':
       case 'item-placed':
@@ -730,6 +761,11 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
         else if (def.panel === 'maze') this.openMaze();
         else if (def.panel === 'box') this.openBox('h3-box', 'box');
         else if (def.panel === 'lock') this.openBox('h5-lock', 'lock');
+        else if (def.panel === 'map') this.openBench('g1-map');
+        else if (def.panel === 'symbols') this.openBench('g1-symbols');
+        else if (def.panel === 'gears') this.openBench('g2-gears');
+        else if (def.panel === 'cabinet') this.openBox('g1-cabinet', 'cabinet');
+        else if (def.panel === 'mirror') this.turnMirror(+(def.ref ?? 0));
         else this.panel.set({ id: def.panel!, ref: def.ref });
         return;
     }
@@ -751,7 +787,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
       .filter((x) => x.zone === this.zone())
       .sort((a, b) => a.order - b.order)
       .find((x) => s?.puzzles.find((y) => y.id === x.id)?.status === 'active');
-    if (p?.id === 'h2-lamp' || p?.id === 'h5-stand') this.openBench(p.id);
+    if (p && ['h2-lamp', 'h5-stand', 'g1-map', 'g1-symbols', 'g2-gears'].includes(p.id)) this.openBench(p.id);
     else if (p?.id === 'h3-maze') this.openMaze();
     else if (p && PUZZLE_PANEL[p.id]) this.panel.set({ id: PUZZLE_PANEL[p.id] });
     else this.toast('אין בחדר הזה חידה פתוחה.', 'info');
@@ -810,9 +846,11 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     const state = s?.puzzles.find((p) => p.id === puzzleId);
     if (state?.status === 'locked') {
       this.audio.sfx('wrong');
-      const text = puzzleId === 'h3-box'
-        ? 'התיבה נעולה. קודם הובילו את המפתח במבוך עד היציאה — שם יתגלה הקוד שפותח אותה.'
-        : 'הדלת נעולה במנעול קוד. קודם סדרו את ארבעת הסביבונים במתקן — הקוד כתוב בגבם.';
+      const text = ({
+        'h3-box': 'התיבה נעולה. קודם הובילו את המפתח במבוך עד היציאה — שם יתגלה הקוד שפותח אותה.',
+        'h5-lock': 'הדלת נעולה במנעול קוד. קודם סדרו את ארבעת הסביבונים במתקן — הקוד כתוב בגבם.',
+        'g1-cabinet': 'הארון נעול במנעול בן ארבע ספרות. קודם סדרו את ארבעת הסמלים בלוח — הספרות שבגבם הן הקוד.',
+      } as Record<string, string>)[puzzleId] ?? 'המנעול עדיין נעול.';
       if (this.focus()) this.benchMsg.set({ ok: false, text });
       else this.toast(text, 'info');
       return;
@@ -895,6 +933,19 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     } finally {
       this.benchBusy.set(false);
     }
+  }
+
+  /** A mirror in the workshop turns one eighth with every click, for everyone (spec 1.4). */
+  async turnMirror(index: number) {
+    const state = this.game.snapshot()?.puzzles.find((p) => p.id === 'g2-mirrors')?.status;
+    if (state === 'locked') {
+      this.toast('המראות עדיין לא מחוברות — קודם הפעילו את מנגנון גלגלי השיניים.', 'info');
+      return;
+    }
+    if (state === 'solved') return;
+    const r = await this.game.operate('g2-mirrors', { op: 'rotate', index });
+    if (r.ok) this.audio.sfx('click');
+    else this.toast(r.message, 'info');
   }
 
   /** One step of the dragged maze key; the server checks walls, gates and the order of the symbols. */

@@ -119,8 +119,8 @@ public class GameEngineTests
         Assert.Equal("not-ready", engine4.StartGame(room4, ps4[0].Id, T0).Code); // nobody ready
         foreach (var p in ps4.Skip(1)) engine4.SetReady(room4, p.Id, true);
         Assert.True(engine4.StartGame(room4, ps4[0].Id, T0).Ok);
-        // joining in the middle is allowed while the game is not finished (spec 3)
-        Assert.True(engine4.AddPlayer(room4, "מאוחר", "explorer", "{}", "late", false, T0, out _).Ok);
+        // the game has its 4 participants: a fifth is refused, also in the middle of the game
+        Assert.Equal("room-full", engine4.AddPlayer(room4, "מאוחר", "explorer", "{}", "late", false, T0, out _).Code);
     }
 
     [Fact]
@@ -151,7 +151,6 @@ public class GameEngineTests
     [InlineData(2)]
     [InlineData(3)]
     [InlineData(4)]
-    [InlineData(8)]
     public void Split_clues_cover_all_pieces_and_differ_between_players(int count)
     {
         var (engine, room, ps) = Setup(count, new GameOptions { MinPlayersOverride = 1 });

@@ -30,7 +30,7 @@ import { HPlayComponent } from '../hanukkah/h-play.component';
     }
     @if (game.snapshot(); as s) {
       @if (s.phase === 'lobby') { <px-lobby (leave)="leave(true)" /> }
-      @else if (s.scenarioId === 'hanukkah-oil') { <px-h-play (leave)="leave(false)" (leaveForGood)="leave(true)" /> }
+      @else if (s.scenarioId === 'hanukkah-oil' || s.scenarioId === 'gate-of-secrets') { <px-h-play (leave)="leave(false)" (leaveForGood)="leave(true)" /> }
       @else { <px-play (leave)="leave(false)" (leaveForGood)="leave(true)" /> }
     }
     @if (game.connection() === 'reconnecting' || game.connection() === 'disconnected') {

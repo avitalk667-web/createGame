@@ -20,6 +20,10 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
     public DbSet<Entitlement> Entitlements => Set<Entitlement>();
     public DbSet<AdminAuditLog> AdminAuditLog => Set<AdminAuditLog>();
     public DbSet<PlayerScoreEvent> ScoreEvents => Set<PlayerScoreEvent>();
+    public DbSet<FaqEntry> Faq => Set<FaqEntry>();
+    public DbSet<Coupon> Coupons => Set<Coupon>();
+    public DbSet<CouponProduct> CouponProducts => Set<CouponProduct>();
+    public DbSet<CouponRedemption> CouponRedemptions => Set<CouponRedemption>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -37,6 +41,7 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.HasMany(x => x.Puzzles).WithOne().HasForeignKey(p => p.RoomId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => x.EntitlementId).IsUnique().HasFilter("\"EntitlementId\" IS NOT NULL");
             e.Property(x => x.AccessSource).HasDefaultValue("legacy");
+            e.Property(x => x.MaxPlayers).HasDefaultValue(4);
         });
 
         b.Entity<PlayerSession>(e =>
@@ -92,6 +97,10 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.HasIndex(x => x.Number).IsUnique();
             e.Property(x => x.PriceSnapshot).HasPrecision(10, 2);
             e.Property(x => x.RefundedAmount).HasPrecision(10, 2);
+            e.Property(x => x.OriginalPrice).HasPrecision(10, 2);
+            e.Property(x => x.DiscountAmount).HasPrecision(10, 2);
+            e.Property(x => x.CouponCode).HasMaxLength(32);
+            e.HasIndex(x => x.CouponId);
             e.Property(x => x.Currency).HasMaxLength(3);
             e.Property(x => x.Email).HasMaxLength(200);
             e.HasIndex(x => new { x.Provider, x.ProviderSessionId }).IsUnique().HasFilter("\"ProviderSessionId\" IS NOT NULL");
@@ -123,6 +132,48 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.HasKey(x => x.Id);
             // the same award can never be stored twice (spec Part G §19)
             e.HasIndex(x => new { x.RoomId, x.Round, x.Key }).IsUnique();
+        });
+
+        b.Entity<FaqEntry>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Question).HasMaxLength(300);
+            e.Property(x => x.Answer).HasMaxLength(3000);
+            e.HasIndex(x => x.SortOrder);
+        });
+
+        b.Entity<Coupon>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Code).HasMaxLength(32);
+            e.HasIndex(x => x.Code).IsUnique();
+            e.Property(x => x.Name).HasMaxLength(80);
+            e.Property(x => x.Note).HasMaxLength(500);
+            e.Property(x => x.Value).HasPrecision(10, 2);
+            e.HasMany(x => x.Products).WithOne().HasForeignKey(p => p.CouponId).OnDelete(DeleteBehavior.Cascade);
+            e.ToTable(t => t.HasCheckConstraint("CK_Coupons_Value", "\"Value\" > 0 AND (\"Kind\" <> 0 OR \"Value\" < 100)"));
+        });
+
+        b.Entity<CouponProduct>(e =>
+        {
+            e.HasKey(x => new { x.CouponId, x.ProductId });
+            e.Property(x => x.ProductId).HasMaxLength(64);
+        });
+
+        b.Entity<CouponRedemption>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            // one use per order; the history stays even when the coupon is switched off
+            e.HasIndex(x => x.OrderId).IsUnique();
+            e.HasIndex(x => new { x.CouponId, x.Status });
+            e.Property(x => x.OriginalPrice).HasPrecision(10, 2);
+            e.Property(x => x.Discount).HasPrecision(10, 2);
+            e.Property(x => x.FinalPrice).HasPrecision(10, 2);
+            e.Property(x => x.ProductId).HasMaxLength(64);
+            e.HasOne<Coupon>().WithMany().HasForeignKey(x => x.CouponId).OnDelete(DeleteBehavior.Restrict);
         });
 
         b.Entity<AdminAuditLog>(e =>

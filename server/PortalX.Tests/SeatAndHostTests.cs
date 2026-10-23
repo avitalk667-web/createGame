@@ -53,31 +53,31 @@ public class SeatAndHostTests
     }
 
     [Fact]
-    public void A_seat_is_held_30_minutes_then_freed_and_a_ninth_player_is_never_created()
+    public void A_seat_is_held_30_minutes_then_freed_and_a_fifth_player_is_never_created()
     {
-        var (e, r, ps) = Room(8);
-        Drop(e, r, ps[5], T0.AddMinutes(1));
+        var (e, r, ps) = Room(4);
+        Drop(e, r, ps[2], T0.AddMinutes(1));
 
-        // still reserved: a ninth person cannot join
-        Assert.Equal("room-full", e.AddPlayer(r, Names[8], "explorer", "{}", "t9", false, T0.AddMinutes(30), out _).Code);
+        // still reserved: a fifth person cannot join
+        Assert.Equal("room-full", e.AddPlayer(r, Names[4], "explorer", "{}", "t5", false, T0.AddMinutes(30), out _).Code);
         // after 30 minutes the seat is free; the newcomer joins in the middle of the game
-        var late = e.AddPlayer(r, Names[8], "explorer", "{}", "t9", false, T0.AddMinutes(31.5), out var ninth);
+        var late = e.AddPlayer(r, Names[4], "explorer", "{}", "t5", false, T0.AddMinutes(31.5), out _);
         Assert.True(late.Ok, late.Message);
-        Assert.NotNull(ps[5].SeatReleasedAt);                              // marked released, record kept
-        Assert.Equal(9, GameEngine.ActivePlayers(r).Count());
-        Assert.Equal(8, e.SeatsTaken(r, T0.AddMinutes(31.5)));
+        Assert.NotNull(ps[2].SeatReleasedAt);                              // marked released, record kept
+        Assert.Equal(5, GameEngine.ActivePlayers(r).Count());
+        Assert.Equal(4, e.SeatsTaken(r, T0.AddMinutes(31.5)));
 
-        // the original player comes back: all 8 seats are taken, so he must wait (and no 9th seat is created)
-        var back = e.Reconnect(r, ps[5].Id, "c-back", T0.AddMinutes(32));
+        // the original player comes back: all 4 seats are taken, so he must wait (and no fifth seat is created)
+        var back = e.Reconnect(r, ps[2].Id, "c-back", T0.AddMinutes(32));
         Assert.Equal("no-seat", back.Code);
-        Assert.Equal(8, e.SeatsTaken(r, T0.AddMinutes(32)));
+        Assert.Equal(4, e.SeatsTaken(r, T0.AddMinutes(32)));
 
         // someone leaves on purpose; now he returns as the same participant
-        Assert.True(e.Leave(r, ps[2].Id, T0.AddMinutes(33)).Ok);
-        Assert.True(e.Reconnect(r, ps[5].Id, "c-back", T0.AddMinutes(34)).Ok);
-        Assert.Null(ps[5].SeatReleasedAt);
-        Assert.Equal(8, e.SeatsTaken(r, T0.AddMinutes(34)));
-        Assert.Equal(9, GameEngine.ActivePlayers(r).Count());              // records are never duplicated or deleted
+        Assert.True(e.Leave(r, ps[1].Id, T0.AddMinutes(33)).Ok);
+        Assert.True(e.Reconnect(r, ps[2].Id, "c-back", T0.AddMinutes(34)).Ok);
+        Assert.Null(ps[2].SeatReleasedAt);
+        Assert.Equal(4, e.SeatsTaken(r, T0.AddMinutes(34)));
+        Assert.Equal(5, GameEngine.ActivePlayers(r).Count());              // records are never duplicated or deleted
     }
 
     [Fact]

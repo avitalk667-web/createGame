@@ -1,15 +1,17 @@
-import { ChangeDetectionStrategy, Component, computed, inject, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { GameService } from '../core/game.service';
 
 /** Results of the Hanukkah journey (spec Part G §21): group score, personal ranking, contributions, time, hints, winner. */
 @Component({
   selector: 'px-h-result',
+  imports: [RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="wrap">
       <div class="confetti" aria-hidden="true">@for (i of confetti; track i) { <i [style.--i]="i"></i> }</div>
       <section class="card result" aria-labelledby="res-title">
-        <h1 id="res-title" class="gold-title">השלמתם את מסע החנוכה!</h1>
+        <h1 id="res-title" class="gold-title">{{ freeGame() ? 'עברתם את שער הסודות!' : 'השלמתם את מסע החנוכה!' }}</h1>
         <p class="sub">מי גילה הכי הרבה, פתר הכי הרבה והוביל את הקבוצה לניצחון?</p>
 
         @if (score(); as sc) {
@@ -54,6 +56,7 @@ import { GameService } from '../core/game.service';
 
         <div class="actions">
           @if (game.isHost()) { <button class="btn primary" (click)="again()" [disabled]="busy()">משחק נוסף באותו חדר</button> }
+          @if (freeGame()) { <a class="btn primary" routerLink="/" fragment="games">גלו את שאר המשחקים</a> }
           <button class="btn" (click)="home.emit()">לדף הבית</button>
         </div>
       </section>
@@ -84,6 +87,8 @@ import { GameService } from '../core/game.service';
 export class HResultComponent {
   game = inject(GameService);
   home = output<void>();
+  /** The free trial game ends with an invitation to the full games (spec 1.4). */
+  freeGame = input(false);
   busy = signal(false);
   confetti = Array.from({ length: 30 }, (_, i) => i);
 

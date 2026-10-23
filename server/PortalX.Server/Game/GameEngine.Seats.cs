@@ -52,7 +52,7 @@ public sealed partial class GameEngine
         {
             if (room.Phase == RoomPhase.Completed && p.SeatReleasedAt != null)
                 return ActionOutcome.Fail("game-ended", "המשחק הזה כבר הסתיים.");
-            var max = catalog.Get(room.ScenarioId).MaxPlayers;
+            var max = MaxPlayers(room);
             if (SeatsTaken(room, now, except: p.Id) >= max)
                 return ActionOutcome.Fail("no-seat", $"המקום שלך כבר אינו פנוי כרגע — כל {max} המקומות תפוסים. אפשר לנסות שוב כשיתפנה מקום.");
             p.SeatReleasedAt = null;

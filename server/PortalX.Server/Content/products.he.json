@@ -7,10 +7,21 @@
     "priceIls": null,
     "coverImage": "img/concept-hunt.jpg",
     "gallery": [
-      { "src": "img/concept-hunt.jpg", "caption": "חוקרים את הספרייה העתיקה" },
-      { "src": "img/group-photo.jpg", "caption": "הקבוצה מוכנה להרפתקה" }
+      {
+        "src": "img/concept-hunt.jpg",
+        "caption": "חוקרים את הספרייה העתיקה"
+      },
+      {
+        "src": "img/group-photo.jpg",
+        "caption": "הקבוצה מוכנה להרפתקה"
+      }
     ],
-    "features": ["25–35 דקות", "4–8 משתתפים", "6 אזורים · 6 סוגי חידות", "רמת קושי: בינונית"],
+    "features": [
+      "25–35 דקות",
+      "עד 4 משתתפים",
+      "6 אזורים · 6 סוגי חידות",
+      "רמת קושי: בינונית"
+    ],
     "included": [
       "משחק קבוצתי אחד בתלת־ממד, בעברית מלאה",
       "קוד הצטרפות לחברים — כל אחד מהבית או יחד בחדר אחד",
@@ -19,7 +30,7 @@
     ],
     "status": "Published",
     "minPlayers": 4,
-    "maxPlayers": 8,
+    "maxPlayers": 4,
     "scenarioId": "last-portal",
     "sortOrder": 1
   },
@@ -31,26 +42,90 @@
     "priceIls": 90,
     "coverImage": "img/hanukkah/kids.jpg",
     "gallery": [
-      { "src": "img/hanukkah/room-1.jpg", "caption": "חדר 1 — הספרייה הסודית: מכתב הסוד · קלה" },
-      { "src": "img/hanukkah/room-2.jpg", "caption": "חדר 2 — סדנת מנורת השמן · קלה" },
-      { "src": "img/hanukkah/room-3.jpg", "caption": "חדר 3 — מבוך המפתח המגנטי · בינונית" },
-      { "src": "img/hanukkah/room-4.jpg", "caption": "חדר 4 — חדר הכתב המוצפן · קשה" },
-      { "src": "img/hanukkah/room-5.jpg", "caption": "חדר 5 — חדר סביבוני הסוד · בינונית" },
-      { "src": "img/hanukkah/room-6.jpg", "caption": "חדר 6 — מעבדת השמן · קשה" },
-      { "src": "img/hanukkah/room-7.jpg", "caption": "חדר 7 — חדר הפסיפס והמראות · בינונית עד קשה" },
-      { "src": "img/hanukkah/room-8.jpg", "caption": "חדר 8 — היכל האור: החידה האחרונה · בינונית" }
+      {
+        "src": "img/hanukkah/room-1.jpg",
+        "caption": "חדר 1 — הספרייה הסודית: מכתב הסוד · קלה"
+      },
+      {
+        "src": "img/hanukkah/room-2.jpg",
+        "caption": "חדר 2 — סדנת מנורת השמן · קלה"
+      },
+      {
+        "src": "img/hanukkah/room-3.jpg",
+        "caption": "חדר 3 — מבוך המפתח המגנטי · בינונית"
+      },
+      {
+        "src": "img/hanukkah/room-4.jpg",
+        "caption": "חדר 4 — חדר הכתב המוצפן · קשה"
+      },
+      {
+        "src": "img/hanukkah/room-5.jpg",
+        "caption": "חדר 5 — חדר סביבוני הסוד · בינונית"
+      },
+      {
+        "src": "img/hanukkah/room-6.jpg",
+        "caption": "חדר 6 — מעבדת השמן · קשה"
+      },
+      {
+        "src": "img/hanukkah/room-7.jpg",
+        "caption": "חדר 7 — חדר הפסיפס והמראות · בינונית עד קשה"
+      },
+      {
+        "src": "img/hanukkah/room-8.jpg",
+        "caption": "חדר 8 — היכל האור: החידה האחרונה · בינונית"
+      }
     ],
-    "features": ["8 חדרים", "עד 8 משתתפים", "ניקוד אישי וקבוצתי", "חידות ברמות קושי שונות"],
+    "features": [
+      "8 חדרים",
+      "עד 4 משתתפים",
+      "ניקוד אישי וקבוצתי",
+      "חידות ברמות קושי שונות"
+    ],
     "included": [
-      "משחק קבוצתי אחד לעד 8 משתתפים — רכישה אחת לכל הקבוצה, לא לכל שחקן",
+      "משחק קבוצתי אחד לעד 4 משתתפים — רכישה אחת לכל הקבוצה, לא לכל שחקן",
       "שמונה חדרים רציפים עם איסוף חפצים ומנגנונים אינטראקטיביים",
       "ניקוד אישי לכל משתתף וניקוד קבוצתי",
       "קוד משחק להזמנת המשתתפים, צ׳אט קבוצתי ומסך תוצאות"
     ],
     "status": "Published",
     "minPlayers": 1,
-    "maxPlayers": 8,
+    "maxPlayers": 4,
     "scenarioId": "hanukkah-oil",
     "sortOrder": 2
+  },
+  {
+    "id": "gate-of-secrets",
+    "name": "PORTAL X — שער הסודות",
+    "tagline": "משחק התנסות חינמי — שני חדרים של חידות, חיפוש והרפתקה",
+    "description": "משחק התנסות חינמי לחלוטין: שני חדרי בריחה מלאים — חדר המפה והסמלים וסדנת המנגנון. מחפשים חלקי מפה, מסדרים סמלים, פותחים ארון נעול, מרכיבים גלגלי שיניים ומכוונים מראות כדי לנתב אור אל השער. בלי תשלום ובלי חשבון — פותחים משחק, מזמינים חברים בקוד ומשחקים.",
+    "priceIls": null,
+    "isFree": true,
+    "coverImage": "img/sample/cover.jpg",
+    "gallery": [
+      {
+        "src": "img/sample/cover.jpg",
+        "caption": "חדר המפה והסמלים"
+      },
+      {
+        "src": "img/sample/room-2.jpg",
+        "caption": "סדנת המנגנון"
+      }
+    ],
+    "features": [
+      "חינם",
+      "2 חדרים",
+      "עד 4 משתתפים",
+      "ניקוד אישי לכל משתתף"
+    ],
+    "included": [
+      "שני חדרי בריחה תלת־ממדיים עם חידות, מנגנונים ופריטים לאיסוף",
+      "בלי תשלום ובלי חשבון — פותחים משחק ומזמינים חברים בקוד",
+      "ניקוד אישי ומסך תוצאות בסיום"
+    ],
+    "status": "Published",
+    "minPlayers": 1,
+    "maxPlayers": 4,
+    "scenarioId": "gate-of-secrets",
+    "sortOrder": 0
   }
 ]

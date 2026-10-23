@@ -6,7 +6,7 @@
   "durationMinutes": "25–35",
   "difficulty": "בינונית",
   "minPlayers": 4,
-  "maxPlayers": 8,
+  "maxPlayers": 4,
   "finalWord": "אמונה",
   "zones": [
     { "id": "library", "name": "הספרייה", "order": 1, "icon": "book", "entryLine": "zone_library" },

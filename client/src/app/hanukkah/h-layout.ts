@@ -1,8 +1,12 @@
-// Spatial layout of "סוד פך השמן": eight rooms in a row along -Z, joined by short corridors with doors.
-// The 3D world uses its own coordinates; RTL applies only to the UI.
+// Spatial layout of the room-by-room games: "סוד פך השמן" (eight rooms) and the free trial "שער הסודות" (two rooms),
+// in a row along -Z, joined by short corridors with doors. The 3D world uses its own coordinates; RTL applies only to the UI.
 
-export const H_ZONES = ['library', 'workshop', 'maze', 'cipher', 'dreidels', 'lab', 'mosaic', 'hall'] as const;
-export type HZone = (typeof H_ZONES)[number];
+export const HANUKKAH_ZONES = ['library', 'workshop', 'maze', 'cipher', 'dreidels', 'lab', 'mosaic', 'hall'] as const;
+export const SAMPLE_ZONES = ['maproom', 'gearworks'] as const;
+export type HZone = (typeof HANUKKAH_ZONES)[number] | (typeof SAMPLE_ZONES)[number];
+
+/** The rooms of the game being played (set by useLayout before the world is built). */
+export let H_ZONES: readonly HZone[] = HANUKKAH_ZONES;
 
 export const H_HALF_W = 8;
 export const H_HALF_D = 7;
@@ -46,7 +50,8 @@ export type Verb = 'בדיקה' | 'הרמה' | 'פתיחה' | 'סיבוב' | 'ה
  */
 export type HKind = 'clue' | 'panel' | 'item' | 'decor';
 
-export type HPanel = 'riddle' | 'lamp' | 'maze' | 'box' | 'wheel' | 'stand' | 'lock' | 'jugs' | 'mosaic' | 'pedestals' | 'final';
+export type HPanel = 'riddle' | 'lamp' | 'maze' | 'box' | 'wheel' | 'stand' | 'lock' | 'jugs' | 'mosaic' | 'pedestals' | 'final'
+  | 'map' | 'symbols' | 'cabinet' | 'gears' | 'mirror';
 
 export interface HInteractable {
   id: string;
@@ -65,7 +70,7 @@ export interface HInteractable {
   radius: number;
 }
 
-export const H_INTERACTABLES: HInteractable[] = [
+const HANUKKAH_INTERACTABLES: HInteractable[] = [
   // 1 · הספרייה הסודית
   { id: 'letter', zone: 'library', label: 'מכתב מקופל', verb: 'קריאה', kind: 'clue', clueId: 'r1-letter', panel: 'riddle', pos: [-1.2, 1.05, -1.2], radius: 0.55 },
   { id: 'drawer', zone: 'library', label: 'מגירה נעולה', verb: 'פתיחה', kind: 'panel', panel: 'riddle', pos: [0.4, 0.62, -0.95], radius: 0.5 },
@@ -144,6 +149,49 @@ export const H_INTERACTABLES: HInteractable[] = [
   { id: 'chest', zone: 'hall', label: 'תיבת אוצר', verb: 'פתיחה', kind: 'decor', text: 'תיבת האוצר נעולה. היא תיפתח בסוף המסע.', pos: [5.2, 0.6, 2.4], radius: 0.7 },
 ];
 
+/** The free trial game "שער הסודות": the map room and the mechanism workshop. */
+const SAMPLE_INTERACTABLES: HInteractable[] = [
+  // 1 · חדר המפה והסמלים
+  { id: 'map-table', zone: 'maproom', label: 'שולחן המפה — הרכבת החלקים', verb: 'הנחה', kind: 'panel', panel: 'map', pos: [0, 1.05, -1.5], radius: 1.0 },
+  { id: 'piece-left', zone: 'maproom', label: 'חלק מפה מתחת לספר', verb: 'הרמה', kind: 'item', itemId: 'map-left', pos: [-1.9, 1.05, -0.95], radius: 0.4 },
+  { id: 'note', zone: 'maproom', label: 'פתק ליד המגירות', verb: 'קריאה', kind: 'clue', clueId: 'g1-note', pos: [-7.0, 1.3, 1.2], radius: 0.45 },
+  { id: 'piece-middle', zone: 'maproom', label: 'חלק מפה במגירה', verb: 'הרמה', kind: 'item', itemId: 'map-middle', pos: [-6.7, 0.95, 1.9], radius: 0.4 },
+  { id: 'piece-right', zone: 'maproom', label: 'חלק מפה מאחורי הגלובוס', verb: 'הרמה', kind: 'item', itemId: 'map-right', pos: [7.2, 1.6, -2.45], radius: 0.4 },
+  { id: 'magnifier', zone: 'maproom', label: 'זכוכית מגדלת', verb: 'בדיקה', kind: 'clue', clueId: 'g1-magnifier', pos: [1.9, 1.05, -0.9], radius: 0.4 },
+  { id: 'sym-compass', zone: 'maproom', label: 'סמל המצפן', verb: 'הרמה', kind: 'item', itemId: 'sym-compass', pos: [1.5, 1.1, -2.0], radius: 0.35 },
+  { id: 'sym-key', zone: 'maproom', label: 'סמל המפתח על וו', verb: 'הרמה', kind: 'item', itemId: 'sym-key', pos: [-2.4, 1.7, -6.6], radius: 0.35 },
+  { id: 'sym-book', zone: 'maproom', label: 'סמל הספר בין הספרים', verb: 'הרמה', kind: 'item', itemId: 'sym-book', pos: [-7.3, 1.45, -3.4], radius: 0.35 },
+  { id: 'sym-lamp', zone: 'maproom', label: 'סמל המנורה ליד המנורה', verb: 'הרמה', kind: 'item', itemId: 'sym-lamp', pos: [5.6, 1.1, 2.6], radius: 0.35 },
+  { id: 'symbol-board', zone: 'maproom', label: 'לוח הסמלים — ארבעה מקומות', verb: 'הנחה', kind: 'panel', panel: 'symbols', pos: [4.0, 1.05, -3.4], radius: 0.9 },
+  { id: 'cabinet', zone: 'maproom', label: 'הארון הנעול — מנעול בן ארבע ספרות', verb: 'פתיחה', kind: 'panel', panel: 'cabinet', pos: [-4.2, 1.4, -6.1], radius: 0.8 },
+  { id: 'globe', zone: 'maproom', label: 'גלובוס קטן', verb: 'סיבוב', kind: 'decor', text: 'גלובוס קטן על המדף. נראה שמשהו מוסתר מאחוריו.', pos: [7.1, 1.6, -1.9], radius: 0.4 },
+  { id: 'compass', zone: 'maproom', label: 'מצפן עתיק', verb: 'בדיקה', kind: 'decor', text: 'מצפן נחושת עתיק. המחט שלו מראה את הכיוון.', pos: [1.1, 1.05, -2.0], radius: 0.35 },
+  { id: 'four-books', zone: 'maproom', label: 'ארבעה ספרים', verb: 'בדיקה', kind: 'decor', text: 'ארבעה ספרים בכריכות שונות: אדומה, ירוקה, כחולה וחומה.', pos: [-7.3, 1.45, -2.6], radius: 0.6 },
+  { id: 'writing', zone: 'maproom', label: 'כלי כתיבה', verb: 'בדיקה', kind: 'decor', text: 'קסת דיו וקולמוס של חוקר מפות.', pos: [-1.0, 1.05, -2.0], radius: 0.35 },
+
+  // 2 · סדנת המנגנון
+  { id: 'gear-bench', zone: 'gearworks', label: 'שולחן העבודה — צירי הגלגלים', verb: 'הנחה', kind: 'panel', panel: 'gears', pos: [0, 1.05, -1.4], radius: 1.0 },
+  { id: 'gear-lever', zone: 'gearworks', label: 'ידית מכנית', verb: 'הפעלה', kind: 'panel', panel: 'gears', pos: [2.0, 1.3, -1.5], radius: 0.4 },
+  { id: 'gear-large', zone: 'gearworks', label: 'גלגל שיניים גדול', verb: 'הרמה', kind: 'item', itemId: 'gear-large', pos: [-7.2, 1.45, -3.0], radius: 0.45 },
+  { id: 'gear-small', zone: 'gearworks', label: 'גלגל שיניים קטן', verb: 'הרמה', kind: 'item', itemId: 'gear-small', pos: [5.8, 0.75, 2.8], radius: 0.4 },
+  { id: 'gear-medium', zone: 'gearworks', label: 'גלגל שיניים בינוני', verb: 'הרמה', kind: 'item', itemId: 'gear-medium', pos: [-3.0, 0.2, 3.5], radius: 0.4 },
+  { id: 'gear-diagram', zone: 'gearworks', label: 'איור הגלגלים על הקיר', verb: 'קריאה', kind: 'clue', clueId: 'g2-diagram', pos: [-4.0, 2.3, -6.8], radius: 0.9 },
+  { id: 'mirror-a', zone: 'gearworks', label: 'מראה ראשונה — לחצו כדי לסובב', verb: 'סיבוב', kind: 'panel', panel: 'mirror', ref: '0', pos: [-1.4, 3.9, -2.5], radius: 0.6 },
+  { id: 'mirror-b', zone: 'gearworks', label: 'מראה שנייה — לחצו כדי לסובב', verb: 'סיבוב', kind: 'panel', panel: 'mirror', ref: '1', pos: [-1.4, 3.9, -5.5], radius: 0.6 },
+  { id: 'light-source', zone: 'gearworks', label: 'מקור האור הכחול', verb: 'בדיקה', kind: 'decor', text: 'פנס נחושת עם עדשה כחולה. הוא נדלק כשהמנגנון מסתובב.', pos: [-7.5, 3.9, -2.5], radius: 0.6 },
+  { id: 'small-box', zone: 'gearworks', label: 'תיבה קטנה עם מנעול', verb: 'קריאה', kind: 'clue', clueId: 'g2-box-note', pos: [3.6, 0.55, -4.6], radius: 0.5 },
+  { id: 'gate-sign', zone: 'gearworks', label: 'סמל השער מעל הדלת', verb: 'בדיקה', kind: 'decor', text: 'סמל השער. כשהאור הכחול יפגע בו — השער ייפתח.', pos: [0, 3.9, -6.8], radius: 0.6 },
+];
+
+export let H_INTERACTABLES: HInteractable[] = HANUKKAH_INTERACTABLES;
+
+/** Chooses the rooms and objects of the game about to be shown. */
+export function useLayout(scenarioId: string | null | undefined) {
+  const sample = scenarioId === 'gate-of-secrets';
+  H_ZONES = sample ? SAMPLE_ZONES : HANUKKAH_ZONES;
+  H_INTERACTABLES = sample ? SAMPLE_INTERACTABLES : HANUKKAH_INTERACTABLES;
+}
+
 /** World position of an interactable. */
 export const hWorldPos = (d: HInteractable): [number, number, number] => [d.pos[0], d.pos[1], hCenter(d.zone) + d.pos[2]];
 
@@ -157,10 +205,14 @@ const OBSTACLES: [HZone, number, number, number, number][] = [
   ['lab', -3.4, 3.4, -3.2, -1.2], ['lab', 2.0, 4.0, -1.0, 0.2],
   ['mosaic', -1.0, 1.0, -0.8, 0.8],
   ['hall', -1.0, 1.0, -2.6, -0.6],
+  ['maproom', -2.6, 2.6, -2.3, -0.4], ['maproom', 2.6, 5.4, -4.1, -2.6], ['maproom', -5.1, -3.3, -7.0, -5.8],
+  ['maproom', -8.0, -6.3, 0.7, 2.3], ['maproom', 6.5, 8.0, -2.9, -1.1], ['maproom', 5.0, 6.2, 2.0, 3.2],
+  ['gearworks', -2.6, 2.6, -2.2, -0.4], ['gearworks', -1.8, -1.0, -2.9, -2.1], ['gearworks', -1.8, -1.0, -5.9, -5.1],
+  ['gearworks', 3.0, 4.2, -5.0, -4.2], ['gearworks', 5.2, 6.4, 2.2, 3.4], ['gearworks', -8.0, -6.4, -3.8, -2.2],
 ];
 
 export function hObstacles(): HRect[] {
-  return OBSTACLES.map(([zone, x0, x1, z0, z1]) => {
+  return OBSTACLES.filter(([zone]) => H_ZONES.includes(zone)).map(([zone, x0, x1, z0, z1]) => {
     const c = hCenter(zone);
     return { x0, x1, z0: c + z0, z1: c + z1 };
   });

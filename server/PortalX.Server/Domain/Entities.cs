@@ -54,6 +54,8 @@ public class GameRoom
     public Guid? EntitlementId { get; set; }
     /// <summary>"purchase", "admin-free" or "legacy" (created before purchases existed).</summary>
     public string AccessSource { get; set; } = "legacy";
+    /// <summary>Participant limit of this game, host included, fixed when it was opened (see GameOptions.MaxPlayers).</summary>
+    public int MaxPlayers { get; set; } = 4;
 
     public List<PlayerSession> Players { get; set; } = new();
     public List<PuzzleState> Puzzles { get; set; } = new();
@@ -221,7 +223,9 @@ public class Product
     public string IncludedJson { get; set; } = "[]";
     public ProductStatus Status { get; set; }
     public int MinPlayers { get; set; } = 1;
-    public int MaxPlayers { get; set; } = 8;
+    public int MaxPlayers { get; set; } = 4;
+    /// <summary>A free trial game: started without payment, never sold, never revenue.</summary>
+    public bool IsFree { get; set; }
     public string GameType { get; set; } = "escape-room-3d";
     /// <summary>Scenario that runs when the game is played; null or unknown = not playable yet.</summary>
     public string? ScenarioId { get; set; }
@@ -260,6 +264,11 @@ public class Order
     public DateTime? FailedAt { get; set; }
     public DateTime? RefundedAt { get; set; }
     public decimal? RefundedAmount { get; set; }
+    /// <summary>Catalog price before a coupon (PriceSnapshot is what is charged). Null for orders created before coupons.</summary>
+    public decimal? OriginalPrice { get; set; }
+    public decimal DiscountAmount { get; set; }
+    public string? CouponCode { get; set; }
+    public Guid? CouponId { get; set; }
     /// <summary>Optimistic concurrency (PostgreSQL xmin).</summary>
     public uint Version { get; set; }
 }
@@ -311,4 +320,72 @@ public class AdminAuditLog
     /// <summary>Non-sensitive details only (never passwords or payment data).</summary>
     public string DetailsJson { get; set; } = "{}";
     public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>
+/// A question added by the admin to the home page FAQ. The built-in questions ship with the site
+/// (Content/faq.he.json) and are never stored here, so they cannot be removed by editing these rows.
+/// </summary>
+public class FaqEntry
+{
+    public Guid Id { get; set; }
+    public string Question { get; set; } = "";
+    public string Answer { get; set; } = "";
+    public int SortOrder { get; set; }
+    public bool Published { get; set; }
+    public string CreatedBy { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public enum CouponKind { Percent = 0, Fixed = 1 }
+
+/// <summary>A discount code for chosen products. The price after the discount is always computed by the server.</summary>
+public class Coupon
+{
+    public Guid Id { get; set; }
+    /// <summary>Upper-case, unique.</summary>
+    public string Code { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string? Note { get; set; }
+    public CouponKind Kind { get; set; }
+    /// <summary>Percent (1–99) or a fixed amount in ILS.</summary>
+    public decimal Value { get; set; }
+    public DateTime? StartsAt { get; set; }
+    public DateTime? EndsAt { get; set; }
+    /// <summary>Total successful uses allowed; null = unlimited.</summary>
+    public int? MaxRedemptions { get; set; }
+    public bool Active { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public List<CouponProduct> Products { get; set; } = new();
+}
+
+/// <summary>The products a coupon applies to (one or more, chosen explicitly).</summary>
+public class CouponProduct
+{
+    public Guid CouponId { get; set; }
+    public string ProductId { get; set; } = "";
+}
+
+public enum RedemptionStatus { Reserved = 0, Redeemed = 1, Released = 2, Refunded = 3 }
+
+/// <summary>
+/// One use of a coupon, tied to one order. Reserved while the order waits for payment (so two buyers cannot both take
+/// the last use), redeemed when paid, released when the payment fails or the reservation expires, refunded on refund.
+/// The prices are stored as they were at the time, so later price changes never rewrite a past order.
+/// </summary>
+public class CouponRedemption
+{
+    public Guid Id { get; set; }
+    public Guid CouponId { get; set; }
+    public Guid OrderId { get; set; }
+    public string ProductId { get; set; } = "";
+    public decimal OriginalPrice { get; set; }
+    public decimal Discount { get; set; }
+    public decimal FinalPrice { get; set; }
+    public RedemptionStatus Status { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public DateTime ReservedUntil { get; set; }
 }
