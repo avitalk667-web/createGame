@@ -58,6 +58,43 @@ public static class MailEndpoints
     /// <summary>Admin only (inside the secured admin group): the list of addresses and their separate consents.</summary>
     public static void MapAdminMailing(this RouteGroupBuilder secured)
     {
+        // what the server received and whether it can reach the mail server — without sending anything or showing secrets
+        secured.MapGet("/mail-status", async (SmtpOptions smtp, SiteOptions site, IEmailSender sender, IConfiguration config) =>
+        {
+            string reach = "not-configured";
+            if (smtp.Configured)
+            {
+                try
+                {
+                    using var tcp = new System.Net.Sockets.TcpClient();
+                    await tcp.ConnectAsync(smtp.Host!, smtp.Port).WaitAsync(TimeSpan.FromSeconds(6));
+                    reach = "reachable";
+                }
+                catch (TimeoutException) { reach = "timeout"; }
+                catch (Exception) { reach = "unreachable"; }
+            }
+            return Results.Ok(new
+            {
+                smtpConfigured = smtp.Configured,
+                sendingOffered = sender.Available,
+                host = smtp.Host,
+                port = smtp.Port,
+                tls = smtp.UseTls,
+                usernameSet = !string.IsNullOrWhiteSpace(smtp.Username),
+                appPasswordSet = !string.IsNullOrEmpty(smtp.Password),
+                fromEmail = smtp.FromEmail,
+                fromName = smtp.FromName,
+                replyTo = smtp.ReplyTo,
+                missing = smtp.Missing(),
+                smtpServer = reach,
+                siteUrl = site.SiteUrl,
+                communityGroup = site.CommunityGroupUrl != null,
+                communityGroupRejected = site.CommunityGroupRejected,
+                unsubscribeSecretSet = (config["PORTALX_UNSUBSCRIBE_SECRET"]?.Length ?? 0) >= 32,
+                unsubscribeSecretTooShort = config["PORTALX_UNSUBSCRIBE_SECRET"] is { Length: > 0 and < 32 },
+            });
+        });
+
         secured.MapGet("/mailing", async (HttpRequest r, MailingAdmin m) => Results.Ok(await m.ListAsync(MailingFilter.Parse(r))));
 
         secured.MapGet("/mailing.csv", async (HttpRequest r, HttpContext ctx, MailingAdmin m, AdminService s, SiteOptions site) =>

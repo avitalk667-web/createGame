@@ -65,6 +65,12 @@ export interface MailingRow {
   consentSource?: string | null; groupLinkRequested: boolean; source?: string | null;
 }
 
+export interface MailStatus {
+  smtpConfigured: boolean; sendingOffered: boolean; host?: string | null; port: number; tls: boolean; usernameSet: boolean; appPasswordSet: boolean;
+  fromEmail: string; fromName: string; replyTo: string; missing: string[]; smtpServer: 'reachable' | 'timeout' | 'unreachable' | 'not-configured';
+  siteUrl?: string | null; communityGroup: boolean; communityGroupRejected: boolean; unsubscribeSecretSet: boolean; unsubscribeSecretTooShort: boolean;
+}
+
 export interface MailingList {
   totals: { resultsAddresses: number; resultsSent: number; activeSubscribers: number; revokedSubscribers: number; groupLinkRequests: number };
   rows: MailingRow[];
@@ -138,6 +144,7 @@ export class AdminApiService {
   freeGame(productId: string) { return this.request<{ code: string; hostClaim: string }>('POST', '/api/admin/free-game', { productId }); }
   reclaim(code: string) { return this.request<{ code: string; hostClaim?: string | null }>('POST', `/api/admin/games/${encodeURIComponent(code)}/host-claim`); }
   audit() { return this.request<AuditEntry[]>('GET', '/api/admin/audit'); }
+  mailStatus() { return this.request<MailStatus>('GET', '/api/admin/mail-status'); }
   mailing(f: MailingFilters) { return this.request<MailingList>('GET', '/api/admin/mailing' + mailingQuery(f)); }
   mailingCsvUrl(f: MailingFilters) { return '/api/admin/mailing.csv' + mailingQuery(f); }
   faq() { return this.request<{ builtIn: { question: string; answer: string }[]; custom: FaqRow[] }>('GET', '/api/admin/faq'); }

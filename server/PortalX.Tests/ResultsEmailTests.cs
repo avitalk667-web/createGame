@@ -419,6 +419,60 @@ public class ResultsEmailTests
     }
 
     [Fact]
+    public async Task A_mail_server_that_never_answers_fails_within_the_time_limit()
+    {
+        // a server that accepts the connection and then stays silent (like a blocked or broken route)
+        var silent = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        silent.Start();
+        var port = ((IPEndPoint)silent.LocalEndpoint).Port;
+        var accept = silent.AcceptTcpClientAsync();
+        try
+        {
+            var sender = new SmtpEmailSender(new SmtpOptions { Host = "127.0.0.1", Port = port, UseTls = false },
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<SmtpEmailSender>.Instance);
+            var started = DateTime.UtcNow;
+            var ex = await Assert.ThrowsAsync<EmailSendException>(() => sender.SendAsync(new EmailMessage("a@example.org", "s", "<p>h</p>", "t")));
+            Assert.Equal("smtp-unreachable", ex.Code);
+            Assert.True(DateTime.UtcNow - started < SmtpEmailSender.AttemptTimeout + TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            silent.Stop();
+        }
+    }
+
+    [Theory]
+    [InlineData("https://chat.whatsapp.com/AbC123", "https://chat.whatsapp.com/AbC123", false)]
+    [InlineData("chat.whatsapp.com/AbC123", "https://chat.whatsapp.com/AbC123", false)]
+    [InlineData("  chat.whatsapp.com/AbC123  ", "https://chat.whatsapp.com/AbC123", false)]
+    [InlineData("http://chat.whatsapp.com/AbC123", null, true)]
+    [InlineData("not a link", null, true)]
+    [InlineData(null, null, false)]
+    public void The_group_link_setting_is_read_safely(string? value, string? expected, bool rejected)
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["PORTALX_COMMUNITY_GROUP_URL"] = value }).Build();
+        var site = SiteOptions.FromConfig(config);
+        Assert.Equal(expected, site.CommunityGroupUrl);
+        Assert.Equal(rejected, site.CommunityGroupRejected);
+    }
+
+    [Fact]
+    public async Task The_mail_status_is_admin_only_and_shows_no_secret()
+    {
+        var anon = await _factory.CreateClient().GetAsync("/api/admin/mail-status");
+        Assert.True(anon.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden);
+        var admin = _factory.CreateClient();
+        (await admin.PostAsJsonAsync("/api/admin/login", new { username = AdminTests.Username, password = AdminTests.Password })).EnsureSuccessStatusCode();
+        admin.DefaultRequestHeaders.Add(AdminAuth.CsrfHeader, "1");
+        var s = await Body(await admin.GetAsync("/api/admin/mail-status"));
+        Assert.False(s.GetProperty("smtpConfigured").GetBoolean());
+        Assert.Equal("not-configured", s.GetProperty("smtpServer").GetString());
+        Assert.Contains("SMTP_HOST", s.GetProperty("missing").EnumerateArray().Select(x => x.GetString()));
+        Assert.False(s.TryGetProperty("password", out _));
+        Assert.False(s.TryGetProperty("appPassword", out _));
+    }
+
+    [Fact]
     public void Addresses_are_checked_and_normalized_on_the_server()
     {
         Assert.Equal("name@example.org", ResultsEmailService.NormalizeEmail("  Name@Example.org "));

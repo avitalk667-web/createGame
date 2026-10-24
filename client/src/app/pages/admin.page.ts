@@ -3,7 +3,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { Router, RouterLink } from '@angular/router';
 import { sessionStore } from '../core/api.service';
 import {
-  AdminApiService, AdminFilters, AdminGame, AdminOrder, AdminProduct, AuditEntry, CouponRow, CouponUse, Dashboard, FaqRow, MailingFilters, MailingList } from '../core/admin-api.service';
+  AdminApiService, AdminFilters, AdminGame, AdminOrder, AdminProduct, AuditEntry, CouponRow, CouponUse, Dashboard, FaqRow, MailingFilters, MailingList, MailStatus } from '../core/admin-api.service';
 
 type Tab = 'dashboard' | 'orders' | 'games' | 'products' | 'faq' | 'coupons' | 'mailing' | 'audit';
 
@@ -315,6 +315,23 @@ const ACTIONS: Record<string, string> = {
               <label>עד תאריך <input type="date" [value]="mf().to ?? ''" (change)="setM('to', $any($event.target).value)" /></label>
               <button class="btn small" type="submit">סינון</button>
             </form>
+            @if (mailStatus(); as ms) {
+              <section class="card mail-status" [class.bad]="ms.smtpServer !== 'reachable'">
+                <h2>מצב שליחת המיילים</h2>
+                <ul>
+                  <li>הגדרות SMTP: {{ ms.smtpConfigured ? 'התקבלו' : 'חסרות — ' + ms.missing.join(', ') }}
+                    @if (ms.smtpConfigured) { <span dir="ltr">({{ ms.host }}:{{ ms.port }}{{ ms.tls ? ', TLS' : '' }})</span> · משתמש {{ ms.usernameSet ? '✓' : '✗' }} · סיסמת אפליקציה {{ ms.appPasswordSet ? '✓' : '✗' }} }</li>
+                  <li>חיבור לשרת הדואר: <b>{{ reachLabel(ms.smtpServer) }}</b></li>
+                  <li>שולח: <span dir="ltr">{{ ms.fromName }} &lt;{{ ms.fromEmail }}&gt;</span> · מענה ל־<span dir="ltr">{{ ms.replyTo }}</span></li>
+                  <li>כתובת האתר לקישורים: <span dir="ltr">{{ ms.siteUrl ?? 'לפי כתובת הבקשה' }}</span></li>
+                  <li>קישור לקבוצה: {{ ms.communityGroup ? 'מוגדר' : ms.communityGroupRejected ? 'הוגדר אבל אינו קישור https תקין' : 'לא מוגדר' }}</li>
+                  <li>מפתח קישורי הסרה: {{ ms.unsubscribeSecretSet ? 'מוגדר' : ms.unsubscribeSecretTooShort ? 'קצר מדי (נדרשים 32 תווים לפחות) — נעשה שימוש במפתח השמור במסד' : 'נשמר במסד (לא הוגדר משתנה)' }}</li>
+                </ul>
+                @if (ms.smtpServer === 'timeout' || ms.smtpServer === 'unreachable') {
+                  <p class="muted small">השרת לא מצליח להתחבר לשרת הדואר. ב־Render בתוכנית החינמית חסומות יציאות SMTP (25, 465, 587) — צריך תוכנית בתשלום או שירות שליחה דרך HTTPS.</p>
+                }
+              </section>
+            }
             @if (mailing(); as m) {
               <div class="cards">
                 <div class="stat card"><span>כתובות שביקשו תוצאות</span><b>{{ m.totals.resultsAddresses }}</b><small>{{ m.totals.resultsSent }} מיילי תוצאות נשלחו · אינם מנויים שיווקיים</small></div>
@@ -453,6 +470,8 @@ const ACTIONS: Record<string, string> = {
     .filters label.check { flex-direction:row; align-items:center; gap:.4rem; }
     .cards { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:.8rem; }
     .stat { display:flex; flex-direction:column; gap:.2rem; padding:1rem; }
+    .mail-status { padding:1rem; margin-bottom:1rem; border-color:var(--ok); } .mail-status.bad { border-color:var(--bad); }
+    .mail-status h2 { margin:0 0 .4rem; font-size:1.1rem; } .mail-status ul { margin:0; padding-inline-start:1.2rem; line-height:1.8; }
     .free-report { padding:1rem; margin:1.2rem 0; border-color:var(--gold); }
     .free-report h2 { margin:0; font-size:1.2rem; } .free-report .cards { grid-template-columns:repeat(3, minmax(0,1fr)); margin:.8rem 0 .4rem; }
     .stat b.date { font-size:1.15rem; }
@@ -520,6 +539,8 @@ export class AdminPage {
   // mailing list and consents (results emails, marketing consent and group-link requests kept apart)
   mf = signal<MailingFilters>({});
   mailing = signal<MailingList | null>(null);
+  mailStatus = signal<MailStatus | null>(null);
+  reachLabel = (s: string) => ({ reachable: 'מחובר', timeout: 'אין תגובה (חסום?)', unreachable: 'לא נגיש', 'not-configured': 'לא הוגדר' } as Record<string, string>)[s] ?? s;
   mailingCsvUrl = computed(() => this.api.mailingCsvUrl(this.mf()));
   mailLabel = (s: string) => ({ sent: 'נשלח', pending: 'ממתין', failed: 'נכשל' } as Record<string, string>)[s] ?? s;
   consentLabel = (s: string) => ({ active: 'פעילה', revoked: 'בוטלה', pending: 'ממתינה לאימות', none: 'אין' } as Record<string, string>)[s] ?? s;
@@ -602,6 +623,7 @@ export class AdminPage {
         case 'mailing':
           if (!this.products().length) this.products.set(await this.api.products());
           this.mailing.set(await this.api.mailing(this.mf()));
+          this.api.mailStatus().then((s) => this.mailStatus.set(s)).catch(() => {});
           break;
       }
     } catch (e: any) {

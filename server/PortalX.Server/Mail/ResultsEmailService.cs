@@ -194,7 +194,8 @@ public sealed partial class ResultsEmailService(
             catch (EmailSendException ex)
             {
                 error = ex.Code;
-                if (!ex.Transient) break;
+                // a refused address, bad settings or an unreachable server: trying again at once will not help
+                if (!ex.Transient || ex.Code == "smtp-unreachable") break;
                 await Task.Delay(400);
             }
         }

@@ -6,6 +6,9 @@ namespace PortalX.Server.Mail;
 /// </summary>
 public sealed class SiteOptions
 {
+    /// <summary>True when PORTALX_COMMUNITY_GROUP_URL was set but is not a usable https link (shown in the admin's mail status).</summary>
+    public bool CommunityGroupRejected { get; init; }
+
     public const string DefaultContactEmail = "info.portalx@gmail.com";
 
     public string ContactEmail { get; init; } = DefaultContactEmail;
@@ -20,7 +23,9 @@ public sealed class SiteOptions
     {
         static string? Clean(string? v) => string.IsNullOrWhiteSpace(v) ? null : v.Trim();
         var group = Clean(c["PORTALX_COMMUNITY_GROUP_URL"]);
-        if (group != null && (!Uri.TryCreate(group, UriKind.Absolute, out var u) || u.Scheme != Uri.UriSchemeHttps)) group = null;
+        // an invite link pasted without its scheme (e.g. "chat.whatsapp.com/...") is taken as https
+        if (group != null && !group.Contains("://")) group = "https://" + group.TrimStart('/');
+        if (group != null && (!Uri.TryCreate(group, UriKind.Absolute, out var u) || u.Scheme != Uri.UriSchemeHttps || !u.Host.Contains('.'))) group = null;
         var site = Clean(c["PORTALX_SITE_URL"]);
         if (site != null && !Uri.TryCreate(site, UriKind.Absolute, out _)) site = null;
         return new SiteOptions
@@ -28,6 +33,7 @@ public sealed class SiteOptions
             ContactEmail = Clean(c["PORTALX_CONTACT_EMAIL"]) ?? DefaultContactEmail,
             SiteUrl = site?.TrimEnd('/'),
             CommunityGroupUrl = group,
+            CommunityGroupRejected = group == null && Clean(c["PORTALX_COMMUNITY_GROUP_URL"]) != null,
             RetentionDays = int.TryParse(c["PORTALX_EMAIL_RETENTION_DAYS"], out var d) && d is > 0 and <= 3650 ? d : 365,
         };
     }

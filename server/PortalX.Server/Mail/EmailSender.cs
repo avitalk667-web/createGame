@@ -30,6 +30,8 @@ public sealed class UnconfiguredEmailSender : IEmailSender
 /// <summary>SMTP with STARTTLS (e.g. Gmail with an App Password). Replaceable by another provider behind the same interface.</summary>
 public sealed class SmtpEmailSender(SmtpOptions options, ILogger<SmtpEmailSender> logger) : IEmailSender
 {
+    public static readonly TimeSpan AttemptTimeout = TimeSpan.FromSeconds(15);
+
     public bool Available => options.Configured;
 
     public async Task SendAsync(EmailMessage m, CancellationToken ct = default)
@@ -60,9 +62,12 @@ public sealed class SmtpEmailSender(SmtpOptions options, ILogger<SmtpEmailSender
         };
         if (!string.IsNullOrEmpty(options.Username))
             client.Credentials = new NetworkCredential(options.Username, options.Password);
+        // SmtpClient.Timeout does not cover SendMailAsync: the attempt is cancelled after a fixed time instead
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        limit.CancelAfter(AttemptTimeout);
         try
         {
-            await client.SendMailAsync(mail, ct);
+            await client.SendMailAsync(mail, limit.Token).WaitAsync(AttemptTimeout + TimeSpan.FromSeconds(2), ct);
         }
         catch (SmtpFailedRecipientException ex)
         {
