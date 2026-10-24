@@ -1,11 +1,12 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { GameService } from '../core/game.service';
+import { ResultsEmailComponent } from '../ui/results-email.component';
 
 /** Results of the Hanukkah journey (spec Part G §21): group score, personal ranking, contributions, time, hints, winner. */
 @Component({
   selector: 'px-h-result',
-  imports: [RouterLink],
+  imports: [RouterLink, ResultsEmailComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="wrap">
@@ -53,6 +54,8 @@ import { GameService } from '../core/game.service';
             </ul>
           </details>
         }
+
+        <px-results-email />
 
         <div class="actions">
           @if (game.isHost()) { <button class="btn primary" (click)="again()" [disabled]="busy()">משחק נוסף באותו חדר</button> }

@@ -3,6 +3,7 @@ import { RouterLink } from '@angular/router';
 import { AdminApiService } from '../core/admin-api.service';
 import { ApiService } from '../core/api.service';
 import { AudioService } from '../core/audio.service';
+import { SiteService } from '../core/site.service';
 import { FaqEntryView, Product, formatPrice, playersLabel } from '../core/models';
 import { SettingsPanelComponent } from '../ui/settings-panel.component';
 
@@ -147,6 +148,7 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
         <a routerLink="/info/contact">יצירת קשר</a>
         <a routerLink="/info/about">על PORTAL X</a>
       </nav>
+      <p class="contact">יצירת קשר: <a [href]="'mailto:' + site.info().contactEmail" dir="ltr">{{ site.info().contactEmail }}</a></p>
       <p class="muted small">פרטי העסק יעודכנו כאן לפני פתיחת המכירות.</p>
     </footer>
     @if (showSettings()) { <px-settings (close)="showSettings.set(false)" /> }
@@ -283,6 +285,7 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
     footer { text-align:center; padding-block:2rem 2.5rem; border-top:1px solid var(--line); margin-top:1rem; }
     footer nav { display:flex; justify-content:center; flex-wrap:wrap; gap:.4rem 1.4rem; }
     footer a { color:var(--text); }
+    footer .contact { margin:.8rem 0 .2rem; } footer .contact a { color:var(--gold-2); font-weight:700; }
     .small { font-size:.85rem; }
     .center { text-align:center; }
     @media (max-width: 1060px) { .links { gap:1rem; } .bar { gap:1rem; } }
@@ -317,6 +320,7 @@ export class HomePage {
   private api = inject(ApiService);
   private audio = inject(AudioService);
   private adminApi = inject(AdminApiService);
+  site = inject(SiteService);
   /** The admin button appears only for a verified admin session (the server decides). */
   isAdmin = signal(false);
   products = signal<Product[]>([]);
@@ -332,6 +336,7 @@ export class HomePage {
   constructor() {
     this.audio.setMusic('home');
     this.load();
+    this.site.load();
     this.api.faq().then((f) => this.faq.set(f)).catch(() => {});
     this.adminApi.session().then((s) => this.isAdmin.set(s.admin)).catch(() => {});
   }

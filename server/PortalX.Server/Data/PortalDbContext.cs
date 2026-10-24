@@ -24,6 +24,10 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
     public DbSet<Coupon> Coupons => Set<Coupon>();
     public DbSet<CouponProduct> CouponProducts => Set<CouponProduct>();
     public DbSet<CouponRedemption> CouponRedemptions => Set<CouponRedemption>();
+    public DbSet<ResultEmailRequest> ResultEmailRequests => Set<ResultEmailRequest>();
+    public DbSet<MarketingConsent> MarketingConsents => Set<MarketingConsent>();
+    public DbSet<CommunityLinkRequest> CommunityLinkRequests => Set<CommunityLinkRequest>();
+    public DbSet<AppSecret> AppSecrets => Set<AppSecret>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -160,6 +164,52 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
         {
             e.HasKey(x => new { x.CouponId, x.ProductId });
             e.Property(x => x.ProductId).HasMaxLength(64);
+        });
+
+        b.Entity<ResultEmailRequest>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.IdempotencyKey).HasMaxLength(120);
+            // one results email per player and round, however often the request or the game's end is repeated
+            e.HasIndex(x => x.IdempotencyKey).IsUnique();
+            e.Property(x => x.Email).HasMaxLength(254);
+            e.HasIndex(x => x.Email);
+            e.HasIndex(x => x.RequestedAt);
+            e.Property(x => x.ScenarioId).HasMaxLength(64);
+            e.Property(x => x.ProductId).HasMaxLength(64);
+            e.Property(x => x.LastError).HasMaxLength(64);
+        });
+
+        b.Entity<MarketingConsent>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Email).HasMaxLength(254);
+            // one consent record per (normalized) address
+            e.HasIndex(x => x.Email).IsUnique();
+            e.HasIndex(x => x.Status);
+            e.Property(x => x.Source).HasMaxLength(64);
+            e.Property(x => x.ConsentVersion).HasMaxLength(32);
+            e.Property(x => x.ConsentText).HasMaxLength(500);
+            e.Property(x => x.TokenStamp).HasMaxLength(64);
+        });
+
+        b.Entity<CommunityLinkRequest>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.HasIndex(x => new { x.RoomId, x.Round, x.PlayerId }).IsUnique();
+            e.Property(x => x.Source).HasMaxLength(64);
+            e.Property(x => x.Email).HasMaxLength(254);
+            e.HasIndex(x => x.RequestedAt);
+        });
+
+        b.Entity<AppSecret>(e =>
+        {
+            e.HasKey(x => x.Name);
+            e.Property(x => x.Name).HasMaxLength(64);
+            e.Property(x => x.Value).HasMaxLength(200);
         });
 
         b.Entity<CouponRedemption>(e =>

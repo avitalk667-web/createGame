@@ -57,6 +57,26 @@ export interface AdminProduct {
   isFree: boolean; maxPlayersLimit: number;
 }
 
+export interface MailingFilters { search?: string; consent?: string; status?: string; game?: string; from?: string; to?: string }
+
+export interface MailingRow {
+  email: string; lastResultsRequestAt?: string | null; lastGame?: string | null; lastGameName?: string | null; resultsStatus?: string | null;
+  resultsRequests: number; consent: 'active' | 'revoked' | 'pending' | 'none'; consentedAt?: string | null; revokedAt?: string | null;
+  consentSource?: string | null; groupLinkRequested: boolean; source?: string | null;
+}
+
+export interface MailingList {
+  totals: { resultsAddresses: number; resultsSent: number; activeSubscribers: number; revokedSubscribers: number; groupLinkRequests: number };
+  rows: MailingRow[];
+}
+
+function mailingQuery(f: MailingFilters) {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(f)) if (v) q.set(k, String(v));
+  const s = q.toString();
+  return s ? '?' + s : '';
+}
+
 export interface FaqRow { id: string; question: string; answer: string; sortOrder: number; published: boolean; createdBy: string; createdAt: string; updatedAt: string }
 
 export interface CouponRow {
@@ -118,6 +138,8 @@ export class AdminApiService {
   freeGame(productId: string) { return this.request<{ code: string; hostClaim: string }>('POST', '/api/admin/free-game', { productId }); }
   reclaim(code: string) { return this.request<{ code: string; hostClaim?: string | null }>('POST', `/api/admin/games/${encodeURIComponent(code)}/host-claim`); }
   audit() { return this.request<AuditEntry[]>('GET', '/api/admin/audit'); }
+  mailing(f: MailingFilters) { return this.request<MailingList>('GET', '/api/admin/mailing' + mailingQuery(f)); }
+  mailingCsvUrl(f: MailingFilters) { return '/api/admin/mailing.csv' + mailingQuery(f); }
   faq() { return this.request<{ builtIn: { question: string; answer: string }[]; custom: FaqRow[] }>('GET', '/api/admin/faq'); }
   addFaq(body: object) { return this.request<FaqRow>('POST', '/api/admin/faq', body); }
   updateFaq(id: string, body: object) { return this.request<FaqRow>('PUT', `/api/admin/faq/${id}`, body); }

@@ -390,3 +390,81 @@ public class CouponRedemption
     public DateTime UpdatedAt { get; set; }
     public DateTime ReservedUntil { get; set; }
 }
+
+public enum ResultEmailStatus { Pending = 0, Sending = 1, Sent = 2, Failed = 3 }
+
+/// <summary>
+/// A player's request to get the results of a finished game by email — a service email, never marketing consent.
+/// One request per player and round (<see cref="IdempotencyKey"/>), so a refresh or a repeated finish never sends twice.
+/// </summary>
+public class ResultEmailRequest
+{
+    public Guid Id { get; set; }
+    /// <summary>"{roomId}:{round}:{playerId}" — unique.</summary>
+    public string IdempotencyKey { get; set; } = "";
+    public Guid RoomId { get; set; }
+    public int Round { get; set; }
+    public Guid PlayerId { get; set; }
+    public Guid? GameResultId { get; set; }
+    public string ScenarioId { get; set; } = "";
+    public string? ProductId { get; set; }
+    /// <summary>Lower-cased and trimmed.</summary>
+    public string Email { get; set; } = "";
+    public bool ResultsRequested { get; set; } = true;
+    public DateTime? GameEndedAt { get; set; }
+    public DateTime RequestedAt { get; set; }
+    public ResultEmailStatus Status { get; set; }
+    public int Attempts { get; set; }
+    public DateTime? LastAttemptAt { get; set; }
+    public DateTime? SentAt { get; set; }
+    /// <summary>A short error code only (never the address or the server's message text).</summary>
+    public string? LastError { get; set; }
+}
+
+public enum ConsentStatus { Active = 0, Revoked = 1, PendingVerification = 2 }
+
+/// <summary>
+/// Explicit consent to marketing email, kept apart from result emails. One row per address: a revoked address stays
+/// revoked (and is never mailed) until its owner ticks the consent box again.
+/// </summary>
+public class MarketingConsent
+{
+    public Guid Id { get; set; }
+    /// <summary>Lower-cased and trimmed; unique.</summary>
+    public string Email { get; set; } = "";
+    public ConsentStatus Status { get; set; }
+    public DateTime ConsentedAt { get; set; }
+    /// <summary>Where it was given: the game (scenario id) it was ticked in.</summary>
+    public string Source { get; set; } = "";
+    public Guid? SourceRoomId { get; set; }
+    public string ConsentVersion { get; set; } = "";
+    public string ConsentText { get; set; } = "";
+    public DateTime? RevokedAt { get; set; }
+    /// <summary>Changes on every new consent; part of the signed unsubscribe link, so old links stop working.</summary>
+    public string TokenStamp { get; set; } = "";
+    public DateTime UpdatedAt { get; set; }
+}
+
+/// <summary>
+/// A request to get the link of the updates group. It records only that the link was asked for and shown —
+/// never that the person joined the group (that cannot be known).
+/// </summary>
+public class CommunityLinkRequest
+{
+    public Guid Id { get; set; }
+    public Guid RoomId { get; set; }
+    public int Round { get; set; }
+    public Guid PlayerId { get; set; }
+    public string Source { get; set; } = "";
+    /// <summary>Only when the player also gave an address in the same form.</summary>
+    public string? Email { get; set; }
+    public DateTime RequestedAt { get; set; }
+}
+
+/// <summary>Server-only secrets that must survive restarts (e.g. the key that signs unsubscribe links).</summary>
+public class AppSecret
+{
+    public string Name { get; set; } = "";
+    public string Value { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+}

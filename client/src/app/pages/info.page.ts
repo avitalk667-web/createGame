@@ -1,5 +1,6 @@
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { SiteService } from '../core/site.service';
 
 const PAGES: Record<string, { title: string; body: string[] }> = {
   privacy: {
@@ -9,6 +10,11 @@ const PAGES: Record<string, { title: string; body: string[] }> = {
       'אנחנו שומרים רק את מה שדרוש למשחק: קוד החדר, הכינויים, הדמויות שנבחרו, מצב החידות ותוצאת המשחק.',
       'הודעות הצ׳אט נשמרות בזיכרון השרת בלבד בזמן שהחדר פעיל, ואינן נשמרות במסד הנתונים. אסור לשלוח בצ׳אט קישורים או מספרי טלפון.',
       'אין שימוש בעוגיות פרסום. הדפדפן שומר אצלכם רק את הגדרות השמע והגרפיקה ואת מזהה השחקן של הלשונית הנוכחית.',
+      'תוצאות במייל: בסיום משחק אפשר לבקש לקבל את התוצאות למייל. נשמרים כתובת המייל, המשחק, מועד הבקשה ומצב השליחה — רק כדי לשלוח את התוצאות ולמנוע שליחה כפולה. בקשה כזו אינה הרשמה לדיוור.',
+      'דיוור שיווקי: רק מי שסימן במפורש את תיבת ההסכמה יקבל עדכונים, הטבות וקופונים. נשמרים הכתובת, מועד ההסכמה, המשחק שבו ניתנה ונוסח ההסכמה. בכל מייל שיווקי יש קישור „להסרה מרשימת הדיוור”, וההסרה נכנסת לתוקף מיד; אפשר גם לפנות אלינו בכתובת שלמטה.',
+      'קבוצת העדכונים: מי שביקש קישור לקבוצה מקבל אותו על המסך. נשמר רק שהקישור התבקש — לא שהצטרפתם לקבוצה.',
+      'שמירת מידע: בקשות לשליחת תוצאות ובקשות לקישור לקבוצה נמחקות אחרי שנה. הסכמה שיווקית נשמרת כל עוד היא בתוקף, ואחרי ביטול נשמר רק שהכתובת הוסרה — כדי שלא תקבל עוד דיוור.',
+      'השירות מופעל על ידי PORTAL X. המיילים נשלחים מהשרת בלבד, וכתובות של משתתפים אחרים אינן נחשפות לאף אחד.',
       'מסמך זה הוא טיוטה לגרסה הראשונה. לפני הפעלה מסחרית יש להשלים מדיניות פרטיות מלאה ומאושרת משפטית.',
     ],
   },
@@ -30,7 +36,8 @@ const PAGES: Record<string, { title: string; body: string[] }> = {
   contact: {
     title: 'יצירת קשר',
     body: [
-      'פרטי ההתקשרות ופרטי העסק יעודכנו כאן לפני פתיחת המכירות.',
+      'לשאלות, תמיכה, בקשות בנושא פרטיות והסרה מדיוור — כתבו לנו במייל. נשמח לעזור.',
+      'פרטי העסק המלאים יעודכנו כאן לפני פתיחת המכירות.',
     ],
   },
   about: {
@@ -52,11 +59,20 @@ const PAGES: Record<string, { title: string; body: string[] }> = {
       <a routerLink="/">‹ חזרה לדף הבית</a>
       <h1>{{ page().title }}</h1>
       @for (p of page().body; track $index) { <p>{{ p }}</p> }
+      @if (withContact()) {
+        <p class="contact">יצירת קשר: <a [href]="'mailto:' + site.info().contactEmail" dir="ltr">{{ site.info().contactEmail }}</a></p>
+      }
     </main>
   `,
-  styles: [`main { max-width: 760px; margin: 2rem auto; line-height: 1.8; } h1 { margin-top: 1rem; }`],
+  styles: [`main { max-width: 760px; margin: 2rem auto; line-height: 1.8; } h1 { margin-top: 1rem; } .contact { font-weight:700; } .contact a { color: var(--gold-2); }`],
 })
 export class InfoPage {
   topic = input.required<string>();
   page = computed(() => PAGES[this.topic()] ?? PAGES['about']);
+  site = inject(SiteService);
+  withContact = computed(() => ['contact', 'privacy', 'terms', 'refunds', 'about'].includes(this.topic()));
+
+  constructor() {
+    this.site.load();
+  }
 }

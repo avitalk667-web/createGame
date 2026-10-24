@@ -15,3 +15,26 @@ services:
         sync: false
       - key: ASPNETCORE_ENVIRONMENT
         value: Production
+      # Email (see docs/email-setup.md). Values are entered in the Render dashboard; secrets never go into Git.
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_APP_PASSWORD
+        sync: false
+      - key: SMTP_FROM_EMAIL
+        value: info.portalx@gmail.com
+      - key: SMTP_FROM_NAME
+        value: PORTAL X
+      - key: SMTP_REPLY_TO
+        value: info.portalx@gmail.com
+      - key: PORTALX_CONTACT_EMAIL
+        value: info.portalx@gmail.com
+      - key: PORTALX_SITE_URL
+        value: https://portal-x-scfm.onrender.com
+      - key: PORTALX_COMMUNITY_GROUP_URL
+        sync: false
+      - key: PORTALX_UNSUBSCRIBE_SECRET
+        sync: false

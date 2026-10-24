@@ -46,6 +46,24 @@ builder.Services.AddScoped<CouponService>();
 builder.Services.AddScoped<PurchaseService>();
 builder.Services.Configure<AdminOptions>(builder.Configuration.GetSection("Admin"));
 builder.Services.AddScoped<AdminService>();
+// email: the contact address, SMTP settings (environment only), results emails, consents and unsubscribe links
+builder.Services.AddSingleton(sp => PortalX.Server.Mail.SiteOptions.FromConfig(sp.GetRequiredService<IConfiguration>()));
+builder.Services.AddSingleton(sp => PortalX.Server.Mail.SmtpOptions.FromConfig(sp.GetRequiredService<IConfiguration>(), sp.GetRequiredService<PortalX.Server.Mail.SiteOptions>()));
+builder.Services.AddSingleton<PortalX.Server.Mail.IEmailSender>(sp =>
+{
+    var smtp = sp.GetRequiredService<PortalX.Server.Mail.SmtpOptions>();
+    var log = sp.GetRequiredService<ILoggerFactory>().CreateLogger("Mail");
+    if (!smtp.Configured)
+    {
+        log.LogWarning("Email is not configured; results emails are not offered. Missing: {Missing}", string.Join(", ", smtp.Missing()));
+        return new PortalX.Server.Mail.UnconfiguredEmailSender();
+    }
+    return new PortalX.Server.Mail.SmtpEmailSender(smtp, sp.GetRequiredService<ILogger<PortalX.Server.Mail.SmtpEmailSender>>());
+});
+builder.Services.AddScoped<PortalX.Server.Mail.UnsubscribeLinks>();
+builder.Services.AddScoped<PortalX.Server.Mail.ResultsEmailService>();
+builder.Services.AddScoped<PortalX.Server.Mail.MailingAdmin>();
+builder.Services.AddHostedService<PortalX.Server.Mail.MailRetentionService>();
 builder.Services.AddAdminAuth();
 
 builder.Services.ConfigureHttpJsonOptions(o =>
@@ -89,6 +107,10 @@ builder.Services.AddRateLimiter(o =>
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:FreeGamesPerHour", 6), Window = TimeSpan.FromHours(1) }));
     o.AddPolicy("test-game", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:TestGamesPerHour", 30), Window = TimeSpan.FromHours(1) }));
+    o.AddPolicy("results-email", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:ResultsEmailPer10Minutes", 10), Window = TimeSpan.FromMinutes(10) }));
+    o.AddPolicy("unsubscribe", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:UnsubscribePerMinute", 20), Window = TimeSpan.FromMinutes(1) }));
     o.AddPolicy("admin-login", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:AdminLoginPerMinute", 10), Window = TimeSpan.FromMinutes(1) }));
 });
@@ -161,6 +183,7 @@ api.MapGet("/products/{id}", async (string id, PortalDbContext db, ScenarioCatal
 api.MapPurchaseEndpoints(app.Services.GetRequiredService<PaymentGateway>());
 api.MapSiteEndpoints();
 api.MapTestCheckout();
+PortalX.Server.Mail.MailEndpoints.MapMailEndpoints(api);
 api.MapAdminEndpoints();
 
 api.MapGet("/rooms/{code}", async (string code, RoomService rooms, ScenarioCatalog catalog) =>

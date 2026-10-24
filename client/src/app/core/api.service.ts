@@ -80,6 +80,19 @@ export class ApiService {
     return this.request<{ code: string; hostClaim: string; message: string }>('POST', `/api/products/${encodeURIComponent(productId)}/test-game`);
   }
 
+  site() {
+    return this.request<SiteInfo>('GET', '/api/site');
+  }
+
+  /** End-of-game choices; the seat token goes in the body (or the game's seat cookie), never in the URL. */
+  resultsEmail(code: string, body: { token: string | null; sendResults: boolean; email: string | null; marketingConsent: boolean; communityLink: boolean }) {
+    return this.request<EndOfGameReply>('POST', `/api/rooms/${encodeURIComponent(code)}/results-email`, body);
+  }
+
+  unsubscribe(token: string) {
+    return this.request<{ ok: boolean; message: string }>('POST', '/api/unsubscribe', { token });
+  }
+
   faq() {
     return this.request<FaqEntryView[]>('GET', '/api/faq');
   }
@@ -123,6 +136,24 @@ export class ApiService {
 }
 
 /** Per-tab session (sessionStorage) so several tabs can be different players and a refresh reconnects. */
+/** Public site details (GET /api/site): the one contact address and the end-of-game options this server offers. */
+export interface SiteInfo {
+  contactEmail: string;
+  resultsEmail: boolean;
+  communityGroup: boolean;
+  consentText: string;
+  consentVersion: string;
+}
+
+export interface EndOfGameReply {
+  ok: boolean;
+  code: string;
+  message: string;
+  resultsStatus?: 'sent' | 'pending' | 'failed' | null;
+  consentRecorded: boolean;
+  communityGroupUrl?: string | null;
+}
+
 export interface StoredSession {
   code: string;
   roomId: string;

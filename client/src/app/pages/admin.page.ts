@@ -3,10 +3,9 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { Router, RouterLink } from '@angular/router';
 import { sessionStore } from '../core/api.service';
 import {
-  AdminApiService, AdminFilters, AdminGame, AdminOrder, AdminProduct, AuditEntry, CouponRow, CouponUse, Dashboard, FaqRow,
-} from '../core/admin-api.service';
+  AdminApiService, AdminFilters, AdminGame, AdminOrder, AdminProduct, AuditEntry, CouponRow, CouponUse, Dashboard, FaqRow, MailingFilters, MailingList } from '../core/admin-api.service';
 
-type Tab = 'dashboard' | 'orders' | 'games' | 'products' | 'faq' | 'coupons' | 'audit';
+type Tab = 'dashboard' | 'orders' | 'games' | 'products' | 'faq' | 'coupons' | 'mailing' | 'audit';
 
 /** The coupon form as typed (spec 4.3). Dates are local date-time strings from the inputs. */
 interface CouponForm {
@@ -293,6 +292,59 @@ const ACTIONS: Record<string, string> = {
             <h2>שאלות קבועות (מגיעות עם האתר)</h2>
             <ol class="fixed-faq">@for (q of faqBuiltIn(); track q.question) { <li><b>{{ q.question }}</b> {{ q.answer }}</li> }</ol>
           }
+          @case ('mailing') {
+            <form class="filters card" (submit)="$event.preventDefault(); reload()">
+              <label>חיפוש כתובת <input dir="ltr" [value]="mf().search ?? ''" (input)="setM('search', $any($event.target).value)" placeholder="name@" /></label>
+              <label>הסכמה שיווקית
+                <select [value]="mf().consent ?? ''" (change)="setM('consent', $any($event.target).value)">
+                  <option value="">הכול</option><option value="active">פעילה</option><option value="revoked">בוטלה</option><option value="none">אין הסכמה</option>
+                </select>
+              </label>
+              <label>שליחת תוצאות
+                <select [value]="mf().status ?? ''" (change)="setM('status', $any($event.target).value)">
+                  <option value="">הכול</option><option value="sent">נשלח</option><option value="pending">ממתין</option><option value="failed">נכשל</option>
+                </select>
+              </label>
+              <label>משחק
+                <select [value]="mf().game ?? ''" (change)="setM('game', $any($event.target).value)">
+                  <option value="">כל המשחקים</option>
+                  @for (p of products(); track p.id) { <option [value]="p.scenarioId ?? p.id">{{ p.name }}</option> }
+                </select>
+              </label>
+              <label>מתאריך <input type="date" [value]="mf().from ?? ''" (change)="setM('from', $any($event.target).value)" /></label>
+              <label>עד תאריך <input type="date" [value]="mf().to ?? ''" (change)="setM('to', $any($event.target).value)" /></label>
+              <button class="btn small" type="submit">סינון</button>
+            </form>
+            @if (mailing(); as m) {
+              <div class="cards">
+                <div class="stat card"><span>כתובות שביקשו תוצאות</span><b>{{ m.totals.resultsAddresses }}</b><small>{{ m.totals.resultsSent }} מיילי תוצאות נשלחו · אינם מנויים שיווקיים</small></div>
+                <div class="stat card"><span>מנויים שיווקיים פעילים</span><b>{{ m.totals.activeSubscribers }}</b><small>{{ m.totals.revokedSubscribers }} ביטלו הסכמה · רק הפעילים ברשימת הדיוור</small></div>
+                <div class="stat card"><span>בקשות קישור לקבוצה</span><b>{{ m.totals.groupLinkRequests }}</b><small>בקשת קישור בלבד — לא אישור הצטרפות</small></div>
+              </div>
+              <div class="bar"><span class="muted">{{ m.rows.length }} כתובות</span><a class="btn small" [href]="mailingCsvUrl()" download>ייצוא CSV</a></div>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>כתובת מייל</th><th>בקשת תוצאות</th><th>משחק אחרון</th><th>שליחת תוצאות</th><th>הסכמה שיווקית</th><th>תאריך הסכמה</th><th>תאריך ביטול</th><th>קישור לקבוצה</th><th>מקור</th></tr></thead>
+                  <tbody>
+                    @for (r of m.rows; track r.email) {
+                      <tr>
+                        <td dir="ltr">{{ r.email }}</td>
+                        <td>{{ r.lastResultsRequestAt ? (r.lastResultsRequestAt | date: 'd.M.yy HH:mm') : '—' }}</td>
+                        <td>{{ r.lastGameName ?? '—' }}</td>
+                        <td>@if (r.resultsStatus) { <span class="st" [attr.data-s]="r.resultsStatus === 'sent' ? 'paid' : r.resultsStatus === 'failed' ? 'failed' : ''">{{ mailLabel(r.resultsStatus) }}</span> } @else { — }</td>
+                        <td><span class="st" [attr.data-s]="r.consent === 'active' ? 'paid' : r.consent === 'revoked' ? 'failed' : ''">{{ consentLabel(r.consent) }}</span></td>
+                        <td>{{ r.consentedAt ? (r.consentedAt | date: 'd.M.yy HH:mm') : '—' }}</td>
+                        <td>{{ r.revokedAt ? (r.revokedAt | date: 'd.M.yy HH:mm') : '—' }}</td>
+                        <td>{{ r.groupLinkRequested ? 'ביקש קישור' : '—' }}</td>
+                        <td>{{ gameName(r.source) }}</td>
+                      </tr>
+                    } @empty { <tr><td colspan="9" class="muted">אין כתובות בסינון הזה.</td></tr> }
+                  </tbody>
+                </table>
+              </div>
+              <p class="muted small">רשימת הדיוור השיווקי היא רק הכתובות שהסכמתן „פעילה”. כתובת שביקשה תוצאות בלבד אינה מנויה. הייצוא כולל קישור הסרה אישי לכל מנוי פעיל.</p>
+            }
+          }
           @case ('coupons') {
             <section class="card coupon-form">
               <h2>{{ couponForm().id ? 'עריכת קופון' : 'קופון חדש' }}</h2>
@@ -445,7 +497,7 @@ export class AdminPage {
   private router = inject(Router);
   tabs: { id: Tab; label: string }[] = [
     { id: 'dashboard', label: 'לוח בקרה' }, { id: 'orders', label: 'רכישות' }, { id: 'games', label: 'משחקים' },
-    { id: 'products', label: 'מוצרים ומחירים' }, { id: 'faq', label: 'שאלות ותשובות' }, { id: 'coupons', label: 'קופונים והנחות' },
+    { id: 'products', label: 'מוצרים ומחירים' }, { id: 'faq', label: 'שאלות ותשובות' }, { id: 'coupons', label: 'קופונים והנחות' }, { id: 'mailing', label: 'רשימת מיילים והסכמות' },
     { id: 'audit', label: 'יומן פעולות' },
   ];
   state = signal<'loading' | 'denied' | 'ok'>('loading');
@@ -465,6 +517,16 @@ export class AdminPage {
   busy = signal(false);
   error = signal<string | null>(null);
   csvUrl = computed(() => this.api.csvUrl(this.f()));
+  // mailing list and consents (results emails, marketing consent and group-link requests kept apart)
+  mf = signal<MailingFilters>({});
+  mailing = signal<MailingList | null>(null);
+  mailingCsvUrl = computed(() => this.api.mailingCsvUrl(this.mf()));
+  mailLabel = (s: string) => ({ sent: 'נשלח', pending: 'ממתין', failed: 'נכשל' } as Record<string, string>)[s] ?? s;
+  consentLabel = (s: string) => ({ active: 'פעילה', revoked: 'בוטלה', pending: 'ממתינה לאימות', none: 'אין' } as Record<string, string>)[s] ?? s;
+  gameName = (id?: string | null) => (id ? this.products().find((p) => (p.scenarioId ?? p.id) === id)?.name ?? id : '—');
+  setM(key: keyof MailingFilters, value: string) {
+    this.mf.update((f) => ({ ...f, [key]: value || undefined }));
+  }
   // FAQ management (spec 2.4)
   faqRows = signal<FaqRow[]>([]);
   faqBuiltIn = signal<{ question: string; answer: string }[]>([]);
@@ -537,6 +599,10 @@ export class AdminPage {
           break;
         }
         case 'coupons': this.coupons.set(await this.api.coupons()); break;
+        case 'mailing':
+          if (!this.products().length) this.products.set(await this.api.products());
+          this.mailing.set(await this.api.mailing(this.mf()));
+          break;
       }
     } catch (e: any) {
       this.fail(e);

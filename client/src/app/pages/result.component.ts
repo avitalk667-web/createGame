@@ -1,11 +1,12 @@
 import { ChangeDetectionStrategy, Component, computed, inject, output, signal } from '@angular/core';
 import { GameService } from '../core/game.service';
 import { IconComponent } from '../ui/icon.component';
+import { ResultsEmailComponent } from '../ui/results-email.component';
 
 /** Step 6–7: success scene result — time, achievements, group result; replay or back home (spec §4). */
 @Component({
   selector: 'px-result',
-  imports: [IconComponent],
+  imports: [IconComponent, ResultsEmailComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @let r = game.snapshot()?.result;
@@ -24,6 +25,7 @@ import { IconComponent } from '../ui/icon.component';
               <div class="a"><span class="trophy">🏆</span><div><b>{{ a.title }}</b><p>{{ a.description }}</p></div></div>
             }
           </div>
+          <px-results-email />
         } @else {
           <p class="muted">מחשבים את התוצאה...</p>
         }
