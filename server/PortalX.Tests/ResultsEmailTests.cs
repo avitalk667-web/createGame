@@ -428,17 +428,40 @@ public class ResultsEmailTests
         var accept = silent.AcceptTcpClientAsync();
         try
         {
-            var sender = new SmtpEmailSender(new SmtpOptions { Host = "127.0.0.1", Port = port, UseTls = false },
-                Microsoft.Extensions.Logging.Abstractions.NullLogger<SmtpEmailSender>.Instance);
+            var options = new SmtpOptions { Host = "127.0.0.1", Port = port, UseTls = false };
+            var reach = new MailReachability(options, Microsoft.Extensions.Logging.Abstractions.NullLogger<MailReachability>.Instance);
+            Assert.Equal("reachable", await reach.ProbeAsync());
+            var sender = new SmtpEmailSender(options, reach, Microsoft.Extensions.Logging.Abstractions.NullLogger<SmtpEmailSender>.Instance);
+            Assert.True(sender.Available);
             var started = DateTime.UtcNow;
             var ex = await Assert.ThrowsAsync<EmailSendException>(() => sender.SendAsync(new EmailMessage("a@example.org", "s", "<p>h</p>", "t")));
             Assert.Equal("smtp-unreachable", ex.Code);
             Assert.True(DateTime.UtcNow - started < SmtpEmailSender.AttemptTimeout + TimeSpan.FromSeconds(5));
+            // after a send that could not get through, the option is no longer offered
+            Assert.False(sender.Available);
         }
         finally
         {
             silent.Stop();
         }
+    }
+
+    [Fact]
+    public async Task A_blocked_mail_server_is_not_offered()
+    {
+        // nothing listens on this port: like an outbound SMTP block, the check fails fast and mail is not offered
+        var free = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        free.Start();
+        var port = ((IPEndPoint)free.LocalEndpoint).Port;
+        free.Stop();
+        var options = new SmtpOptions { Host = "127.0.0.1", Port = port };
+        var reach = new MailReachability(options, Microsoft.Extensions.Logging.Abstractions.NullLogger<MailReachability>.Instance);
+        var sender = new SmtpEmailSender(options, reach, Microsoft.Extensions.Logging.Abstractions.NullLogger<SmtpEmailSender>.Instance);
+        Assert.False(sender.Available); // not checked yet: not offered
+        var started = DateTime.UtcNow;
+        Assert.NotEqual("reachable", await reach.ProbeAsync());
+        Assert.True(DateTime.UtcNow - started < MailReachability.ProbeTimeout + TimeSpan.FromSeconds(2));
+        Assert.False(sender.Available);
     }
 
     [Theory]

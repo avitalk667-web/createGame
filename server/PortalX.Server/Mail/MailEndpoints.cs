@@ -59,20 +59,10 @@ public static class MailEndpoints
     public static void MapAdminMailing(this RouteGroupBuilder secured)
     {
         // what the server received and whether it can reach the mail server — without sending anything or showing secrets
-        secured.MapGet("/mail-status", async (SmtpOptions smtp, SiteOptions site, IEmailSender sender, IConfiguration config) =>
+        secured.MapGet("/mail-status", async (SmtpOptions smtp, SiteOptions site, IEmailSender sender, MailReachability reachability, IConfiguration config) =>
         {
-            string reach = "not-configured";
-            if (smtp.Configured)
-            {
-                try
-                {
-                    using var tcp = new System.Net.Sockets.TcpClient();
-                    await tcp.ConnectAsync(smtp.Host!, smtp.Port).WaitAsync(TimeSpan.FromSeconds(6));
-                    reach = "reachable";
-                }
-                catch (TimeoutException) { reach = "timeout"; }
-                catch (Exception) { reach = "unreachable"; }
-            }
+            // a fresh, short check (6 s); it also updates whether the results email is offered to players
+            var reach = await reachability.ProbeAsync();
             return Results.Ok(new
             {
                 smtpConfigured = smtp.Configured,

@@ -58,8 +58,12 @@ builder.Services.AddSingleton<PortalX.Server.Mail.IEmailSender>(sp =>
         log.LogWarning("Email is not configured; results emails are not offered. Missing: {Missing}", string.Join(", ", smtp.Missing()));
         return new PortalX.Server.Mail.UnconfiguredEmailSender();
     }
-    return new PortalX.Server.Mail.SmtpEmailSender(smtp, sp.GetRequiredService<ILogger<PortalX.Server.Mail.SmtpEmailSender>>());
+    return new PortalX.Server.Mail.SmtpEmailSender(smtp, sp.GetRequiredService<PortalX.Server.Mail.MailReachability>(),
+        sp.GetRequiredService<ILogger<PortalX.Server.Mail.SmtpEmailSender>>());
 });
+// a short TCP check of the SMTP server at startup and every 10 minutes: blocked SMTP means the option is not offered
+builder.Services.AddSingleton<PortalX.Server.Mail.MailReachability>();
+builder.Services.AddHostedService<PortalX.Server.Mail.MailReachabilityProbe>();
 builder.Services.AddScoped<PortalX.Server.Mail.UnsubscribeLinks>();
 builder.Services.AddScoped<PortalX.Server.Mail.ResultsEmailService>();
 builder.Services.AddScoped<PortalX.Server.Mail.MailingAdmin>();
