@@ -15,7 +15,86 @@ export interface Caption {
   key: number;
 }
 
-export type MusicMode = 'none' | 'home' | 'intro' | 'explore' | 'tension' | 'victory';
+/**
+ * 'home' … 'victory' are the original escape room's music (unchanged). The themed modes belong to the newer games:
+ * 'ancient' — old rooms and investigation; 'mechanism' — machines and mazes; 'magic' — light and enchanted rooms;
+ * 'hanukkah' — the Hanukkah journey; 'finale' — the end of a journey.
+ */
+export type MusicMode = 'none' | 'home' | 'intro' | 'explore' | 'tension' | 'victory' | ThemeId;
+export type ThemeId = 'ancient' | 'mechanism' | 'magic' | 'hanukkah' | 'finale';
+
+export type Sfx =
+  // the original effects
+  | 'click' | 'pickup' | 'wrong' | 'success' | 'door' | 'whoosh' | 'hint' | 'chat' | 'letter' | 'open' | 'step'
+  // actions in the newer rooms
+  | 'select' | 'drawer' | 'key' | 'lever' | 'gear' | 'place' | 'misplace' | 'spin' | 'codeOk' | 'points' | 'complete'
+  | 'paper' | 'find' | 'metal' | 'mechanism' | 'mirror' | 'beam' | 'gate' | 'cabinet' | 'glass' | 'oil' | 'decode' | 'transition';
+
+type Voice = 'pluck' | 'piano' | 'bell' | 'glow';
+
+/** An original, procedurally played piece: a soft drone, a melody on a scale and optional bass and ticks. */
+interface Theme {
+  root: number;
+  /** Semitones above the root. */
+  scale: number[];
+  /** Seconds per step. */
+  beat: number;
+  /** Scale degrees per step; -1 is a rest. */
+  melody: number[];
+  voice: Voice;
+  vol: number;
+  /** Scale degrees per step for a low line (-1 rest), played an octave down. */
+  bass?: number[];
+  /** A soft mechanical tick on every step. */
+  tick?: boolean;
+  /** A bell on the first step of every bar of 8. */
+  bell?: boolean;
+  drone: { muls: number[]; level: number; cutoff: number };
+}
+
+const FREYGISH = [0, 1, 4, 5, 7, 8, 10, 12, 13, 16];
+const MINOR = [0, 2, 3, 5, 7, 8, 10, 12, 14, 15];
+const DORIAN = [0, 2, 3, 5, 7, 9, 10, 12, 14, 15];
+const MAJOR = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16];
+const LYDIAN = [0, 2, 4, 6, 7, 9, 11, 12, 14, 16];
+
+const THEMES: Record<ThemeId, Theme> = {
+  // quiet and curious: a plucked string line over a low drone, a bell now and then
+  ancient: {
+    root: 220, scale: DORIAN, beat: 0.62, voice: 'pluck', vol: 0.06, bell: true,
+    melody: [0, -1, 2, 4, -1, 3, 2, -1, 4, -1, 5, 4, 2, -1, 1, -1, 0, -1, 4, 6, -1, 5, 4, -1, 3, -1, 2, 1, 0, -1, -1, -1],
+    drone: { muls: [0.5, 0.75], level: 0.11, cutoff: 520 },
+  },
+  // light tension at a moderate pace: soft ticks, a pulsing bass and sparse piano — puzzles, not panic
+  mechanism: {
+    root: 196, scale: MINOR, beat: 0.4, voice: 'piano', vol: 0.05, tick: true,
+    melody: [4, -1, -1, 3, -1, -1, 2, -1, 4, -1, -1, 5, -1, 4, -1, -1, 2, -1, -1, 1, -1, -1, 0, -1, 2, -1, 3, -1, 4, -1, -1, -1],
+    bass: [0, -1, 0, -1, 4, -1, 0, -1, 0, -1, 0, -1, 3, -1, 4, -1],
+    drone: { muls: [0.5, 0.75], level: 0.08, cutoff: 420 },
+  },
+  // glowing and hopeful: bell-like arpeggios floating over a warm pad
+  magic: {
+    root: 261.63, scale: LYDIAN, beat: 0.36, voice: 'bell', vol: 0.045,
+    melody: [0, 2, 4, 7, 4, 2, 3, 5, 7, 9, 7, 5, 4, 6, 8, 6, 4, -1, 2, -1, 0, 4, 7, 4, -1, -1, 5, 7, 9, 7, -1, -1],
+    drone: { muls: [0.5, 1, 1.5], level: 0.07, cutoff: 900 },
+  },
+  // warm and festive in the Ahava Rabbah (freygish) mode — an original melody, not an existing song
+  hanukkah: {
+    root: 293.66, scale: FREYGISH, beat: 0.34, voice: 'pluck', vol: 0.06,
+    melody: [0, 1, 2, -1, 3, 2, 1, 0, 2, 3, 4, -1, 5, 4, 3, -1, 4, 5, 6, 5, 4, -1, 3, 2, 1, 2, 3, 1, 0, -1, -1, -1],
+    bass: [0, -1, 4, -1, 0, -1, 4, -1, 3, -1, 4, -1, 0, -1, 4, -1],
+    drone: { muls: [0.5, 0.75], level: 0.08, cutoff: 600 },
+  },
+  // the end of a journey: bright, rising arpeggios
+  finale: {
+    root: 261.63, scale: MAJOR, beat: 0.27, voice: 'bell', vol: 0.06,
+    melody: [0, 2, 4, 7, 4, 7, 9, 7, 5, 7, 9, 11, 9, 7, 4, -1, 3, 5, 7, 9, 7, 5, 4, 2, 4, 7, 9, 12, -1, -1, -1, -1],
+    bass: [0, -1, -1, -1, 3, -1, -1, -1, 4, -1, -1, -1, 0, -1, -1, -1],
+    drone: { muls: [0.5, 1, 1.25], level: 0.08, cutoff: 1100 },
+  },
+};
+
+const THEMED = new Set<MusicMode>(Object.keys(THEMES) as ThemeId[]);
 
 /**
  * All sound in the game:
@@ -45,6 +124,13 @@ export class AudioService {
   private nextNoteTime = 0;
   private step = 0;
   private captionKey = 0;
+  /** When each effect last played: the same effect twice within a moment (a doubled sync event) plays once. */
+  private lastSfx = new Map<Sfx, number>();
+  private pendingCues: { name: Sfx; priority: number }[] = [];
+  private cueTimer?: ReturnType<typeof setTimeout>;
+  private ambience?: { name: string; nodes: AudioNode[]; gain: GainNode };
+  /** The room sound asked for before the browser allowed sound; it starts with the first click. */
+  private wantedAmbience: 'light' | null = null;
 
   readonly caption = signal<Caption | null>(null);
   readonly unlocked = signal(false);
@@ -56,8 +142,8 @@ export class AudioService {
       const t = this.ctx.currentTime;
       this.master!.gain.setTargetAtTime(s.muted || s.silentMode ? 0 : 1, t, 0.05);
       this.voiceBus!.gain.setTargetAtTime(s.voice, t, 0.05);
-      this.musicBus!.gain.setTargetAtTime(s.music * 0.55, t, 0.05);
-      this.sfxBus!.gain.setTargetAtTime(s.effects, t, 0.05);
+      this.musicBus!.gain.setTargetAtTime(s.musicOn ? s.music * 0.55 : 0, t, 0.05);
+      this.sfxBus!.gain.setTargetAtTime(s.effectsOn ? s.effects : 0, t, 0.05);
     });
   }
 
@@ -70,8 +156,8 @@ export class AudioService {
       const s = this.settings.settings();
       this.master = this.gain(s.muted || s.silentMode ? 0 : 1, this.ctx.destination);
       this.voiceBus = this.gain(s.voice, this.master);
-      this.musicBus = this.gain(s.music * 0.55, this.master);
-      this.sfxBus = this.gain(s.effects, this.master);
+      this.musicBus = this.gain(s.musicOn ? s.music * 0.55 : 0, this.master);
+      this.sfxBus = this.gain(s.effectsOn ? s.effects : 0, this.master);
       this.reverb = this.ctx.createConvolver();
       this.reverb.buffer = this.impulse(3.2);
       const wet = this.gain(0.35, this.master);
@@ -80,6 +166,7 @@ export class AudioService {
     if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
     this.unlocked.set(true);
     if (this.musicMode !== 'none' && !this.musicTimer) this.startMusicLoop();
+    if (this.wantedAmbience && !this.ambience) this.setAmbience(this.wantedAmbience);
   }
 
   loadManifest(): Promise<void> {
@@ -161,8 +248,11 @@ export class AudioService {
 
   // ------------------------------------------------------------------ effects
 
-  sfx(name: 'click' | 'pickup' | 'wrong' | 'success' | 'door' | 'whoosh' | 'hint' | 'chat' | 'letter' | 'open' | 'step') {
+  sfx(name: Sfx) {
     if (!this.ctx) return;
+    const now = performance.now();
+    if (now - (this.lastSfx.get(name) ?? -1e9) < 150) return;
+    this.lastSfx.set(name, now);
     const t = this.ctx.currentTime;
     switch (name) {
       case 'click':
@@ -202,7 +292,149 @@ export class AudioService {
       case 'step':
         this.noise(t, 0.08, 400, 0.08);
         break;
+      // ---- the newer rooms: short and soft; success, failure and doors sound clearly different
+      case 'select':
+        this.tone(1175, t, 0.05, 'sine', 0.06);
+        break;
+      case 'find':
+        this.tone(1047, t, 0.5, 'sine', 0.1, true);
+        this.tone(1568, t + 0.09, 0.6, 'sine', 0.07, true);
+        break;
+      case 'paper':
+        this.noise(t, 0.18, 2600, 0.12);
+        this.noise(t + 0.16, 0.22, 1900, 0.1);
+        break;
+      case 'drawer':
+        this.noise(t, 0.45, 320, 0.22);
+        this.tone(140, t + 0.38, 0.12, 'triangle', 0.1);
+        break;
+      case 'key':
+        this.tone(2093, t, 0.05, 'square', 0.04);
+        this.tone(1661, t + 0.08, 0.05, 'square', 0.04);
+        this.noise(t + 0.14, 0.08, 1500, 0.12);
+        break;
+      case 'lever':
+        this.noise(t, 0.3, 500, 0.18, true);
+        this.tone(180, t + 0.26, 0.15, 'triangle', 0.14);
+        break;
+      case 'gear':
+        for (let i = 0; i < 4; i++) this.tone(1400 + i * 60, t + i * 0.05, 0.03, 'square', 0.035);
+        break;
+      case 'metal':
+        this.tone(2637, t, 0.25, 'sine', 0.05, true);
+        this.tone(3951, t, 0.18, 'sine', 0.03);
+        break;
+      case 'place':
+        this.tone(330, t, 0.08, 'triangle', 0.14);
+        this.tone(988, t + 0.05, 0.35, 'sine', 0.1, true);
+        break;
+      case 'misplace':
+        this.tone(196, t, 0.18, 'triangle', 0.1);
+        break;
+      case 'spin':
+        for (let i = 0; i < 9; i++) this.tone(600 + (i % 2) * 90, t + i * (0.04 + i * 0.008), 0.03, 'triangle', 0.05);
+        this.noise(t, 0.7, 1200, 0.05);
+        break;
+      case 'codeOk':
+        this.tone(1760, t, 0.04, 'square', 0.04);
+        this.tone(1760, t + 0.1, 0.04, 'square', 0.04);
+        this.noise(t + 0.2, 0.12, 900, 0.16);
+        [784, 1175].forEach((f, i) => this.tone(f, t + 0.32 + i * 0.1, 0.6, 'sine', 0.12, true));
+        break;
+      case 'cabinet':
+        this.noise(t, 0.9, 260, 0.2);
+        this.tone(98, t + 0.1, 0.8, 'triangle', 0.08);
+        [523, 659, 784].forEach((f, i) => this.tone(f, t + 0.5 + i * 0.09, 0.8, 'sine', 0.1, true));
+        break;
+      case 'mechanism':
+        for (let i = 0; i < 10; i++) this.tone(110 + (i % 2) * 55, t + i * 0.12, 0.1, 'square', 0.03);
+        this.noise(t, 1.3, 220, 0.18);
+        [392, 523, 659].forEach((f, i) => this.tone(f, t + 1.0 + i * 0.1, 0.9, 'triangle', 0.1, true));
+        break;
+      case 'mirror':
+        this.tone(1319, t, 0.3, 'sine', 0.06, true);
+        this.tone(1976, t + 0.05, 0.3, 'sine', 0.04, true);
+        break;
+      case 'glass':
+        [2093, 2637, 3136].forEach((f, i) => this.tone(f, t + i * 0.06, 0.5, 'sine', 0.05, true));
+        break;
+      case 'beam':
+        [523, 659, 784, 988, 1319].forEach((f, i) => this.tone(f, t + i * 0.08, 1.4, 'sine', 0.11, true));
+        this.noise(t, 1.4, 3000, 0.06, true);
+        break;
+      case 'decode':
+        [587, 740, 880, 1175].forEach((f, i) => this.tone(f, t + i * 0.09, 0.7, 'triangle', 0.12, true));
+        break;
+      case 'oil':
+        [440, 554, 659, 880, 1109].forEach((f, i) => this.tone(f, t + i * 0.13, 1.6, 'sine', 0.12, true));
+        this.noise(t + 0.3, 1.2, 4000, 0.04, true);
+        break;
+      case 'points':
+        this.tone(1568, t, 0.12, 'sine', 0.08);
+        this.tone(2093, t + 0.08, 0.25, 'sine', 0.07, true);
+        break;
+      case 'transition':
+        [392, 523, 659, 784].forEach((f, i) => this.tone(f, t + i * 0.11, 1.0, 'sine', 0.09, true));
+        this.noise(t, 1.2, 700, 0.12, true);
+        break;
+      case 'gate':
+        this.noise(t, 2.4, 160, 0.4);
+        this.tone(49, t, 2.2, 'sawtooth', 0.09);
+        [523, 659, 784, 1047, 1319].forEach((f, i) => this.tone(f, t + 1.2 + i * 0.12, 1.6, 'sine', 0.12, true));
+        break;
+      case 'complete':
+        [523, 659, 784, 1047].forEach((f, i) => this.tone(f, t + i * 0.14, 1.2, 'triangle', 0.15, true));
+        [784, 988, 1175, 1568].forEach((f, i) => this.tone(f, t + 0.7 + i * 0.14, 1.6, 'sine', 0.12, true));
+        break;
     }
+  }
+
+  /**
+   * One server event usually arrives as a burst of notices (solved, points, a door, the end of the game).
+   * Cues gathered within a moment play once: only the most important of them, so sounds never pile up.
+   */
+  cue(name: Sfx, priority: number) {
+    this.pendingCues.push({ name, priority });
+    if (this.cueTimer) return;
+    this.cueTimer = setTimeout(() => {
+      this.cueTimer = undefined;
+      const best = this.pendingCues.reduce((a, b) => (b.priority > a.priority ? b : a));
+      this.pendingCues = [];
+      this.sfx(best.name);
+    }, 140);
+  }
+
+  /** A soft, continuous sound of the room (the light source of the workshop); null stops it. */
+  setAmbience(name: 'light' | null) {
+    this.wantedAmbience = name;
+    if ((this.ambience?.name ?? null) === name || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    if (this.ambience) {
+      const old = this.ambience;
+      old.gain.gain.setTargetAtTime(0, t, 0.4);
+      old.nodes.forEach((n) => n instanceof OscillatorNode && n.stop(t + 2.5));
+      this.ambience = undefined;
+    }
+    if (!name) return;
+    const gain = this.gain(0, this.sfxBus!);
+    gain.gain.setTargetAtTime(0.05, t, 0.8);
+    const nodes: AudioNode[] = [];
+    for (const [f, v] of [[220, 0.5], [330.5, 0.35], [661, 0.12]]) {
+      const o = this.ctx.createOscillator();
+      o.frequency.value = f;
+      const g = this.gain(v, gain);
+      o.connect(g);
+      o.start();
+      nodes.push(o);
+    }
+    // a slow shimmer, so the hum is alive but never annoying
+    const lfo = this.ctx.createOscillator();
+    const depth = this.gain(0.02, gain.gain);
+    lfo.frequency.value = 0.35;
+    lfo.connect(depth);
+    lfo.start();
+    nodes.push(lfo);
+    this.ambience = { name, nodes, gain };
   }
 
   bell(freq: number) {
@@ -243,6 +475,7 @@ export class AudioService {
 
   private startDrone() {
     const ctx = this.ctx!;
+    if (THEMED.has(this.musicMode)) return this.startThemeDrone(THEMES[this.musicMode as ThemeId]);
     const root = this.musicMode === 'victory' ? 130.81 : this.musicMode === 'tension' ? 98 : 110;
     const g = this.gain(0, this.musicBus!);
     g.gain.setTargetAtTime(this.musicMode === 'home' ? 0.12 : 0.16, ctx.currentTime, 2);
@@ -270,8 +503,69 @@ export class AudioService {
     this.musicNodes.push(g, lfo);
   }
 
+  /** The theme's pad fades in slowly, while the previous piece fades out: one gradual change, never two pieces. */
+  private startThemeDrone(th: Theme) {
+    const ctx = this.ctx!;
+    const g = this.gain(0, this.musicBus!);
+    g.gain.setTargetAtTime(th.drone.level, ctx.currentTime, 2.2);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = th.drone.cutoff;
+    lp.connect(g);
+    for (const [i, mul] of th.drone.muls.entries()) {
+      const o = ctx.createOscillator();
+      o.type = i === 0 ? 'triangle' : 'sawtooth';
+      o.frequency.value = th.root * mul;
+      o.detune.value = i * 4 - 3;
+      o.connect(lp);
+      o.start();
+      this.musicNodes.push(o);
+    }
+    this.musicNodes.push(g);
+  }
+
+  private scheduleTheme(th: Theme) {
+    const ctx = this.ctx!;
+    const freq = (deg: number, oct = 0) => th.root * Math.pow(2, (th.scale[deg % th.scale.length] + 12 * oct) / 12);
+    while (this.nextNoteTime < ctx.currentTime + 0.6) {
+      const s = this.step++;
+      const t = this.nextNoteTime;
+      const deg = th.melody[s % th.melody.length];
+      // the first bars come in softly, so a new room's music never starts with a jump
+      const fade = Math.min(1, 0.35 + s / 24);
+      if (deg >= 0) this.musicNote(freq(deg), t, th.beat * 2.6, th.voice, th.vol * fade);
+      const b = th.bass?.[s % th.bass.length] ?? -1;
+      if (b >= 0) this.musicNote(freq(b, -1), t, th.beat * 1.8, 'piano', th.vol * 0.8 * fade);
+      if (th.tick) this.tone(s % 2 ? 2400 : 3000, t, 0.025, 'square', 0.012 * fade, false, this.musicBus);
+      if (th.bell && s % 16 === 8) this.musicNote(freq(4, 1), t, 2.2, 'bell', th.vol * 0.6 * fade);
+      this.nextNoteTime += th.beat;
+    }
+  }
+
+  private musicNote(f: number, t: number, dur: number, voice: Voice, vol: number) {
+    const bus = this.musicBus;
+    switch (voice) {
+      case 'pluck':
+        this.tone(f, t, dur * 0.6, 'triangle', vol, true, bus);
+        this.tone(f * 2.003, t, dur * 0.25, 'sine', vol * 0.25, false, bus);
+        break;
+      case 'piano':
+        this.tone(f, t, dur, 'sine', vol, true, bus);
+        this.tone(f * 2, t, dur * 0.4, 'triangle', vol * 0.18, false, bus);
+        break;
+      case 'bell':
+        this.tone(f, t, dur * 1.3, 'sine', vol, true, bus);
+        this.tone(f * 2.76, t, dur * 0.5, 'sine', vol * 0.18, true, bus);
+        break;
+      case 'glow':
+        this.tone(f, t, dur * 2, 'sine', vol, true, bus);
+        break;
+    }
+  }
+
   private scheduleMusic() {
     const ctx = this.ctx!;
+    if (THEMED.has(this.musicMode)) return this.scheduleTheme(THEMES[this.musicMode as ThemeId]);
     const minor = [220, 261.63, 293.66, 329.63, 392, 440, 523.25, 587.33];
     const major = [261.63, 329.63, 392, 440, 523.25, 659.25, 783.99, 1046.5];
     const scale = this.musicMode === 'victory' ? major : minor;

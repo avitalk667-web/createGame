@@ -6,6 +6,10 @@ export interface Settings {
   voice: number;
   music: number;
   effects: number;
+  /** Background music on or off, apart from its volume. */
+  musicOn: boolean;
+  /** Sound effects on or off, apart from their volume. */
+  effectsOn: boolean;
   muted: boolean;
   captions: boolean;
   /** "Play without sound": everything audible also has a visual cue (spec §21). */
@@ -44,8 +48,11 @@ export class SettingsService {
   private load(): Settings {
     const defaults: Settings = {
       voice: 0.9,
-      music: 0.45,
-      effects: 0.7,
+      // quiet music and moderate effects by default
+      music: 0.35,
+      effects: 0.6,
+      musicOn: true,
+      effectsOn: true,
       muted: false,
       captions: true,
       silentMode: false,

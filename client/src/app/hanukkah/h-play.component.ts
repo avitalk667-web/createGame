@@ -3,7 +3,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { AudioService } from '../core/audio.service';
+import { AudioService, Sfx, ThemeId } from '../core/audio.service';
 import { GameService } from '../core/game.service';
 import { GameNotice, RoomSnapshot } from '../core/models';
 import { SettingsService } from '../core/settings.service';
@@ -26,6 +26,23 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
 };
 
 /** The Hanukkah game: opening scene, eight rooms, puzzles, scores, chat, finale and results. */
+/** The sound of each solved puzzle, heard once by every player with its celebration (spec 3, 4). */
+const SOLVE_SOUND: Record<string, Sfx> = {
+  'g1-map': 'decode', 'g1-symbols': 'success', 'g1-cabinet': 'cabinet', 'g2-gears': 'mechanism', 'g2-mirrors': 'beam',
+  'h1-riddle': 'decode', 'h2-lamp': 'beam', 'h3-maze': 'success', 'h3-box': 'drawer', 'h4-wheel': 'decode',
+  'h5-stand': 'success', 'h5-lock': 'codeOk', 'h6-jugs': 'oil', 'h7-mosaic': 'beam', 'h8-pedestals': 'success',
+};
+
+/** Laying a part in its place on a table: map paper, a gear on its axle, a dreidel on its stand. */
+const PLACE_SOUND: Record<string, Sfx> = { 'g1-map': 'paper', 'g2-gears': 'gear', 'g1-symbols': 'place', 'h5-stand': 'place', 'h2-lamp': 'place' };
+
+function pickupSound(item: string): Sfx {
+  if (item.startsWith('map-')) return 'find';
+  if (item.startsWith('gear-')) return 'metal';
+  if (item.startsWith('dreidel-')) return 'spin';
+  return 'pickup';
+}
+
 @Component({
   selector: 'px-h-play',
   imports: [RouterLink, ChatComponent, JoystickComponent, SettingsPanelComponent, HPanelComponent, HResultComponent, RoomOverlaysComponent, LeaveDialogComponent],
@@ -66,6 +83,10 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
         </div>
         <div class="tools">
           <button class="btn small" (click)="showHelp.set(!showHelp())">עזרה</button>
+          <button class="btn small snd" (click)="toggleSound('musicOn')" [class.off]="!settings.settings().musicOn" [attr.aria-pressed]="settings.settings().musicOn"
+            [attr.aria-label]="settings.settings().musicOn ? 'השתקת מוזיקת הרקע' : 'הפעלת מוזיקת הרקע'" [title]="settings.settings().musicOn ? 'מוזיקה פועלת' : 'מוזיקה מושתקת'">🎵</button>
+          <button class="btn small snd" (click)="toggleSound('effectsOn')" [class.off]="!settings.settings().effectsOn" [attr.aria-pressed]="settings.settings().effectsOn"
+            [attr.aria-label]="settings.settings().effectsOn ? 'השתקת האפקטים הקוליים' : 'הפעלת האפקטים הקוליים'" [title]="settings.settings().effectsOn ? 'אפקטים פועלים' : 'אפקטים מושתקים'">🔔</button>
           <button class="btn small" (click)="showSettings.set(true)">הגדרות</button>
           <button class="btn small ghost" (click)="confirmLeave()">יציאה</button>
         </div>
@@ -252,6 +273,7 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
     .score-head { display:flex; justify-content:space-between; align-items:center; color: var(--gold-2); } .score-head b { font-size:1.3rem; }
     .score ol { list-style:none; padding:0; margin:.4rem 0 0; display:flex; flex-direction:column; gap:.2rem; }
     .score li { display:flex; gap:.4rem; align-items:center; position:relative; font-size:.92rem; } .score li.me { color: var(--gold-2); }
+    .snd { min-width:2.4rem; } .snd.off { opacity:.45; text-decoration:line-through; }
     .score .rank { width:18px; color: var(--muted); } .score .nm { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .float { position:absolute; inset-inline-end:-6px; top:-4px; transform: translateX(-100%); white-space:nowrap; background: rgba(63,191,106,.9); color:#06240f; font-weight:700;
       border-radius:999px; padding:0 .5rem; font-size:.78rem; animation: floatUp 2.6s ease forwards; pointer-events:none; }
@@ -307,7 +329,9 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
 export class HPlayComponent implements AfterViewInit, OnDestroy {
   game = inject(GameService);
   private audio = inject(AudioService);
-  private settings = inject(SettingsService);
+  settings = inject(SettingsService);
+  /** Mirror positions last heard, so a turn sounds once for everyone who sees it move. */
+  private mirrorDials?: string;
   private ngZone = inject(NgZone);
   private destroyRef = inject(DestroyRef);
   leave = output<void>();
@@ -430,6 +454,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
         this.world!.setPlayers(s.players, this.game.playerId(), this.game.positions);
         this.onPhase(s.phase);
         this.handleProgress(s);
+        this.updateSound(s);
       });
     });
 
@@ -481,7 +506,11 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
         onHover: (d) => this.ngZone.run(() => this.hover.set(d)),
         onInteract: (d) => this.ngZone.run(() => this.interact(d)),
         onTooFar: (d) => this.ngZone.run(() => this.toast(`התקרבו אל ${d.label} כדי ל${d.verb === 'הרמה' ? 'הרים' : 'השתמש'}`, 'info')),
-        onZoneChange: (z) => this.ngZone.run(() => this.zone.set(z)),
+        onZoneChange: (z) => this.ngZone.run(() => {
+          this.zone.set(z);
+          const s = this.game.snapshot();
+          if (s) this.updateSound(s);
+        }),
         onMove: (x, y, z, ry, zone) => this.game.move(x, y, z, ry, zone),
         onBenchDrop: (puzzle, item, slot, from) => this.ngZone.run(() => this.benchDrop(puzzle, item, slot, from)),
         onBenchExit: () => this.ngZone.run(() => this.exitBench()),
@@ -516,6 +545,31 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     if (mine && s.phase === 'playing') this.world.placePlayer(mine);
     this.onPhase(s.phase);
     this.handleProgress(s);
+    this.updateSound(s);
+  }
+
+  toggleSound(key: 'musicOn' | 'effectsOn') {
+    this.audio.unlock();
+    this.settings.update({ [key]: !this.settings.settings()[key] });
+  }
+
+  /** The music of the room the player is in: investigation, machines, light — or the Hanukkah journey's own. */
+  private musicFor(s: RoomSnapshot): ThemeId {
+    const zone = this.zone();
+    const solved = (id: string) => s.puzzles.find((p) => p.id === id)?.status === 'solved';
+    if (this.isSample()) return zone === 'gearworks' ? (solved('g2-gears') ? 'magic' : 'mechanism') : 'ancient';
+    return zone === 'mosaic' ? 'magic' : 'hanukkah';
+  }
+
+  /** Room music, the light source's hum and the mirrors — all follow the shared server state, so everyone hears the same. */
+  private updateSound(s: RoomSnapshot) {
+    if (s.phase === 'playing') this.audio.setMusic(this.musicFor(s));
+    const light = this.isSample() && s.phase === 'playing' && this.zone() === 'gearworks'
+      && s.puzzles.find((p) => p.id === 'g2-gears')?.status === 'solved';
+    this.audio.setAmbience(light ? 'light' : null);
+    const dials = JSON.stringify(s.mechanisms?.['g2-mirrors']?.rotations ?? null);
+    if (this.mirrorDials !== undefined && dials !== this.mirrorDials && s.phase === 'playing') this.audio.sfx('mirror');
+    this.mirrorDials = dials;
   }
 
   private onPhase(phase: string) {
@@ -534,7 +588,8 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
         const mine = this.game.positions.get(this.game.playerId() ?? '');
         if (mine && prev === null) this.world.placePlayer(mine);
       }
-      this.audio.setMusic('explore');
+      const snap = this.game.snapshot();
+      if (snap) this.audio.setMusic(this.musicFor(snap));
       if (prev === 'intro') {
         this.toast('המסע התחיל! על שולחן העץ מונח מכתב מסתורי.', 'zone-unlocked');
         this.showHelp.set(true);
@@ -546,7 +601,14 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
       this.panel.set(null);
       this.note.set(null);
       this.world.setMode('outro');
-      this.audio.setMusic('victory');
+      this.audio.setMusic('finale');
+      this.audio.setAmbience(null);
+      if (prev === 'playing') {
+        // the light reaches the gate (its celebration), the gate opens, then the closing tune — for everyone
+        if (this.isSample()) setTimeout(() => this.audio.sfx('gate'), 1400);
+        else this.audio.cue('oil', 100);
+        setTimeout(() => this.audio.sfx('complete'), this.isSample() ? 3800 : 2600);
+      }
       this.showResult.set(prev === null);
     } else if (phase === 'lobby') {
       this.showResult.set(false);
@@ -574,14 +636,16 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
       case 'clue':
       case 'mechanism':
       case 'team-solved':
-        this.audio.sfx(n.kind === 'clue' ? 'letter' : 'success');
+        // finding a clue sounds for the finder; a solved puzzle sounds once, with its celebration
+        if (n.kind === 'clue' && mine) this.audio.cue('find', 30);
         this.systemLine(n.message, n.kind);
         break;
       case 'zone-unlocked':
-        this.audio.sfx('door');
+        // the door sounds when it opens on screen (handleProgress)
         this.systemLine(n.message, n.kind);
         break;
       case 'score':
+        if (mine) setTimeout(() => this.audio.sfx('points'), 700);
         if (n.playerId) this.addFloat(n.playerId, n.message);
         if (n.puzzleId) this.addPoints(n.puzzleId, n.points ?? 0);
         break;
@@ -593,19 +657,21 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
         this.systemLine(n.message, n.kind);
         break;
       case 'wrong-answer':
-        this.audio.sfx('wrong');
+        // only the player who tried hears the error; the others see it
+        if (mine) this.audio.sfx('wrong');
         // a wrong arrangement on the dreidel stand blinks red for everyone
         if (n.puzzleId === 'h5-stand' || n.puzzleId === 'g1-symbols') this.world?.flashBench(n.puzzleId);
         if (!mine) this.toast(n.message, n.kind);
         break;
       case 'item-revealed':
-        this.audio.sfx('door');
+        // a hidden drawer opens in the shared room
+        this.audio.sfx('drawer');
         this.systemLine(n.message, 'clue');
         break;
       case 'item-picked':
       case 'item-placed':
       case 'item-collected':
-        this.audio.sfx('pickup');
+        // the player who acted already heard it; items that join the bag with a solve sound with the celebration
         this.toast(n.message, n.kind);
         break;
       case 'maze-symbol':
@@ -669,7 +735,10 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
       // after the lamp, the group first watches it light up on the bench, then the camera turns to the door
       const lamp = s.pendingZone === 'maze';
       this.progressTimers.push(setTimeout(() => this.exitBench(), lamp ? 9000 : 1500));
-      this.progressTimers.push(setTimeout(() => this.world?.playDoorCutscene(s.pendingZone!), lamp ? 9200 : 1800));
+      this.progressTimers.push(setTimeout(() => {
+        this.audio.sfx('door');
+        this.world?.playDoorCutscene(s.pendingZone!);
+      }, lamp ? 9200 : 1800));
     }
     if (s.phase !== 'playing' || !this.world || s.activeZone === this.activeZoneApplied) return;
     const first = this.activeZoneApplied === null;
@@ -680,6 +749,8 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     const wait = moveAt - now;
     if (first && (wait <= 0 || !s.activeZoneSince)) {
       if (this.world.localZone !== target) this.world.transferTo(target, this.mySlot(s));
+      // back in a game already under way: the room shown (and its music) follow at once
+      else this.zone.set(this.world.localZone);
       return;
     }
     if (wait > 1200) {
@@ -697,7 +768,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     const nextPuzzle = sc!.puzzles.find((p) => p.requiresPuzzle === puzzleId);
     const next = nextPuzzle?.objective ?? (content.unlocksZone ? `עוברים יחד אל ${this.zoneName(content.unlocksZone)}` : undefined);
     const mechanism = ['slots', 'maze', 'mosaic'].includes(content.type);
-    this.audio.sfx('success');
+    this.audio.cue(SOLVE_SOUND[puzzleId] ?? 'success', 80);
     this.celebration.set({
       name: this.game.playerName(state?.solvedBy) || 'הקבוצה',
       verb: mechanism ? 'הפעיל את המנגנון' : 'פתר את החידה',
@@ -711,6 +782,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
 
   private moveGroup(zone: HZone) {
     this.panel.set(null);
+    this.audio.sfx('transition');
     this.transfer.set(`עוברים אל ${this.zoneName(zone)}...`);
     setTimeout(() => {
       const s = this.game.snapshot();
@@ -740,6 +812,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
       case 'item': {
         const r = await this.game.pickUp(def.itemId!);
         if (!r.ok) this.toast(r.message, 'info');
+        else this.audio.sfx(pickupSound(def.itemId!));
         return;
       }
       case 'clue': {
@@ -753,6 +826,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
         return;
       }
       case 'decor':
+        this.audio.sfx(def.id === 'big-dreidel' ? 'spin' : 'select');
         this.note.set({ title: def.label, text: def.text ?? '' });
         return;
       case 'panel':
@@ -889,14 +963,14 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     }
     const r = await this.benchOp(puzzle, { op: 'place', slot, item });
     if (r.ok) {
-      this.audio.sfx('pickup');
+      this.audio.sfx(r.code === 'placed-wrong' ? 'misplace' : PLACE_SOUND[puzzle] ?? 'place');
       // a full but wrong arrangement is accepted as a move and reported, the zones blink red
       if (r.code === 'placed-wrong') {
         this.world?.flashBench(puzzle);
         this.benchMsg.set({ ok: false, text: r.message });
       } else this.benchMsg.set(r.message ? { ok: true, text: r.message } : null);
     } else {
-      this.audio.sfx('wrong');
+      this.audio.sfx('misplace');
       this.world?.benchRejected(item);
       this.benchMsg.set({ ok: false, text: r.message });
     }
@@ -905,6 +979,8 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
   async checkBench() {
     const puzzle = this.focus();
     if (!puzzle) return;
+    // the workshop's lever is pulled by hand, whatever the result
+    if (puzzle === 'g2-gears') this.audio.sfx('lever');
     const r = await this.benchOp(puzzle, { op: 'activate' });
     if (r.ok) {
       this.benchMsg.set({ ok: true, text: puzzle === 'h2-lamp' ? 'המנורה מורכבת נכון!' : 'הסידור נכון!' });
@@ -943,9 +1019,9 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
       return;
     }
     if (state === 'solved') return;
+    // the turn sounds for everyone once the mirror moves (updateSound)
     const r = await this.game.operate('g2-mirrors', { op: 'rotate', index });
-    if (r.ok) this.audio.sfx('click');
-    else this.toast(r.message, 'info');
+    if (!r.ok) this.toast(r.message, 'info');
   }
 
   /** One step of the dragged maze key; the server checks walls, gates and the order of the symbols. */
@@ -962,7 +1038,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
 
   async mazeLever(index: number) {
     const r = await this.game.operate('h3-maze', { op: 'lever', index });
-    this.audio.sfx(r.ok ? 'click' : 'wrong');
+    this.audio.sfx(r.ok ? 'lever' : 'wrong');
     this.benchMsg.set({ ok: r.ok, text: r.message });
   }
 
@@ -976,6 +1052,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    this.audio.setAmbience(null);
     clearInterval(this.ticker);
     this.clearProgressTimers();
     this.world?.dispose();

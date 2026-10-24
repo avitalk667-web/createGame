@@ -391,7 +391,7 @@ export class HPanelComponent {
   spin(i: number, d: number) {
     this.wheel.update((w) => w.map((l, k) => (k === i ? LETTERS[(LETTERS.indexOf(l) + d + LETTERS.length) % LETTERS.length] : l)));
     this.wheelChange.emit(this.wheel());
-    this.audio.sfx('click');
+    this.audio.sfx('gear');
   }
 
   @HostListener('window:keydown', ['$event'])
@@ -435,7 +435,7 @@ export class HPanelComponent {
         this.message.set({ ok: false, text: r.message });
         this.audio.sfx('wrong');
       } else if (!quiet || r.message) this.message.set(r.message ? { ok: true, text: r.message } : null);
-      if (r.ok && !quiet) this.audio.sfx('click');
+      if (r.ok && !quiet) this.audio.sfx(this.panel() === 'mosaic' ? 'glass' : 'click');
     } finally {
       this.busy.set(false);
     }
@@ -446,6 +446,8 @@ export class HPanelComponent {
     this.busy.set(true);
     try {
       const r = await this.game.submitAnswer(this.puzzleId(), value.trim());
+      // a code lock turns for the player who opened it; the group hears the box or cabinet open with the celebration
+      if (r.ok && ['box', 'lock', 'cabinet'].includes(this.panel() ?? '')) this.audio.sfx('key');
       this.message.set({ ok: r.ok, text: r.message });
       if (r.ok) this.text.set('');
     } finally {

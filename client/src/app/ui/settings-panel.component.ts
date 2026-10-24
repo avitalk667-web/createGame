@@ -21,7 +21,10 @@ import { AudioService } from '../core/audio.service';
           <input type="range" min="0" max="1" step="0.05" [value]="s.music" (input)="set('music', $event)" aria-label="עוצמת מוזיקה" /></label>
         <label class="row"><span>עוצמת אפקטים</span>
           <input type="range" min="0" max="1" step="0.05" [value]="s.effects" (input)="set('effects', $event)" aria-label="עוצמת אפקטים" /></label>
+        <label class="row check"><input type="checkbox" [checked]="s.musicOn" (change)="toggle('musicOn', $event)" /><span>מוזיקת רקע</span></label>
+        <label class="row check"><input type="checkbox" [checked]="s.effectsOn" (change)="toggle('effectsOn', $event)" /><span>אפקטים קוליים</span></label>
         <label class="row check"><input type="checkbox" [checked]="s.muted" (change)="toggle('muted', $event)" /><span>השתקת כל הצלילים</span></label>
+        <p class="muted small">ההעדפות נשמרות בדפדפן הזה בלבד, גם לביקור הבא.</p>
         <label class="row check"><input type="checkbox" [checked]="s.silentMode" (change)="toggle('silentMode', $event)" />
           <span>משחק ללא קול — כל צליל מקבל גם סימון חזותי</span></label>
         <h3>כתוביות ונגישות</h3>
@@ -70,7 +73,7 @@ export class SettingsPanelComponent {
     if (key === 'effects') this.audio.sfx('click');
   }
 
-  toggle(key: 'muted' | 'captions' | 'silentMode', e: Event) {
+  toggle(key: 'muted' | 'captions' | 'silentMode' | 'musicOn' | 'effectsOn', e: Event) {
     this.svc.update({ [key]: (e.target as HTMLInputElement).checked });
   }
 }
