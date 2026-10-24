@@ -30,7 +30,7 @@ public sealed record ProductUpdate(string? Name, string? Tagline, string? Descri
 /// Admin reports and actions. Revenue counts only confirmed, non-test payments; admin free games never count
 /// as revenue or as paid games. Nothing here returns payment card data (none is stored).
 /// </summary>
-public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, RoomService rooms, ILogger<AdminService> logger)
+public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, RoomService rooms, TestCheckout testCheckout, ILogger<AdminService> logger)
 {
     public async Task AuditAsync(string admin, string action, string? targetType, string? targetId, object? details = null)
     {
@@ -108,6 +108,8 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
         // free trial games: shown separately, never part of the revenue or of the paid games
         var sampleRooms = roomRows.Where(r => r.Room.AccessSource == "free-sample").ToList();
         var paidWithRoom = paidRooms.Where(r => r.Order != null).Select(r => r.Order!.Id).ToHashSet();
+        // demo-mode games (opened without payment): their own figures, never sales, revenue or paid games
+        var demoRooms = await RoomsAsync(f with { Status = null, Search = null, Access = TestCheckout.AccessSource, IncludeTest = true });
         var products = await db.Products.AsNoTracking().OrderBy(p => p.SortOrder).ToListAsync();
 
         object Money(IEnumerable<Order> conf, IEnumerable<Order> refs)
@@ -149,12 +151,17 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
                 freeSampleStarted = sampleRooms.Count(Started),
                 freeSampleCompleted = sampleRooms.Count(Completed),
                 freeSamplePlayers = sampleRooms.Sum(r => r.Players),
+                demo = demoRooms.Count,
+                demoStarted = demoRooms.Count(Started),
+                demoCompleted = demoRooms.Count(Completed),
                 // paid but not started: a room still in the lobby, or a paid order whose game was never opened
                 purchasedNotStarted = paidRooms.Count(r => !Started(r))
                     + confirmed.Count(o => o.Status == OrderStatus.Paid && !paidWithRoom.Contains(o.Id)),
             },
             // without customer accounts a person is counted once per game they joined (a reconnect keeps the same seat)
             participants = managed.Sum(r => r.Players),
+            // whether the server currently offers the demo checkout (PAYMENTS_MODE=Test and ENABLE_TEST_CHECKOUT=true)
+            demoCheckoutEnabled = testCheckout.Enabled,
             testPaidOrders = f.IncludeTest ? (int?)null : await db.Orders.CountAsync(o => o.IsTest && (o.Status == OrderStatus.Paid || o.Status == OrderStatus.Refunded)),
         };
     }
@@ -288,7 +295,7 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
             access = r.Room.AccessSource,
             isTest = r.Ent?.IsTest ?? false,
             orderNumber = r.Order?.Number,
-            owner = r.Room.AccessSource switch { "admin-free" => "מנהל", "free-sample" => "משחק התנסות חינמי", _ => r.Order != null ? $"הזמנה {r.Order.Number}" : null },
+            owner = r.Room.AccessSource switch { "admin-free" => "מנהל", "free-sample" => "משחק התנסות חינמי", TestCheckout.AccessSource => "מצב הדגמה — ללא חיוב", _ => r.Order != null ? $"הזמנה {r.Order.Number}" : null },
             r.Room.CreatedAt,
             startedAt = r.Room.IntroStartedAt ?? r.Room.StartedAt,
             r.Room.EndedAt,

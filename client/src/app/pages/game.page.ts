@@ -126,6 +126,12 @@ import { CouponQuote, Product, formatPrice, playersLabel } from '../core/models'
               <button class="btn primary big" disabled>רכישת המשחק — {{ price(p) }}</button>
               <p class="muted note">התשלום באתר עדיין לא פתוח. נסו שוב מאוחר יותר.</p>
             }
+            @if (p.testCheckout) {
+              <div class="demo">
+                <button class="btn big demo-btn" (click)="playDemo(p)" [disabled]="busy()">{{ busy() ? 'פותחים משחק...' : 'פתיחת המשחק במצב הדגמה — ללא חיוב' }}</button>
+                <p class="note" role="note">מצב בדיקה בלבד. לא מתבצע חיוב כספי אמיתי.</p>
+              </div>
+            }
             @for (o of myOrders(); track o.orderId) {
               <a class="btn" [routerLink]="['/checkout', o.orderId]">לרכישה שלכם מ־{{ o.createdAt | date: 'd.M.yy' }}</a>
             }
@@ -178,6 +184,9 @@ import { CouponQuote, Product, formatPrice, playersLabel } from '../core/models'
     .checkout h3 { margin:0; font-family:var(--font-title); }
     dl { display:grid; grid-template-columns:auto 1fr; gap:.25rem .75rem; margin:0; }
     dt { color:var(--muted); } dd { margin:0; }
+    .demo { display:flex; flex-direction:column; gap:.35rem; padding:.7rem; border:1px dashed var(--blue); border-radius:12px; background:rgba(106,168,255,.08); }
+    .demo-btn { background:rgba(106,168,255,.16); border-color:var(--blue); color:var(--text); }
+    .demo .note { margin:0; color:#bcd6ff; font-size:.9rem; }
     .coupon { display:flex; flex-direction:column; gap:.35rem; padding:.6rem 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
     .coupon .row { display:flex; gap:.4rem; } .coupon input { flex:1; min-width:0; text-transform:uppercase; }
     .coupon .ok { margin:0; color:#9be3b4; } .discount { color:#9be3b4; } .final { font-weight:900; color:var(--gold-2); font-size:1.2rem; }
@@ -252,6 +261,22 @@ export class GamePage {
     this.quote.set(null);
     this.couponText.set('');
     this.couponError.set(null);
+  }
+
+  /** Demo mode: the server opens the game without payment (only while it allows it); this browser becomes its host. */
+  async playDemo(p: Product) {
+    this.audio.unlock();
+    this.audio.sfx('click');
+    this.busy.set(true);
+    this.error.set(null);
+    try {
+      const g = await this.api.testGame(p.id);
+      sessionStore.setHostClaim(g.code, g.hostClaim);
+      await this.router.navigate(['/join', g.code], { state: { demoNotice: g.message } });
+    } catch (e: any) {
+      this.error.set(e.message);
+      this.busy.set(false);
+    }
   }
 
   /** The free trial: the server opens a game (no order, no payment) and this browser becomes its host. */

@@ -15,6 +15,7 @@ import { SKIN_TONES, HAIR_COLORS, BAG_COLORS } from '../world/avatar';
   template: `
     <main>
       <a routerLink="/" class="back">‹ חזרה לדף הבית</a>
+      @if (demoNotice) { <p class="demo-note" role="status">{{ demoNotice }}</p> }
       @if (loading()) {
         <p class="muted">טוענים את פרטי החדר...</p>
       } @else if (!room()) {
@@ -90,6 +91,7 @@ import { SKIN_TONES, HAIR_COLORS, BAG_COLORS } from '../world/avatar';
     </main>
   `,
   styles: [`
+    .demo-note { margin:.6rem 0; padding:.6rem .9rem; border:1px dashed var(--blue); border-radius:12px; background:rgba(106,168,255,.1); color:#cfe2ff; font-weight:700; }
     .resume { display:flex; flex-direction:column; align-items:center; gap:.8rem; max-width:560px; margin:2rem auto; }
     .resume h1 { margin:.2rem 0; } .big { font-size:1.2rem; padding:.8em 2em; }
     .note { background: rgba(106,168,255,.12); border:1px solid var(--blue); border-radius:10px; padding:.5rem .8rem; }
@@ -118,6 +120,8 @@ import { SKIN_TONES, HAIR_COLORS, BAG_COLORS } from '../world/avatar';
   `],
 })
 export class JoinPage implements OnInit {
+  /** Shown after a game was opened in demo mode: it says plainly that nothing was charged. */
+  readonly demoNotice: string | null = (history.state && typeof history.state.demoNotice === 'string') ? history.state.demoNotice : null;
   code = input.required<string>();
   private api = inject(ApiService);
   private router = inject(Router);

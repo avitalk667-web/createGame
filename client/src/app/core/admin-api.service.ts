@@ -24,8 +24,10 @@ export interface Dashboard {
   games: {
     opened: number; started: number; completed: number; paidStarted: number; adminFree: number; adminFreeStarted: number; purchasedNotStarted: number;
     freeSample: number; freeSampleStarted: number; freeSampleCompleted: number; freeSamplePlayers: number;
+    demo: number; demoStarted: number; demoCompleted: number;
   };
   participants: number;
+  demoCheckoutEnabled: boolean;
   testPaidOrders?: number | null;
 }
 

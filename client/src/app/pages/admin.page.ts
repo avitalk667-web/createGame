@@ -107,7 +107,7 @@ const ACTIONS: Record<string, string> = {
             @if (tab() === 'games') {
               <label>דרך גישה
                 <select [value]="f().access ?? ''" (change)="set('access', $any($event.target).value)">
-                  <option value="">הכול</option><option value="purchase">רכישה</option><option value="admin-free">חינמי (מנהל)</option><option value="free-sample">משחק התנסות חינמי</option><option value="legacy">ישן</option>
+                  <option value="">הכול</option><option value="purchase">רכישה</option><option value="admin-free">חינמי (מנהל)</option><option value="free-sample">משחק התנסות חינמי</option><option value="test-checkout">מצב הדגמה (ללא חיוב)</option><option value="legacy">ישן</option>
                 </select>
               </label>
               <label>קוד משחק <input dir="ltr" [value]="f().search ?? ''" (input)="set('search', $any($event.target).value)" /></label>
@@ -127,6 +127,7 @@ const ACTIONS: Record<string, string> = {
                 <div class="stat card"><span>הכנסות לאחר החזרים</span><b>{{ d.revenue.afterRefunds | number: '1.0-2' }} ₪</b><small>לפני עמלות סליקה, מסים והוצאות</small></div>
                 <div class="stat card"><span>משחקים שנפתחו</span><b>{{ d.games.opened }}</b><small>{{ d.games.started }} התחילו · {{ d.games.completed }} הושלמו</small></div>
                 <div class="stat card"><span>משחקים ששולמו והתחילו</span><b>{{ d.games.paidStarted }}</b><small>{{ d.games.purchasedNotStarted }} נרכשו וטרם התחילו</small></div>
+                <div class="stat card demo"><span>פתיחות במצב הדגמה</span><b>{{ d.games.demo }}</b><small>{{ d.games.demoStarted }} התחילו · {{ d.games.demoCompleted }} הושלמו · ללא חיוב, לא נספר בהכנסות ובמכירות · מצב הדגמה {{ d.demoCheckoutEnabled ? 'פעיל באתר' : 'כבוי' }}</small></div>
                 <div class="stat card"><span>משחקים חינמיים של המנהל</span><b>{{ d.games.adminFree }}</b><small>{{ d.games.adminFreeStarted }} התחילו</small></div>
                 <div class="stat card"><span>משתתפים</span><b>{{ d.participants }}</b><small>ללא ספירה כפולה בתוך אותו משחק</small></div>
                 <div class="stat card"><span>רוכשים (דוא״ל ייחודי)</span><b>{{ d.buyersWithEmail }}</b><small>אין חשבונות לקוח — נספרים רק מי שהשאירו דוא״ל</small></div>
