@@ -28,8 +28,9 @@ const EMAIL = /^[^\s@<>()[\],;:"\\]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9]
         }
         <label class="opt">
           <input type="checkbox" [checked]="marketing()" [disabled]="consentSaved()" (change)="marketing.set($any($event.target).checked); reply.set(null)" />
-          <span>אני מסכים/ה לקבל מיילים שיווקיים ועדכונים מ-PORTAL X על משחקים חדשים, הטבות, קופונים ותכנים נוספים. ניתן להסיר את ההסכמה בכל עת.</span>
+          <span>אני מסכים/ה לקבל מיילים שיווקיים ועדכונים מ-PORTAL X על משחקים חדשים, הטבות, קופונים ותכנים נוספים. ניתן לבטל את ההסכמה בכל עת.</span>
         </label>
+        @if (needsConsent()) { <p class="req" role="note">{{ site.info().resultsConsentMessage }}</p> }
         @if (site.info().communityGroup) {
           <label class="opt">
             <input type="checkbox" [checked]="group()" [disabled]="!!groupUrl()" (change)="group.set($any($event.target).checked); reply.set(null)" />
@@ -79,6 +80,7 @@ const EMAIL = /^[^\s@<>()[\],;:"\\]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9]
     .field { display:flex; flex-direction:column; gap:.25rem; } .field span { font-weight:700; font-size:.92rem; }
     .field input { min-height:44px; }
     .err { margin:0; color:#ffb4a6; font-size:.9rem; }
+    .req { margin:0; padding:.45rem .7rem; border-radius:10px; background:rgba(224,185,92,.12); color:#f6d78d; font-size:.9rem; line-height:1.5; }
     .msg { margin:.2rem 0 0; padding:.5rem .7rem; border-radius:10px; background:rgba(255,120,100,.12); color:#ffd2c8; }
     .msg.ok { background:rgba(120,220,160,.12); color:#bff0cf; }
     .btn.primary { align-self:flex-start; }
@@ -105,6 +107,8 @@ export class ResultsEmailComponent {
   groupUrl = signal<string | null>(null);
   reply = signal<{ ok: boolean; message: string } | null>(null);
 
+  /** The results box is ticked but the required marketing consent is not (policy from the server). */
+  needsConsent = computed(() => !!this.site.info().resultsRequireConsent && this.sendResults() && !this.sent() && !this.marketing() && !this.consentSaved());
   needsEmail = computed(() => (this.sendResults() && !this.sent()) || (this.marketing() && !this.consentSaved()));
   emailOk = computed(() => EMAIL.test(this.email().trim()) && this.email().trim().length <= 254);
   anyChosen = computed(() => this.sendResults() || this.marketing() || this.group());
@@ -116,6 +120,10 @@ export class ResultsEmailComponent {
 
   async submit() {
     this.touched.set(true);
+    if (this.needsConsent()) {
+      this.reply.set({ ok: false, message: this.site.info().resultsConsentMessage ?? '' });
+      return;
+    }
     if (this.needsEmail() && !this.emailOk()) return;
     const code = this.game.snapshot()?.code;
     if (!code) return;

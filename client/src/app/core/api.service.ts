@@ -143,6 +143,9 @@ export interface SiteInfo {
   communityGroup: boolean;
   consentText: string;
   consentVersion: string;
+  /** Business rule: results are emailed only together with explicit marketing consent (and why, in Hebrew). */
+  resultsRequireConsent?: boolean;
+  resultsConsentMessage?: string | null;
 }
 
 export interface EndOfGameReply {

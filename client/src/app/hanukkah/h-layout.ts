@@ -51,7 +51,7 @@ export type Verb = 'בדיקה' | 'הרמה' | 'פתיחה' | 'סיבוב' | 'ה
 export type HKind = 'clue' | 'panel' | 'item' | 'decor';
 
 export type HPanel = 'riddle' | 'lamp' | 'maze' | 'box' | 'wheel' | 'stand' | 'lock' | 'jugs' | 'mosaic' | 'pedestals' | 'final'
-  | 'map' | 'symbols' | 'cabinet' | 'gears' | 'mirror';
+  | 'map' | 'symbols' | 'cabinet' | 'gears' | 'scales';
 
 export interface HInteractable {
   id: string;
@@ -176,11 +176,16 @@ const SAMPLE_INTERACTABLES: HInteractable[] = [
   { id: 'gear-small', zone: 'gearworks', label: 'גלגל שיניים קטן', verb: 'הרמה', kind: 'item', itemId: 'gear-small', pos: [5.8, 0.75, 2.8], radius: 0.4 },
   { id: 'gear-medium', zone: 'gearworks', label: 'גלגל שיניים בינוני', verb: 'הרמה', kind: 'item', itemId: 'gear-medium', pos: [-3.0, 0.2, 3.5], radius: 0.4 },
   { id: 'gear-diagram', zone: 'gearworks', label: 'איור הגלגלים על הקיר', verb: 'קריאה', kind: 'clue', clueId: 'g2-diagram', pos: [-4.0, 2.3, -6.8], radius: 0.9 },
-  { id: 'mirror-a', zone: 'gearworks', label: 'מראה ראשונה — לחצו כדי לסובב', verb: 'סיבוב', kind: 'panel', panel: 'mirror', ref: '0', pos: [-1.4, 3.9, -2.5], radius: 0.6 },
-  { id: 'mirror-b', zone: 'gearworks', label: 'מראה שנייה — לחצו כדי לסובב', verb: 'סיבוב', kind: 'panel', panel: 'mirror', ref: '1', pos: [-1.4, 3.9, -5.5], radius: 0.6 },
-  { id: 'light-source', zone: 'gearworks', label: 'מקור האור הכחול', verb: 'בדיקה', kind: 'decor', text: 'פנס נחושת עם עדשה כחולה. הוא נדלק כשהמנגנון מסתובב.', pos: [-7.5, 3.9, -2.5], radius: 0.6 },
-  { id: 'small-box', zone: 'gearworks', label: 'תיבה קטנה עם מנעול', verb: 'קריאה', kind: 'clue', clueId: 'g2-box-note', pos: [3.6, 0.55, -4.6], radius: 0.5 },
-  { id: 'gate-sign', zone: 'gearworks', label: 'סמל השער מעל הדלת', verb: 'בדיקה', kind: 'decor', text: 'סמל השער. כשהאור הכחול יפגע בו — השער ייפתח.', pos: [0, 3.9, -6.8], radius: 0.6 },
+  { id: 'scales', zone: 'gearworks', label: 'המאזניים העתיקים', verb: 'הנחה', kind: 'panel', panel: 'scales', pos: [-4.6, 1.4, -3.25], radius: 0.9 },
+  { id: 'scale-note-1', zone: 'gearworks', label: 'חריטה ראשונה על הקיר', verb: 'קריאה', kind: 'clue', clueId: 'g2-scale-1', pos: [-7.9, 2.3, -5.6], radius: 0.55 },
+  { id: 'scale-note-2', zone: 'gearworks', label: 'חריטה שנייה על הקיר', verb: 'קריאה', kind: 'clue', clueId: 'g2-scale-2', pos: [-7.9, 2.3, -4.35], radius: 0.55 },
+  { id: 'scale-note-3', zone: 'gearworks', label: 'חריטה שלישית על הקיר', verb: 'קריאה', kind: 'clue', clueId: 'g2-scale-3', pos: [-7.9, 2.3, -3.1], radius: 0.55 },
+  { id: 'sc-feather', zone: 'gearworks', label: 'נוצה', verb: 'הרמה', kind: 'item', itemId: 'sc-feather', pos: [-7.95, 1.45, -3.0], radius: 0.35 },
+  { id: 'sc-key', zone: 'gearworks', label: 'מפתח עתיק', verb: 'הרמה', kind: 'item', itemId: 'sc-key', pos: [6.15, 0.77, 2.8], radius: 0.35 },
+  { id: 'sc-crystal', zone: 'gearworks', label: 'גביש קסום', verb: 'הרמה', kind: 'item', itemId: 'sc-crystal', pos: [3.6, 0.67, -4.6], radius: 0.35 },
+  { id: 'sc-hourglass', zone: 'gearworks', label: 'שעון חול', verb: 'הרמה', kind: 'item', itemId: 'sc-hourglass', pos: [-5.6, 0.16, 3.8], radius: 0.35 },
+  { id: 'small-box', zone: 'gearworks', label: 'תיבה קטנה עם מנעול', verb: 'בדיקה', kind: 'decor', text: 'תיבת עץ קטנה ונעולה, עם מכסה מוזהב.', pos: [3.6, 0.4, -4.6], radius: 0.45 },
+  { id: 'gate-sign', zone: 'gearworks', label: 'סמל השער מעל הדלת', verb: 'בדיקה', kind: 'decor', text: 'סמל השער. כשהמאזניים העתיקים יאוזנו — השער ייפתח.', pos: [0, 3.9, -6.8], radius: 0.6 },
 ];
 
 export let H_INTERACTABLES: HInteractable[] = HANUKKAH_INTERACTABLES;
@@ -207,7 +212,7 @@ const OBSTACLES: [HZone, number, number, number, number][] = [
   ['hall', -1.0, 1.0, -2.6, -0.6],
   ['maproom', -2.6, 2.6, -2.3, -0.4], ['maproom', 2.6, 5.4, -4.1, -2.6], ['maproom', -5.1, -3.3, -7.0, -5.8],
   ['maproom', -8.0, -6.3, 0.7, 2.3], ['maproom', 6.5, 8.0, -2.9, -1.1], ['maproom', 5.0, 6.2, 2.0, 3.2],
-  ['gearworks', -2.6, 2.6, -2.2, -0.4], ['gearworks', -1.8, -1.0, -2.9, -2.1], ['gearworks', -1.8, -1.0, -5.9, -5.1],
+  ['gearworks', -2.6, 2.6, -2.2, -0.4], ['gearworks', -6.0, -3.2, -3.95, -2.55],
   ['gearworks', 3.0, 4.2, -5.0, -4.2], ['gearworks', 5.2, 6.4, 2.2, 3.4], ['gearworks', -8.0, -6.4, -3.8, -2.2],
 ];
 

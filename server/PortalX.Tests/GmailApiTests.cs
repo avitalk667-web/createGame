@@ -153,6 +153,7 @@ public class GmailApiTests
                 ["GOOGLE_CLIENT_SECRET"] = ClientSecret,
                 ["GOOGLE_TOKEN_ENCRYPTION_KEY"] = key,
                 ["PORTALX_SITE_URL"] = "https://portalx.test",
+                ["PORTALX_RESULTS_REQUIRE_MARKETING_CONSENT"] = "false",
                 ["RateLimits:ResultsEmailPer10Minutes"] = "100000",
                 ["RateLimits:EmailAdminPer10Minutes"] = "100000",
             }));

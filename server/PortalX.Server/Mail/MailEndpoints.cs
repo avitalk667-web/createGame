@@ -18,13 +18,15 @@ public static class MailEndpoints
     public static void MapMailEndpoints(this RouteGroupBuilder api)
     {
         // public site details: the one contact address, and which end-of-game options this server can offer
-        api.MapGet("/site", async (SiteOptions site, IEmailSender sender) => Results.Ok(new
+        api.MapGet("/site", async (SiteOptions site, IEmailSender sender, ResultsEmailPolicy policy) => Results.Ok(new
         {
             contactEmail = site.ContactEmail,
             resultsEmail = await sender.IsAvailableAsync(),
             communityGroup = site.CommunityGroupUrl != null,
             consentText = ResultsEmailService.ConsentText,
             consentVersion = ResultsEmailService.ConsentVersion,
+            resultsRequireConsent = policy.RequireMarketingConsent,
+            resultsConsentMessage = policy.RequireMarketingConsent ? ResultsEmailPolicy.ConsentRequiredMessage : null,
         }));
 
         // the end-of-game choices of one player (the seat token comes in the body or the game's seat cookie, never the URL)

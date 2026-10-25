@@ -54,6 +54,12 @@ const BENCH_SCALE = 1.1;
 const BENCH_REST: Record<string, number> = { 'lamp-base': 0.045, 'lamp-tank': 0.135, 'lamp-wick': 0.09, 'lamp-glass': 0.125, 'lamp-cover': 0.07 };
 const BENCH_STACK: Record<string, number> = { 'lamp-base': 0.045, 'lamp-tank': 0.22, 'lamp-wick': 0.4, 'lamp-glass': 0.42, 'lamp-cover': 0.61 };
 
+const SCALE_X = -4.6;
+const SCALE_Z = -3.25;
+const SCALE_ARM = 0.78;
+const SCALE_PIVOT_Y = 1.92;
+const SCALE_PAN_Y = 1.35;
+
 /** A drag-and-drop assembly on a table — the lamp bench and the dreidel stand. Positions are relative to the room centre. */
 interface Assembly {
   zone: HZone;
@@ -66,6 +72,8 @@ interface Assembly {
   look: [number, number];
   halfWidth: number;
   bounds: [number, number, number, number];
+  /** Height of the tray when it is not the height of the zones (the scales: the pans hang above the table). */
+  trayTop?: number;
   /** Where the local player stands while using it (x, z, facing). */
   stand: [number, number, number];
   snap: number;
@@ -104,13 +112,18 @@ const ASSEMBLIES: Record<string, Assembly> = {
     top: 1.0, rest: { 'gear-large': 0.03, 'gear-small': 0.03, 'gear-medium': 0.03 },
     look: [0, -1.15], halfWidth: 2.1, bounds: [-2.3, 2.3, -2.1, -0.5], stand: [3.0, -1.2, -Math.PI / 2], snap: 0.42,
   },
+  // the ancient scales: two places in each pan (l = the left pan, r = the right one, as the players see it)
+  'g2-scales': {
+    zone: 'gearworks', slots: ['l1', 'l2', 'r1', 'r2'],
+    pad: { l1: [SCALE_X - SCALE_ARM - 0.15, SCALE_Z], l2: [SCALE_X - SCALE_ARM + 0.15, SCALE_Z], r1: [SCALE_X + SCALE_ARM - 0.15, SCALE_Z], r2: [SCALE_X + SCALE_ARM + 0.15, SCALE_Z] },
+    tray: { 'sc-feather': [-5.5, -2.8], 'sc-key': [-5.0, -2.8], 'sc-crystal': [-4.2, -2.8], 'sc-hourglass': [-3.7, -2.8] },
+    top: SCALE_PAN_Y + 0.025, trayTop: 1.0, rest: { 'sc-feather': 0.02, 'sc-key': 0.02, 'sc-crystal': 0, 'sc-hourglass': 0 },
+    look: [SCALE_X, -3.15], halfWidth: 1.45, bounds: [-5.85, -3.35, -3.75, -2.7], stand: [-6.3, -3.2, Math.PI / 2], snap: 0.2,
+  },
 };
 /** Where the digits of a solved arrangement appear, relative to each place (dreidels: beside; symbols: in front). */
 const BACKS_OFFSET: Record<string, [number, number, number]> = { 'h5-stand': [0.2, 0.03, 0.08], 'g1-symbols': [0, 0.02, 0.24] };
-// the light puzzle of the free game (room 2): source and mirrors in the floor plane (x, z) relative to the room, beam height
-const SAMPLE_SOURCE: [number, number] = [-7.6, -2.5];
-const SAMPLE_MIRRORS: [number, number][] = [[-1.4, -2.5], [-1.4, -5.5]];
-const SAMPLE_BEAM_Y = 3.9;
+// the ancient scales of the free game (room 2), relative to the room centre: the pivot, the arm, the pans' height when level
 const LETTERS = 'אבגדהוזחטיכלמנסעפצקרשת'.split('');
 /** Symbols carved on each door, by the room it leads to. */
 const DOOR_SYMBOL: Partial<Record<HZone, string>> = {
@@ -156,11 +169,101 @@ function lampDrawingTexture() {
   });
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = MAX_ANISO;
+  return t;
+}
+
+/** The renderer's best anisotropic filtering (set once the renderer exists; capped for weak devices). */
+let MAX_ANISO = 1;
+
+/**
+ * The four symbols of the free game's first room, drawn as sharp vector icons (not emoji, which differ between
+ * devices and blur when small): dark ink on parchment in a gold ring, 512 px.
+ */
+function symbolTexture(kind: 'compass' | 'key' | 'book' | 'lamp') {
+  const s = 512;
+  const c = document.createElement('canvas');
+  c.width = c.height = s;
+  const g = c.getContext('2d')!;
+  const m = s / 2;
+  g.beginPath(); g.arc(m, m, m - 6, 0, Math.PI * 2); g.fillStyle = '#f5e6c0'; g.fill();
+  g.lineWidth = 22; g.strokeStyle = '#b8862f'; g.stroke();
+  g.beginPath(); g.arc(m, m, m - 30, 0, Math.PI * 2); g.lineWidth = 4; g.strokeStyle = '#7a5a12'; g.stroke();
+  const ink = '#1d1408';
+  g.strokeStyle = ink; g.fillStyle = ink; g.lineCap = 'round'; g.lineJoin = 'round';
+  switch (kind) {
+    case 'compass': {
+      g.lineWidth = 16; g.beginPath(); g.arc(m, m, 150, 0, Math.PI * 2); g.stroke();
+      for (let k = 0; k < 8; k++) { const a = (k * Math.PI) / 4; g.lineWidth = k % 2 ? 8 : 14; g.beginPath(); g.moveTo(m + Math.cos(a) * 128, m + Math.sin(a) * 128); g.lineTo(m + Math.cos(a) * 150, m + Math.sin(a) * 150); g.stroke(); }
+      // the needle: north half red, south half ink
+      g.beginPath(); g.moveTo(m, m - 125); g.lineTo(m + 30, m); g.lineTo(m - 30, m); g.closePath(); g.fillStyle = '#b3261e'; g.fill();
+      g.beginPath(); g.moveTo(m, m + 125); g.lineTo(m + 30, m); g.lineTo(m - 30, m); g.closePath(); g.fillStyle = ink; g.fill();
+      g.beginPath(); g.arc(m, m, 14, 0, Math.PI * 2); g.fillStyle = '#b8862f'; g.fill();
+      break;
+    }
+    case 'key': {
+      g.lineWidth = 26;
+      g.beginPath(); g.arc(m - 95, m, 62, 0, Math.PI * 2); g.stroke();                       // bow
+      g.beginPath(); g.arc(m - 95, m, 20, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.moveTo(m - 33, m); g.lineTo(m + 160, m); g.stroke();                   // shaft
+      g.beginPath(); g.moveTo(m + 160, m); g.lineTo(m + 160, m + 62); g.stroke();             // bit
+      g.beginPath(); g.moveTo(m + 110, m); g.lineTo(m + 110, m + 44); g.stroke();
+      g.beginPath(); g.moveTo(m + 62, m); g.lineTo(m + 62, m + 30); g.stroke();
+      break;
+    }
+    case 'book': {
+      g.lineWidth = 14;
+      // an open book: two pages meeting at the spine, with lines of text
+      g.beginPath(); g.moveTo(m, m - 105); g.quadraticCurveTo(m - 80, m - 135, m - 165, m - 105); g.lineTo(m - 165, m + 110);
+      g.quadraticCurveTo(m - 80, m + 85, m, m + 115); g.closePath(); g.stroke();
+      g.beginPath(); g.moveTo(m, m - 105); g.quadraticCurveTo(m + 80, m - 135, m + 165, m - 105); g.lineTo(m + 165, m + 110);
+      g.quadraticCurveTo(m + 80, m + 85, m, m + 115); g.closePath(); g.stroke();
+      g.beginPath(); g.moveTo(m, m - 105); g.lineTo(m, m + 115); g.stroke();
+      g.lineWidth = 9;
+      for (let k = 0; k < 4; k++) {
+        const y = m - 55 + k * 40;
+        g.beginPath(); g.moveTo(m - 135, y); g.lineTo(m - 30, y + 4); g.stroke();
+        g.beginPath(); g.moveTo(m + 30, y + 4); g.lineTo(m + 135, y); g.stroke();
+      }
+      break;
+    }
+    case 'lamp': {
+      // a classic oil lamp seen from the side: a round body, a long spout to the right with its flame, a handle and a lid
+      g.save();
+      g.translate(-48, -10);
+      const y0 = m + 70;
+      g.beginPath();
+      g.moveTo(m - 150, y0 - 20);
+      g.bezierCurveTo(m - 150, y0 + 55, m + 40, y0 + 60, m + 85, y0 - 5);
+      g.lineTo(m + 185, y0 - 55);
+      g.lineTo(m + 175, y0 - 75);
+      g.bezierCurveTo(m + 110, y0 - 55, m + 60, y0 - 45, m + 30, y0 - 50);
+      g.bezierCurveTo(m - 20, y0 - 60, m - 120, y0 - 60, m - 150, y0 - 20);
+      g.closePath(); g.fill();
+      g.beginPath(); g.ellipse(m - 45, y0 - 62, 62, 14, 0, 0, Math.PI * 2); g.fill();                 // lid
+      g.beginPath(); g.arc(m - 45, y0 - 88, 16, 0, Math.PI * 2); g.fill();                              // knob
+      g.lineWidth = 18;
+      g.beginPath(); g.moveTo(m - 145, y0 - 30); g.bezierCurveTo(m - 230, y0 - 50, m - 225, y0 + 40, m - 135, y0 + 15); g.stroke(); // handle
+      g.beginPath(); g.ellipse(m - 30, y0 + 52, 70, 14, 0, 0, Math.PI * 2); g.fill();                  // foot
+      // the flame above the tip of the spout
+      const fx = m + 182;
+      const fy = y0 - 78;
+      g.beginPath(); g.moveTo(fx, fy); g.bezierCurveTo(fx - 55, fy - 50, fx - 10, fy - 120, fx + 5, fy - 175);
+      g.bezierCurveTo(fx + 30, fy - 110, fx + 55, fy - 55, fx, fy); g.closePath(); g.fillStyle = '#d9640f'; g.fill();
+      g.beginPath(); g.moveTo(fx, fy - 8); g.bezierCurveTo(fx - 25, fy - 40, fx - 5, fy - 80, fx + 3, fy - 110);
+      g.bezierCurveTo(fx + 18, fy - 75, fx + 28, fy - 40, fx, fy - 8); g.closePath(); g.fillStyle = '#ffd36b'; g.fill();
+      g.restore();
+      break;
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = MAX_ANISO;
   return t;
 }
 
 /** Emoji/letter on a transparent canvas, for symbols drawn on props. */
-function glyphTexture(text: string, color = '#ffd36b', size = 128, font = 'Segoe UI Emoji, Noto Color Emoji, Frank Ruhl Libre, serif') {
+function glyphTexture(text: string, color = '#ffd36b', size = 256, font = 'Segoe UI Emoji, Noto Color Emoji, Frank Ruhl Libre, serif') {
   const c = document.createElement('canvas');
   c.width = c.height = size;
   const g = c.getContext('2d')!;
@@ -171,6 +274,7 @@ function glyphTexture(text: string, color = '#ffd36b', size = 128, font = 'Segoe
   g.fillText(text, size / 2, size / 2 + size * 0.04);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = MAX_ANISO;
   return t;
 }
 
@@ -203,6 +307,7 @@ function sheetTexture(lines: string[], opts: { bg?: string; color?: string; w?: 
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = MAX_ANISO;
   return t;
 }
 
@@ -229,6 +334,7 @@ function numberTexture(text: string) {
   g.fillText(text, s / 2, s / 2 + size * 0.05);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = MAX_ANISO;
   return t;
 }
 
@@ -291,6 +397,7 @@ function doorLeafTexture(symbol: string, mirror: boolean) {
   g.fillText(symbol, w / 2, 196);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = MAX_ANISO;
   return t;
 }
 
@@ -325,7 +432,7 @@ function wheelBandTexture() {
   });
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
+  t.anisotropy = MAX_ANISO;
   return t;
 }
 
@@ -376,6 +483,7 @@ function mapTexture(kind: 'left' | 'middle' | 'right' | 'whole' | 'wall') {
     }
     const t = new THREE.CanvasTexture(full);
     t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = MAX_ANISO;
     return t;
   }
   const i = kind === 'left' ? 0 : kind === 'middle' ? 1 : 2;
@@ -396,29 +504,31 @@ function mapTexture(kind: 'left' | 'middle' | 'right' | 'whole' | 'wall') {
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = MAX_ANISO;
   return t;
 }
 
 /** A digit on a gold disc, readable on dark and light surfaces alike. */
 function digitTexture(d: string) {
-  const s = 128;
+  const s = 256;
   const c = document.createElement('canvas');
   c.width = c.height = s;
   const g = c.getContext('2d')!;
   g.beginPath();
-  g.arc(s / 2, s / 2, s / 2 - 4, 0, Math.PI * 2);
+  g.arc(s / 2, s / 2, s / 2 - 8, 0, Math.PI * 2);
   g.fillStyle = '#f2d27a';
   g.fill();
-  g.lineWidth = 6;
+  g.lineWidth = 12;
   g.strokeStyle = '#7a4a10';
   g.stroke();
   g.fillStyle = '#2a1606';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.font = 'bold 84px Heebo, sans-serif';
+  g.font = 'bold 168px Heebo, sans-serif';
   g.fillText(d, s / 2, s / 2 + 4);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = MAX_ANISO;
   return t;
 }
 
@@ -458,6 +568,7 @@ function gearDiagramTexture() {
   gear(470, 70);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = MAX_ANISO;
   return t;
 }
 
@@ -487,6 +598,7 @@ function stoneGrooveTexture(kind: string, lit: boolean) {
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = MAX_ANISO;
   return t;
 }
 
@@ -516,7 +628,7 @@ export class HanukkahWorld {
   private pointer = new THREE.Vector2(10, 10);
   private hitTargets = new Map<string, THREE.Mesh>();
   private hovered: HInteractable | null = null;
-  private drag?: { x: number; y: number; moved: boolean; id: number };
+  private drag?: { x: number; y: number; moved: boolean; id: number; touch: boolean };
 
   // world state
   private doors = new Map<HZone, THREE.Object3D>();
@@ -553,12 +665,13 @@ export class HanukkahWorld {
   private cabinetDoors: THREE.Object3D[] = [];
   private gearLever?: THREE.Object3D;
   private gearsRunning = false;
-  private lightLens?: THREE.Mesh;
-  private mirrors: THREE.Object3D[] = [];
-  private mirrorAngles: number[] = [];
-  private mirrorTargets: number[] = [];
-  private beam?: THREE.Group;
-  private beamLight?: THREE.PointLight;
+  // the scales: the beam leans as the server says (-1 left heavier, 1 right heavier); the pans hang from its ends
+  private scaleBeam?: THREE.Object3D;
+  private scalePans: THREE.Object3D[] = [];
+  private scaleTilt = 0;
+  private scaleAngle = 0;
+  private scaleGlow?: THREE.PointLight;
+  private scaleShine: THREE.MeshStandardMaterial[] = [];
   private exitDoor?: THREE.Object3D;
   private gateGlow?: THREE.Mesh;
   private sampleDone = false;
@@ -589,7 +702,9 @@ export class HanukkahWorld {
   private doorLockPlate?: THREE.Object3D;
   private benchGuess = new Map<string, string | null>();
   private benchShake = new Map<string, number>();
-  private benchDrag?: { id: string; from: string | null; pointerId: number; pos: THREE.Vector3 };
+  private benchDrag?: { id: string; from: string | null; pointerId: number; pos: THREE.Vector3; x: number; y: number; far: boolean };
+  /** A part chosen with a tap (no drag): the next tap on a free place puts it there — easy with a finger. */
+  private benchPicked: string | null = null;
   private benchHover: string | null = null;
   private benchPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -(BENCH_TOP + 0.18));
   private lampSeq = -1;
@@ -638,7 +753,8 @@ export class HanukkahWorld {
 
   constructor(private canvas: HTMLCanvasElement, private quality: Quality, private cb: HWorldCallbacks = {}) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality !== 'low', powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality === 'high' ? 2 : quality === 'medium' ? 1.5 : 1));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality === 'high' ? 2 : quality === 'medium' ? 1.5 : 1.25));
+    MAX_ANISO = Math.min(quality === 'low' ? 4 : 8, this.renderer.capabilities.getMaxAnisotropy());
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.55;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -1131,9 +1247,10 @@ export class HanukkahWorld {
       case 'sym-key':
       case 'sym-book':
       case 'sym-lamp': {
-        const glyph = { 'sym-compass': '🧭', 'sym-key': '🗝️', 'sym-book': '📖', 'sym-lamp': '🪔' }[id]!;
-        const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.04, 28), [
-          this.wood('#6a4422'), this.std('#ffffff', { map: glyphTexture(glyph, '#000', 128) }), this.wood('#6a4422'),
+        const kind = ({ 'sym-compass': 'compass', 'sym-key': 'key', 'sym-book': 'book', 'sym-lamp': 'lamp' } as const)[id];
+        const face = symbolTexture(kind);
+        const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.04, 40), [
+          this.wood('#6a4422'), this.std('#ffffff', { map: face, emissive: '#ffffff', emissiveMap: face, emissiveIntensity: 0.45, roughness: 0.7 }), this.wood('#6a4422'),
         ]);
         disc.rotation.x = Math.PI / 2;
         const rim = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.012, 6, 28), this.gold());
@@ -1141,6 +1258,57 @@ export class HanukkahWorld {
         break;
       }
       case 'gs-golden-key': return this.keyMesh('#ffd24a', 0.6);
+      // the four things weighed on the ancient scales; each one stands on y = 0
+      case 'sc-feather': {
+        const vane = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 8), this.std('#f6f1e4', { roughness: 0.95, emissive: '#2a2620' }));
+        vane.scale.set(0.07, 0.012, 0.19);
+        vane.position.set(0, 0.02, 0.02);
+        const quill = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.004, 0.26, 6), this.std('#d9c9a0'));
+        quill.rotation.x = Math.PI / 2;
+        quill.position.y = 0.02;
+        g.add(vane, quill);
+        g.rotation.y = 0.5;
+        break;
+      }
+      case 'sc-key': {
+        const key = this.keyMesh('#8a7a60', 0.55);
+        key.rotation.x = -Math.PI / 2;
+        key.position.set(-0.1, 0.03, 0);
+        g.add(key);
+        break;
+      }
+      case 'sc-crystal': {
+        const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.1), glow('#b77cff'));
+        gem.scale.y = 1.6;
+        gem.position.y = 0.17;
+        g.add(gem);
+        break;
+      }
+      case 'sc-hourglass': {
+        const wood = this.std('#6a4422');
+        const glass = new THREE.MeshStandardMaterial({ color: '#e8f4ff', transparent: true, opacity: 0.45, roughness: 0.1 });
+        const sand = this.std('#e2bd6a');
+        for (const y of [0.012, 0.268]) {
+          const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.024, 16), wood);
+          disc.position.y = y;
+          g.add(disc);
+        }
+        const upper = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.12, 16, 1, true), glass);
+        upper.position.y = 0.2;
+        upper.rotation.x = Math.PI;
+        const lower = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.12, 16, 1, true), glass);
+        lower.position.y = 0.08;
+        const heap = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.06, 16), sand);
+        heap.position.y = 0.055;
+        g.add(upper, lower, heap);
+        for (let k = 0; k < 3; k++) {
+          const a = (k / 3) * Math.PI * 2;
+          const post = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.25, 6), this.gold());
+          post.position.set(Math.cos(a) * 0.075, 0.14, Math.sin(a) * 0.075);
+          g.add(post);
+        }
+        break;
+      }
       case 'gear-large':
       case 'gear-small':
       case 'gear-medium': {
@@ -1187,14 +1355,14 @@ export class HanukkahWorld {
   // ---------------------------------------------------------------------- 2 · workshop
 
   /** Zones on a table and the separate parts that are dragged onto them (shown there once the group has them). */
-  private buildAssembly(puzzle: string, kind: 'ring' | 'square', make: (item: string) => THREE.Object3D, gripY: number) {
+  private buildAssembly(puzzle: string, kind: 'ring' | 'square' | 'pan', make: (item: string) => THREE.Object3D, gripY: number) {
     const def = ASSEMBLIES[puzzle];
     const c = hCenter(def.zone);
     const pads = new Map<string, THREE.Mesh>();
     def.slots.forEach((slot, k) => {
       const [x, z] = def.pad[slot];
       const ring = new THREE.Mesh(
-        kind === 'ring' ? new THREE.RingGeometry(0.2, 0.27, 32) : new THREE.RingGeometry(0.27, 0.33, 4, 1),
+        kind === 'ring' ? new THREE.RingGeometry(0.2, 0.27, 32) : kind === 'pan' ? new THREE.RingGeometry(0.1, 0.13, 28) : new THREE.RingGeometry(0.27, 0.33, 4, 1),
         // not tone-mapped, so the red of a wrong arrangement stays red in the bright room
         new THREE.MeshBasicMaterial({ color: '#e2c27a', transparent: true, opacity: 0.55, toneMapped: false }),
       );
@@ -1207,7 +1375,7 @@ export class HanukkahWorld {
         num.rotation.x = -Math.PI / 2;
         num.position.set(x, def.top + 0.006, c + z);
         this.scene.add(num);
-      } else {
+      } else if (kind === 'square') {
         // a softly lit square where the dreidel stands
         const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.44, 0.44), new THREE.MeshBasicMaterial({ color: '#ffe6a0', transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false }));
         glow.rotation.x = -Math.PI / 2;
@@ -1907,50 +2075,11 @@ export class HanukkahWorld {
       m.position.set(x, y, c + z);
       this.addItem(id, m);
     }
-    // the blue light source on the left wall and the two mirrors on tall stands; the beam is drawn from their state
-    const lamp = new THREE.Group();
-    const housing = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 0.5, 16), this.std('#8a6a3a', { metalness: 0.8, roughness: 0.35 }));
-    housing.rotation.z = Math.PI / 2;
-    this.lightLens = new THREE.Mesh(new THREE.CircleGeometry(0.18, 20), new THREE.MeshBasicMaterial({ color: '#2a3a5a', toneMapped: false }));
-    this.lightLens.rotation.y = Math.PI / 2;
-    this.lightLens.position.x = 0.26;
-    lamp.add(housing, this.lightLens);
-    lamp.position.set(SAMPLE_SOURCE[0], SAMPLE_BEAM_Y, c + SAMPLE_SOURCE[1]);
-    this.scene.add(lamp);
-    this.box(0.2, 3.9, 0.2, this.std('#3a2414'), -7.85, 1.95, c + SAMPLE_SOURCE[1]);
-    SAMPLE_MIRRORS.forEach(([x, z], k) => {
-      this.box(0.18, SAMPLE_BEAM_Y - 0.3, 0.18, this.std('#5a4a3a', { metalness: 0.4 }), x, (SAMPLE_BEAM_Y - 0.3) / 2, c + z);
-      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, 0.12, 20), this.std('#3a2414'));
-      base.position.set(x, 0.06, c + z);
-      this.scene.add(base);
-      const holder = new THREE.Group();
-      holder.position.set(x, SAMPLE_BEAM_Y, c + z);
-      const frame = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.52, 0.05), this.gold());
-      const glassFace = new THREE.Mesh(new THREE.PlaneGeometry(0.64, 0.44), new THREE.MeshStandardMaterial({ color: '#cfe8ff', metalness: 1, roughness: 0.05 }));
-      glassFace.position.z = 0.03;
-      const back = glassFace.clone();
-      back.rotation.y = Math.PI;
-      back.position.z = -0.03;
-      holder.add(frame, glassFace, back);
-      this.scene.add(holder);
-      this.mirrors.push(holder);
-      this.mirrorAngles[k] = 0;
-    });
-    this.beam = new THREE.Group();
-    this.scene.add(this.beam);
-    for (let k = 0; k < 3; k++) {
-      const seg = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1, 10, 1, true), new THREE.MeshBasicMaterial({
-        color: '#7ab8ff', transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
-      }));
-      seg.visible = false;
-      this.beam.add(seg);
-    }
-    this.beamLight = new THREE.PointLight('#6aa8ff', 0, 6, 1.6);
-    this.scene.add(this.beamLight);
-    // the small locked box with a note engraved on its lid
+    this.buildScales(c);
+    // a small locked box; the magic crystal lies on it
     this.box(0.7, 0.45, 0.5, this.wood('#5a3416'), 3.6, 0.23, c - 4.6);
     this.box(0.72, 0.06, 0.52, this.gold(), 3.6, 0.48, c - 4.6);
-    // the exit: a gilded door with the gate symbol; the beam has to reach the symbol above it
+    // the exit: a gilded door with the gate symbol, which glows once the scales are balanced
     this.exitDoor = this.buildDoor('gearworks', c - H_HALF_D, '🚪');
     this.doors.set('exit' as HZone, this.exitDoor);
     this.doorOpen.set('exit' as HZone, 0);
@@ -1958,7 +2087,7 @@ export class HanukkahWorld {
     beyond.position.set(0, DOOR_H / 2, c - H_HALF_D - 1.2);
     this.scene.add(beyond);
     this.gateGlow = new THREE.Mesh(new THREE.CircleGeometry(0.42, 32), new THREE.MeshBasicMaterial({
-      color: '#9fd0ff', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+      color: '#ffd98a', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
     }));
     this.gateGlow.position.set(0, DOOR_H + 0.42, c - H_HALF_D + 0.12);
     this.scene.add(this.gateGlow);
@@ -1966,68 +2095,106 @@ export class HanukkahWorld {
     this.addLight(-4.0, 2.8, c - 5.0, '#ffd59a', 3.5, 5, false);
   }
 
-  /** The beam: from the source to the first mirror, then wherever each mirror really reflects it (spec 1.4). */
-  private updateSample(dt: number, t: number) {
-    if (!this.beam) return;
-    const c = hCenter('gearworks');
-    this.mirrors.forEach((m, k) => {
-      const goal = -(this.mirrorTargets[k] ?? 0) * (Math.PI / 8);
-      let diff = goal - m.rotation.y;
-      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-      m.rotation.y += diff * Math.min(1, dt * 6);
-    });
-    if (this.gearLever) this.gearLever.rotation.z = THREE.MathUtils.lerp(this.gearLever.rotation.z, this.gearsRunning ? -0.5 : 0.5, Math.min(1, dt * 5));
-    (this.lightLens!.material as THREE.MeshBasicMaterial).color.set(this.gearsRunning ? '#9fd0ff' : '#2a3a5a');
-    const segs = this.beam.children as THREE.Mesh[];
-    segs.forEach((s) => (s.visible = false));
-    let reached = false;
-    if (this.gearsRunning) {
-      // trace in the floor plane (x, z), with each mirror's actual angle
-      let p = new THREE.Vector2(SAMPLE_SOURCE[0] + 0.3, SAMPLE_SOURCE[1]);
-      let d = new THREE.Vector2(1, 0);
-      for (let k = 0; k < 3; k++) {
-        let end: THREE.Vector2;
-        let hitMirror = -1;
-        // the next mirror on the ray (within its half width), else the wall of the room
-        let best = Infinity;
-        SAMPLE_MIRRORS.forEach(([mx, mz], i) => {
-          const to = new THREE.Vector2(mx - p.x, mz - p.y);
-          const along = to.dot(d);
-          if (along < 0.2) return;
-          const off = Math.abs(to.x * d.y - to.y * d.x);
-          if (off < 0.3 && along < best) {
-            best = along;
-            hitMirror = i;
-          }
-        });
-        if (hitMirror >= 0) end = new THREE.Vector2(SAMPLE_MIRRORS[hitMirror][0], SAMPLE_MIRRORS[hitMirror][1]);
-        else {
-          // the room's walls: x = ±7.9, z from +6.9 to -6.9 (the back wall holds the gate symbol)
-          const ts = [d.x > 0 ? (7.9 - p.x) / d.x : d.x < 0 ? (-7.9 - p.x) / d.x : Infinity, d.y > 0 ? (6.9 - p.y) / d.y : d.y < 0 ? (-6.9 - p.y) / d.y : Infinity];
-          end = p.clone().addScaledVector(d, Math.min(...ts));
-          reached = Math.abs(end.y + 6.9) < 0.05 && Math.abs(end.x) < 0.45;
-        }
-        const seg = segs[k];
-        const a = new THREE.Vector3(p.x, SAMPLE_BEAM_Y, c + p.y);
-        const b = new THREE.Vector3(end.x, SAMPLE_BEAM_Y, c + end.y);
-        seg.visible = true;
-        seg.scale.set(1, a.distanceTo(b), 1);
-        seg.position.copy(a).lerp(b, 0.5);
-        seg.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
-        (seg.material as THREE.MeshBasicMaterial).opacity = 0.65 + Math.sin(t * 6 + k) * 0.15;
-        if (hitMirror < 0) break;
-        // reflect over the mirror line at the mirror's current angle
-        const ang = -this.mirrors[hitMirror].rotation.y;
-        const m = new THREE.Vector2(Math.cos(ang), Math.sin(ang));
-        d = m.clone().multiplyScalar(2 * d.dot(m)).sub(d).normalize();
-        p = end;
+  /**
+   * The ancient scales on their own table: a post, a beam that leans toward the heavier pan (as the server says —
+   * the weights never reach the client), two hanging pans, the three inscriptions on the wall beside them and the
+   * four things to weigh, found around the room.
+   */
+  private buildScales(c: number) {
+    this.box(2.6, 0.1, 1.2, this.wood('#4a2e1a'), SCALE_X, 0.95, c - 3.25);
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) this.box(0.1, 0.9, 0.1, this.std('#3a2414'), SCALE_X + sx * 1.15, 0.45, c - 3.25 + sz * 0.45);
+    const brass = this.std('#c9a24d', { metalness: 0.85, roughness: 0.3 });
+    this.scaleShine.push(brass);
+    const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 0.06, 24), brass);
+    foot.position.set(SCALE_X, 1.03, c + SCALE_Z);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.035, SCALE_PIVOT_Y - 1.0, 12), brass);
+    post.position.set(SCALE_X, (SCALE_PIVOT_Y + 1.0) / 2, c + SCALE_Z);
+    const crown = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.12, 12), brass);
+    crown.position.set(SCALE_X, SCALE_PIVOT_Y + 0.1, c + SCALE_Z);
+    this.scene.add(foot, post, crown);
+    const beam = new THREE.Group();
+    beam.position.set(SCALE_X, SCALE_PIVOT_Y, c + SCALE_Z);
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(SCALE_ARM * 2 + 0.1, 0.04, 0.05), brass);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.08, 16), brass);
+    hub.rotation.x = Math.PI / 2;
+    // the needle points down from the pivot and swings with the beam
+    const needle = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.22, 8), this.std('#7a1a10'));
+    needle.position.y = -0.14;
+    needle.rotation.z = Math.PI;
+    beam.add(bar, hub, needle);
+    for (const dx of [-SCALE_ARM, SCALE_ARM]) {
+      const end = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), brass);
+      end.position.x = dx;
+      beam.add(end);
+    }
+    this.scene.add(beam);
+    this.scaleBeam = beam;
+    // each pan: a shallow brass dish on three cords that meet under the end of the beam
+    const hang = SCALE_PIVOT_Y - SCALE_PAN_Y;
+    for (let k = 0; k < 2; k++) {
+      const pan = new THREE.Group();
+      const dish = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.3, 0.05, 32), brass);
+      pan.add(dish);
+      for (let j = 0; j < 3; j++) {
+        const a = (j / 3) * Math.PI * 2 + 0.5;
+        const from = new THREE.Vector3(Math.cos(a) * 0.33, 0.02, Math.sin(a) * 0.33);
+        const to = new THREE.Vector3(0, hang, 0);
+        const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, from.distanceTo(to), 5), this.std('#3a2a1a'));
+        cord.position.copy(from).lerp(to, 0.5);
+        cord.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize());
+        pan.add(cord);
       }
+      pan.position.set(SCALE_X + (k ? SCALE_ARM : -SCALE_ARM), SCALE_PAN_Y, c + SCALE_Z);
+      this.scene.add(pan);
+      this.scalePans.push(pan);
     }
-    if (this.beamLight) {
-      this.beamLight.intensity = reached || this.sampleDone ? 6 : 0;
-      this.beamLight.position.set(0, SAMPLE_BEAM_Y, c - H_HALF_D + 0.8);
+    this.buildAssembly('g2-scales', 'pan', (id) => {
+      const part = this.itemModel(id);
+      part.scale.multiplyScalar(1.3);
+      return part;
+    }, 0.08);
+    this.scaleGlow = new THREE.PointLight('#ffd98a', 0, 4, 1.5);
+    this.scaleGlow.position.set(SCALE_X, SCALE_PIVOT_Y + 0.3, c + SCALE_Z + 0.4);
+    this.scene.add(this.scaleGlow);
+    // the three inscriptions, on the wall to the left of the scales
+    const lines = ['שתי נוצות שוקלות כמו המפתח.', 'הגביש שוקל כמו המפתח והנוצה יחד.', 'שעון החול שוקל בדיוק כמו המפתח.'];
+    lines.forEach((text, k) => {
+      this.box(0.05, 0.5, 1.14, this.wood('#3a2414'), -7.97, 2.3, c - 5.6 + k * 1.25);
+      this.label(text, 1.05, 0.42, -7.93, 2.3, c - 5.6 + k * 1.25, Math.PI / 2, { bg: '#e9d8ad' });
+    });
+    // the four things to weigh: on the shelf, on the crate, on the small box and on the floor
+    const where: Record<string, [number, number, number]> = {
+      'sc-feather': [-7.95, 1.4, -3.0], 'sc-key': [6.15, 0.72, 2.8], 'sc-crystal': [3.6, 0.5, -4.6], 'sc-hourglass': [-5.6, 0.02, 3.8],
+    };
+    for (const [id, [x, y, z]] of Object.entries(where)) {
+      const m = this.itemModel(id);
+      m.position.set(x, y, c + z);
+      this.addItem(id, m);
     }
-    if (this.gateGlow) (this.gateGlow.material as THREE.MeshBasicMaterial).opacity = reached || this.sampleDone ? 0.7 + Math.sin(t * 4) * 0.2 : 0;
+  }
+
+  /** Room 2: the lever follows the gears, the beam of the scales leans toward the heavier pan and the pans follow it. */
+  private updateSample(dt: number, t: number) {
+    if (this.gearLever) this.gearLever.rotation.z = THREE.MathUtils.lerp(this.gearLever.rotation.z, this.gearsRunning ? -0.5 : 0.5, Math.min(1, dt * 5));
+    if (this.scaleBeam) {
+      const goal = -this.scaleTilt * 0.16;
+      // the beam settles slowly, with a faint breathing sway
+      this.scaleAngle += (goal - this.scaleAngle) * Math.min(1, dt * 3);
+      this.scaleBeam.rotation.z = this.scaleAngle + Math.sin(t * 2.2) * 0.004;
+      this.scalePans.forEach((pan, k) => {
+        const dx = k ? SCALE_ARM : -SCALE_ARM;
+        pan.position.x = SCALE_X + dx * Math.cos(this.scaleBeam!.rotation.z);
+        pan.position.y = SCALE_PAN_Y + dx * Math.sin(this.scaleBeam!.rotation.z);
+      });
+    }
+    // balanced: the scales shine and the sign above the gate glows
+    const shine = this.sampleDone ? 0.5 + Math.sin(t * 3) * 0.15 : 0;
+    for (const m of this.scaleShine) {
+      m.emissive.set('#ffb347');
+      m.emissiveIntensity = THREE.MathUtils.lerp(m.emissiveIntensity, shine, Math.min(1, dt * 2));
+    }
+    if (this.scaleGlow) this.scaleGlow.intensity = THREE.MathUtils.lerp(this.scaleGlow.intensity, this.sampleDone ? 7 : 0, Math.min(1, dt * 2));
+    if (this.gateGlow) (this.gateGlow.material as THREE.MeshBasicMaterial).opacity = this.sampleDone ? 0.7 + Math.sin(t * 4) * 0.2 : 0;
     if (this.mapWhole) {
       const mat = this.mapWhole.material as THREE.MeshBasicMaterial;
       mat.opacity = THREE.MathUtils.lerp(mat.opacity, this.mapSolved ? 1 : 0, Math.min(1, dt * 2));
@@ -2077,9 +2244,8 @@ export class HanukkahWorld {
     this.setOpen(this.mapDrawer, !!s.clues?.['g1-note']);
     for (const d of this.cabinetDoors) this.setOpen(d, solved('g1-cabinet'));
     this.gearsRunning = solved('g2-gears');
-    const dials = m['g2-mirrors']?.rotations ?? scenario?.puzzles.find((p) => p.id === 'g2-mirrors')?.publicData?.start;
-    if (dials) this.mirrorTargets = [...dials];
-    this.sampleDone = solved('g2-mirrors');
+    this.scaleTilt = m['g2-scales']?.tilt ?? 0;
+    this.sampleDone = solved('g2-scales');
     if (this.exitDoor) this.doorOpen.set('exit' as HZone, s.phase === 'completed' ? 1 : 0);
     this.benchGuess.clear();
     const lampLit = solved('h2-lamp');
@@ -2313,6 +2479,7 @@ export class HanukkahWorld {
   exitBench() {
     if (this.mode !== 'bench') return;
     this.benchDrag = undefined;
+    this.benchPicked = null;
     this.benchHover = null;
     this.benchId = null;
     this.mode = 'play';
@@ -2414,11 +2581,13 @@ export class HanukkahWorld {
           if (seq > 50) goal.set(sx, BENCH_TOP + BENCH_STACK[id], c + sz);
         } else if (slot) {
           const [px, pz] = def.pad[slot];
-          goal = new THREE.Vector3(px, def.top + def.rest[id], c + pz);
+          goal = new THREE.Vector3(px, def.top + def.rest[id] + this.panLift(pid, slot), c + pz);
         } else if (this.benchInv.has(id) && here) {
           const [tx, tz] = def.tray[id];
-          goal = new THREE.Vector3(tx, def.top + def.rest[id], c + tz);
+          goal = new THREE.Vector3(tx, (def.trayTop ?? def.top) + def.rest[id], c + tz);
         }
+        // a part chosen with a tap rises a little, until it is put somewhere
+        if (goal && here && this.benchPicked === id && this.benchDrag?.id !== id) goal = goal.clone().setY(goal.y + 0.1 + Math.sin(t * 5) * 0.02);
         if (!goal) {
           part.visible = false;
           continue;
@@ -2428,7 +2597,7 @@ export class HanukkahWorld {
           part.position.copy(goal).setY(goal.y - 0.3);
           part.visible = true;
         }
-        const fast = lampDone || this.benchDrag?.id === id;
+        const fast = lampDone || this.benchDrag?.id === id || pid === 'g2-scales';
         part.position.lerp(goal, Math.min(1, dt * (fast ? 14 : 9)));
         const shook = this.benchShake.get(id);
         if (shook !== undefined) {
@@ -2443,7 +2612,8 @@ export class HanukkahWorld {
       const flashing = t - a.flash < 1.2;
       for (const [slot, ring] of a.pads) {
         const mat = ring.material as THREE.MeshBasicMaterial;
-        const hot = here && this.benchHover === slot;
+        const hot = here && (this.benchHover === slot || (!!this.benchPicked && !a.slots[slot]));
+        if (pid === 'g2-scales') ring.position.y = def.top + 0.007 + this.panLift(pid, slot);
         if (flashing) {
           mat.color.set('#e8281a');
           mat.opacity = 0.5 + Math.abs(Math.sin((t - a.flash) * 9)) * 0.5;
@@ -2493,6 +2663,12 @@ export class HanukkahWorld {
     }
   }
 
+  /** How far a place has moved up or down with the beam of the scales (0 everywhere else). */
+  private panLift(pid: string, slot: string) {
+    if (pid !== 'g2-scales' || !this.scaleBeam) return 0;
+    return (slot[0] === 'l' ? -SCALE_ARM : SCALE_ARM) * Math.sin(this.scaleBeam.rotation.z);
+  }
+
   private benchPick(): string | null {
     const a = this.benchId ? this.asm.get(this.benchId) : undefined;
     if (!a) return null;
@@ -2521,9 +2697,15 @@ export class HanukkahWorld {
       }
     }
     const id = this.benchPick();
-    if (!id) return;
+    if (!id) {
+      if (this.benchPicked) this.benchPlace(this.benchPicked);
+      return;
+    }
     const part = this.asm.get(this.benchId)!.parts.get(id)!;
-    this.benchDrag = { id, from: this.slotOf(id), pointerId: e.pointerId, pos: part.position.clone().setY(ASSEMBLIES[this.benchId].top + 0.3) };
+    this.benchDrag = {
+      id, from: this.slotOf(id), pointerId: e.pointerId, pos: part.position.clone().setY(ASSEMBLIES[this.benchId].top + 0.3),
+      x: e.clientX, y: e.clientY, far: false,
+    };
     this.canvas.style.cursor = 'grabbing';
     this.local?.reach(this.time);
   }
@@ -2535,6 +2717,10 @@ export class HanukkahWorld {
       this.canvas.style.cursor = this.benchId && !this.benchLocked(this.benchId) && this.benchPick() ? 'grab' : 'default';
       return;
     }
+    // a finger trembles: only a real movement turns a tap into a drag
+    if (!d.far && Math.hypot(e.clientX - d.x, e.clientY - d.y) < (e.pointerType === 'touch' ? 12 : 5)) return;
+    d.far = true;
+    this.benchPicked = null;
     const def = ASSEMBLIES[this.benchId];
     this.raycaster.setFromCamera(this.pointer, this.camera);
     const p = new THREE.Vector3();
@@ -2543,11 +2729,14 @@ export class HanukkahWorld {
     p.x = THREE.MathUtils.clamp(p.x, def.bounds[0], def.bounds[1]);
     p.z = THREE.MathUtils.clamp(p.z, c + def.bounds[2], c + def.bounds[3]);
     d.pos.set(p.x, def.top + 0.3, p.z);
+    // the place under the pointer is found at the height of the places themselves, not of the dragged part
+    const at = new THREE.Vector3();
+    if (!this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -def.top), at)) at.copy(p);
     let best: string | null = null;
     let bestD = def.snap;
     for (const slot of def.slots) {
       const [x, z] = def.pad[slot];
-      const dist = Math.hypot(p.x - x, p.z - (c + z));
+      const dist = Math.hypot(at.x - x, at.z - (c + z));
       if (dist < bestD) {
         bestD = dist;
         best = slot;
@@ -2565,6 +2754,11 @@ export class HanukkahWorld {
     const slot = this.benchHover;
     this.benchHover = null;
     this.canvas.style.cursor = 'grab';
+    // a tap (no drag) chooses the part — or lets it go when it was already chosen
+    if (!d.far) {
+      this.benchPicked = this.benchPicked === d.id ? null : d.id;
+      return;
+    }
     // a part already sitting on that zone keeps it; the dropped part goes back
     if (slot && slots[slot] && slots[slot] !== d.id) {
       this.benchRejected(d.id);
@@ -2574,6 +2768,40 @@ export class HanukkahWorld {
     if (slot === d.from) return;
     this.benchGuess.set(d.id, slot);
     this.cb.onBenchDrop?.(puzzle, d.id, slot, d.from);
+  }
+
+  /** The second tap: the chosen part goes to the free place nearest the finger, or back to the bag when it is far from all. */
+  private benchPlace(id: string) {
+    const puzzle = this.benchId!;
+    const def = ASSEMBLIES[puzzle];
+    const slots = this.asm.get(puzzle)!.slots;
+    this.benchPicked = null;
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const p = new THREE.Vector3();
+    if (!this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -def.top), p)) return;
+    const c = hCenter(def.zone);
+    let best: string | null = null;
+    let bestD = def.snap * 1.6;
+    for (const slot of def.slots) {
+      const [x, z] = def.pad[slot];
+      const dist = Math.hypot(p.x - x, p.z - (c + z));
+      if (dist < bestD) {
+        bestD = dist;
+        best = slot;
+      }
+    }
+    const from = this.slotOf(id);
+    if (best === from) return;
+    if (best && slots[best]) {
+      this.benchRejected(id);
+      this.cb.onBenchDrop?.(puzzle, id, best, from);
+      return;
+    }
+    // far from every place: a part from the bag stays where it is; a placed part goes back to the bag
+    if (!best && !from) return;
+    this.local?.reach(this.time);
+    this.benchGuess.set(id, best);
+    this.cb.onBenchDrop?.(puzzle, id, best, from);
   }
 
   // ======================================================================= maze table (room 3): key and levers used directly
@@ -3064,7 +3292,7 @@ export class HanukkahWorld {
     u.trim.emissiveIntensity = target > 0 ? 0.35 + Math.sin(t * 2) * 0.1 : 0;
   }
 
-  /** Finale of the free game: the group stands before the open gate, lit by the blue beam, and cheers. */
+  /** Finale of the free game: the group stands before the open, glowing gate and cheers. */
   private gateOutro(s: number, t: number) {
     const c = hCenter(H_ZONES[H_ZONES.length - 1]);
     this.camera.position.lerpVectors(new THREE.Vector3(0, 3.0, c + 4.5), new THREE.Vector3(0, 2.3, c + 0.5), THREE.MathUtils.smootherstep(Math.min(1, s / 7), 0, 1));
@@ -3155,7 +3383,7 @@ export class HanukkahWorld {
       c.setPointerCapture(e.pointerId);
       if (this.mode === 'bench') return this.benchDown(e);
       if (this.mode === 'maze') return this.mazeDown(e);
-      this.drag = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId };
+      this.drag = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId, touch: e.pointerType === 'touch' };
     });
     c.addEventListener('pointermove', (e) => {
       if (this.mode === 'bench') return this.benchMove(e);
@@ -3165,7 +3393,7 @@ export class HanukkahWorld {
       if (this.drag && this.drag.id === e.pointerId) {
         const dx = e.clientX - this.drag.x;
         const dy = e.clientY - this.drag.y;
-        if (Math.abs(dx) + Math.abs(dy) > 4) this.drag.moved = true;
+        if (Math.abs(dx) + Math.abs(dy) > (this.drag.touch ? 12 : 4)) this.drag.moved = true;
         if (this.drag.moved && this.mode === 'play') {
           this.camYaw -= dx * 0.005 * this.sensitivity;
           this.camPitch = THREE.MathUtils.clamp(this.camPitch + dy * 0.004 * this.sensitivity, 0.05, 1.1);
@@ -3224,7 +3452,7 @@ export class HanukkahWorld {
     }
   }
 
-  /** Uses the nearest object in reach (mobile action button / keyboard). */
+  /** Uses the nearest object in reach (keyboard). On phones objects are tapped directly. */
   interactNearest() {
     let best: HInteractable | null = null;
     let bestD = Infinity;

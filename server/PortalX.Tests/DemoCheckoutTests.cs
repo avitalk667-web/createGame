@@ -118,7 +118,25 @@ public class DemoCheckoutTests
             }).Build();
         await conn.StartAsync();
         Assert.True((await conn.InvokeAsync<JsonElement>("Connect", token)).GetProperty("ok").GetBoolean());
+        // The Last Portal needs a second participant (connected and ready) before it can start
+        HubConnection? guest = null;
+        if (productId == "last-portal")
+        {
+            Assert.Equal("not-ready", (await conn.InvokeAsync<JsonElement>("StartGame")).GetProperty("code").GetString());
+            var j2 = await http.PostAsJsonAsync($"/api/rooms/{code}/players", new { nickname = "Demo2", characterId = "scholar", appearance = "{}" });
+            var t2 = (await Body(j2)).GetProperty("token").GetString()!;
+            guest = new HubConnectionBuilder()
+                .WithUrl(new Uri(server.BaseAddress, "/hubs/game"), o =>
+                {
+                    o.Transports = HttpTransportType.LongPolling;
+                    o.HttpMessageHandlerFactory = _ => server.CreateHandler();
+                }).Build();
+            await guest.StartAsync();
+            Assert.True((await guest.InvokeAsync<JsonElement>("Connect", t2)).GetProperty("ok").GetBoolean());
+            Assert.True((await guest.InvokeAsync<JsonElement>("SetReady", true)).GetProperty("ok").GetBoolean());
+        }
         var start = await conn.InvokeAsync<JsonElement>("StartGame");
+        if (guest != null) await guest.DisposeAsync();
         Assert.True(start.GetProperty("ok").GetBoolean(), start.ToString());
     }
 

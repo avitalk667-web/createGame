@@ -12,7 +12,7 @@ namespace PortalX.Server.Game;
 /// </summary>
 public sealed partial class GameEngine
 {
-    public static readonly string[] MechanismTypes = ["slots", "maze", "mosaic", "dials"];
+    public static readonly string[] MechanismTypes = ["slots", "maze", "mosaic", "balance"];
 
     // ---------------------------------------------------------------- clues
 
@@ -62,7 +62,7 @@ public sealed partial class GameEngine
                 "slots" => OperateSlots(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
                 "maze" => OperateMaze(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
                 "mosaic" => OperateMosaic(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
-                "dials" => OperateDials(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
+                "balance" => OperateBalance(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
                 _ => ActionOutcome.Fail("wrong-action", "פעולה לא מוכרת."),
             };
         }
@@ -85,7 +85,6 @@ public sealed partial class GameEngine
                 m.Levers = puzzle.PublicData["levers"]!.AsArray().Select(_ => false).ToList();
                 break;
             case "mosaic":
-            case "dials":
                 m.Rotations = puzzle.PublicData["start"]!.AsArray().Select(n => n!.GetValue<int>()).ToList();
                 break;
         }
@@ -331,29 +330,92 @@ public sealed partial class GameEngine
         return Solve(room, scenario, puzzle, state, player, now);
     }
 
-    // ---------------------------------------------------------------- dials (e.g. two mirrors that guide a light beam)
+    // ---------------------------------------------------------------- balance (the ancient scales of the free game)
 
     /// <summary>
-    /// Each dial turns one step at a time through its positions (either way). When every dial stands in its
-    /// solution position the mechanism completes; the positions themselves stay on the server.
+    /// Items are laid in the pans of a scale (slots whose id starts with "l" are the left pan, "r" the right one),
+    /// moved between them or taken back. The beam tilts toward the heavier side; the weights themselves stay on the
+    /// server. "activate" checks the balance: every item must be in a pan and both pans must weigh the same.
     /// </summary>
-    private ActionOutcome OperateDials(GameRoom room, ScenarioContent scenario, PuzzleContent puzzle, PuzzleState state,
+    private ActionOutcome OperateBalance(GameRoom room, ScenarioContent scenario, PuzzleContent puzzle, PuzzleState state,
         PlayerSession player, WorldState world, MechanismState mech, string op, JsonElement action, DateTime now)
     {
-        if (op != "rotate") return ActionOutcome.Fail("bad-action", "פעולה לא מוכרת.");
-        var i = action.GetProperty("index").GetInt32();
-        var dials = puzzle.PublicData["dials"]!.AsArray();
-        if (i < 0 || i >= mech.Rotations.Count || i >= dials.Count) return ActionOutcome.Fail("bad-dial", "החלק הזה לא קיים.");
-        var positions = dials[i]!["positions"]!.GetValue<int>();
-        var step = action.TryGetProperty("dir", out var d) && d.ValueKind == JsonValueKind.Number && d.GetInt32() < 0 ? -1 : 1;
-        mech.Rotations[i] = ((mech.Rotations[i] + step) % positions + positions) % positions;
-        Contribute(world, player.Id);
-        var target = puzzle.Solution["positions"]!.AsArray().Select(n => n!.GetValue<int>()).ToList();
-        var done = target.Count == mech.Rotations.Count && target.Zip(mech.Rotations).All(t => t.First == t.Second);
-        SaveWorld(room, world, now);
-        if (!done) return new ActionOutcome(true, "rotated", "", [], true);
-        state.Attempts++;
-        return Solve(room, scenario, puzzle, state, player, now);
+        var slotIds = puzzle.PublicData["slots"]!.AsArray().Select(n => n!["id"]!.GetValue<string>()).ToList();
+        var accepts = puzzle.PublicData["accepts"]!.AsArray().Select(n => n!.GetValue<string>()).ToHashSet();
+        var weights = puzzle.Solution["weights"]!.AsObject();
+        int Pan(char side) => mech.Slots.Where(kv => kv.Key[0] == side).Sum(kv => weights[kv.Value]!.GetValue<int>());
+        void Weigh()
+        {
+            mech.Tilt = Math.Sign(Pan('r') - Pan('l'));
+            mech.Ready = mech.Slots.Count == accepts.Count && mech.Tilt == 0;
+        }
+
+        switch (op)
+        {
+            case "place":
+            {
+                var slot = action.GetProperty("slot").GetString() ?? "";
+                var itemId = action.GetProperty("item").GetString() ?? "";
+                if (!slotIds.Contains(slot)) return ActionOutcome.Fail("bad-slot", "המקום הזה לא קיים.");
+                if (!accepts.Contains(itemId)) return ActionOutcome.Fail("not-fitting", "החפץ הזה לא שייך למאזניים.");
+                if (mech.Slots.TryGetValue(slot, out var there) && there != itemId)
+                    return ActionOutcome.Fail("slot-taken", "המקום הזה כבר תפוס. הרימו קודם את מה שמונח בו.");
+                // an item already in a pan moves to the other place; otherwise it comes from the group's bag
+                var from = mech.Slots.FirstOrDefault(kv => kv.Value == itemId).Key;
+                if (from == slot) return new ActionOutcome(true, "noop", "", [], false);
+                if (from != null)
+                {
+                    mech.Slots.Remove(from);
+                    mech.SlotBy.Remove(from);
+                }
+                else if (!world.Inventory.Remove(itemId)) return ActionOutcome.Fail("item-missing", "החפץ הזה אינו בתיק. הרימו אותו קודם.");
+                mech.Slots[slot] = itemId;
+                mech.SlotBy[slot] = player.Id.ToString();
+                Weigh();
+                Contribute(world, player.Id);
+                SaveWorld(room, world, now);
+                var item = scenario.Item(itemId)!;
+                return new ActionOutcome(true, "placed", $"{item.Name} — בכף {(slot[0] == 'l' ? "השמאלית" : "הימנית")}",
+                    [new("item-placed", $"{player.Nickname} הניח {item.Name} על המאזניים", player.Id.ToString(), puzzle.Id, ItemId: itemId)], true);
+            }
+            case "remove":
+            {
+                var slot = action.GetProperty("slot").GetString() ?? "";
+                if (!mech.Slots.TryGetValue(slot, out var itemId)) return ActionOutcome.Fail("slot-empty", "המקום הזה ריק.");
+                mech.Slots.Remove(slot);
+                mech.SlotBy.Remove(slot);
+                world.Inventory.Add(itemId);
+                Weigh();
+                SaveWorld(room, world, now);
+                return ActionOutcome.Done($"{scenario.Item(itemId)?.Name} חזר לתיק");
+            }
+            case "activate":
+            {
+                var missing = accepts.Count - mech.Slots.Count;
+                if (missing > 0) return ActionOutcome.Fail("not-ready", puzzle.PublicData["incompleteMessage"]!.GetValue<string>());
+                Weigh();
+                state.Attempts++;
+                if (!mech.Ready)
+                {
+                    SaveWorld(room, world, now);
+                    return new ActionOutcome(false, "wrong-answer", puzzle.Failure,
+                        [new("wrong-answer", puzzle.Failure, player.Id.ToString(), puzzle.Id)], true);
+                }
+                return Solve(room, scenario, puzzle, state, player, now);
+            }
+            case "reset":
+            {
+                if (mech.Slots.Count == 0) return new ActionOutcome(true, "noop", "כל החפצים כבר בתיק.", [], false);
+                foreach (var it in mech.Slots.Values) world.Inventory.Add(it);
+                mech.Slots.Clear();
+                mech.SlotBy.Clear();
+                Weigh();
+                SaveWorld(room, world, now);
+                return ActionOutcome.Done("החפצים ירדו מהמאזניים וחזרו לתיק");
+            }
+            default:
+                return ActionOutcome.Fail("bad-action", "פעולה לא מוכרת.");
+        }
     }
 
     // ---------------------------------------------------------------- scoring

@@ -94,3 +94,21 @@ public sealed class GoogleMailOptions
         };
     }
 }
+
+/// <summary>
+/// The business rule for results emails, kept apart from the sending service so it can change on its own.
+/// PORTALX_RESULTS_REQUIRE_MARKETING_CONSENT (default true): results are emailed only to someone who also gave explicit
+/// marketing consent in the same form. The two are still stored separately. Check this rule legally before relying on it:
+/// a service email and marketing consent are different purposes.
+/// </summary>
+public sealed class ResultsEmailPolicy
+{
+    public const string ConsentRequiredMessage = "כדי לקבל את התוצאות במייל יש לאשר קבלת מיילים מ־PORTAL X. אם אינכם מעוניינים — התוצאות נשארות כאן על המסך.";
+
+    public bool RequireMarketingConsent { get; init; } = true;
+
+    public static ResultsEmailPolicy FromConfig(IConfiguration c) => new()
+    {
+        RequireMarketingConsent = !string.Equals(c["PORTALX_RESULTS_REQUIRE_MARKETING_CONSENT"]?.Trim(), "false", StringComparison.OrdinalIgnoreCase),
+    };
+}

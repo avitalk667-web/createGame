@@ -126,6 +126,8 @@ export interface MechanismState {
   levers: boolean[];
   progress: number;
   rotations: number[];
+  /** The scales: -1 the left pan is heavier, 0 level, 1 the right pan is heavier. */
+  tilt?: number;
   revealed?: string | null;
   lit?: number[][];
   reached?: boolean;

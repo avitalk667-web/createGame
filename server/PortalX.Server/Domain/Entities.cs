@@ -165,6 +165,8 @@ public sealed class MechanismState
     public int Progress { get; set; }
     /// <summary>Mosaic: quarter turns of each stone.</summary>
     public List<int> Rotations { get; set; } = new();
+    /// <summary>Scales: where the beam leans (-1 left pan heavier, 0 level, 1 right pan heavier).</summary>
+    public int Tilt { get; set; }
     /// <summary>Something the solved mechanism reveals, e.g. the code in the maze's collection box.</summary>
     public string? Revealed { get; set; }
 }

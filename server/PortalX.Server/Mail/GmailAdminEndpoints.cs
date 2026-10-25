@@ -11,7 +11,7 @@ public static class GmailAdminEndpoints
     /// <summary>Inside the secured admin group (admin session + admin header on every call).</summary>
     public static void MapGmailAdmin(this RouteGroupBuilder secured)
     {
-        secured.MapGet("/email/status", async (GmailAccount gmail, SiteOptions site) =>
+        secured.MapGet("/email/status", async (GmailAccount gmail, SiteOptions site, ResultsEmailPolicy policy) =>
         {
             var v = await gmail.ViewAsync();
             return Results.Ok(new
@@ -21,6 +21,14 @@ public static class GmailAdminEndpoints
                 siteUrl = site.SiteUrl,
                 communityGroup = site.CommunityGroupUrl != null,
                 communityGroupRejected = site.CommunityGroupRejected,
+                // the documented wording and behaviour of the end-of-game form
+                resultsPolicy = new
+                {
+                    requireMarketingConsent = policy.RequireMarketingConsent,
+                    consentVersion = ResultsEmailService.ConsentVersion,
+                    consentText = ResultsEmailService.ConsentText,
+                    refusedMessage = ResultsEmailPolicy.ConsentRequiredMessage,
+                },
             });
         });
 

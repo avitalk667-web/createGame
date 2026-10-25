@@ -71,6 +71,7 @@ export interface EmailSetup {
   status: 'connected' | 'needs-reconnect' | 'not-connected'; connected: boolean; needsReconnect: boolean;
   lastError?: string | null; lastErrorAt?: string | null; connectedAt?: string | null; lastSendAt?: string | null; lastTestSentAt?: string | null;
   sendScopeGranted: boolean; siteUrl?: string | null; communityGroup: boolean; communityGroupRejected: boolean;
+  resultsPolicy: { requireMarketingConsent: boolean; consentVersion: string; consentText: string; refusedMessage: string };
 }
 
 export interface MailingList {

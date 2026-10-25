@@ -76,10 +76,9 @@ public class OneToFourPlayersTests
     // ------------------------------------------------------------------ 1–4 players
 
     [Theory]
-    [InlineData("last-portal")]
     [InlineData("hanukkah-oil")]
     [InlineData("gate-of-secrets")]
-    public void Every_game_starts_with_a_single_player_and_takes_up_to_four(string scenario)
+    public void The_hanukkah_and_free_games_start_with_a_single_player_and_take_up_to_four(string scenario)
     {
         var e = new GameEngine(Catalog, new GameOptions());
         Assert.Equal(1, e.MinPlayers(Catalog.Get(scenario)));
@@ -99,7 +98,79 @@ public class OneToFourPlayersTests
     {
         // production once had Game__MinPlayersOverride=2; it may only lower a game's minimum
         var e = new GameEngine(Catalog, new GameOptions { MinPlayersOverride = 2 });
-        foreach (var s in Catalog.All) Assert.Equal(1, e.MinPlayers(s));
+        foreach (var s in Catalog.All) Assert.Equal(s.Id == "last-portal" ? 2 : 1, e.MinPlayers(s));
+    }
+
+    [Fact]
+    public void The_last_portal_needs_two_to_four_players()
+    {
+        var e = new GameEngine(Catalog, new GameOptions());
+        Assert.Equal(2, e.MinPlayers(Catalog.Get("last-portal")));
+        var r = e.CreateRoom("last-portal", "TWO234", "hash", T0);
+        Assert.True(e.AddPlayer(r, "מארח", "explorer", "{}", "t0", true, T0, out var host).Ok);
+        host!.IsConnected = true;
+        // alone: the host cannot start, with the game's own message
+        Assert.Equal("כדי להתחיל את ההרפתקה צריך לפחות שני משתתפים.", e.StartBlocker(r));
+        Assert.Equal("not-ready", e.StartGame(r, host.Id, T0).Code);
+        Assert.True(e.AddPlayer(r, "שני", "scholar", "{}", "t1", false, T0, out var second).Ok);
+        second!.IsConnected = true;
+        // a joined player who is not connected does not count
+        second.IsConnected = false;
+        Assert.NotNull(e.StartBlocker(r));
+        second.IsConnected = true;
+        second.IsReady = true;
+        Assert.Null(e.StartBlocker(r));
+        Assert.True(e.StartGame(r, host.Id, T0).Ok);
+        for (var i = 2; i < 4; i++) Assert.True(e.AddPlayer(r, "שחקן" + i, GameEngine.Characters[i], "{}", "t" + i, false, T0, out _).Ok);
+        var fifth = e.AddPlayer(r, "חמישי", "explorer", "{}", "t5", false, T0, out _);
+        Assert.Equal("room-full", fifth.Code);
+        Assert.Equal("החדר מלא. ניתן להשתתף עם עד ארבעה שחקנים.", fifth.Message);
+    }
+
+    [Fact]
+    public async Task The_last_portal_refuses_a_fifth_player_joining_at_the_same_moment()
+    {
+        var http = _factory.CreateClient();
+        var (code, _) = await TestPurchase.PaidRoomAsync(http, _factory.Services);
+        var joins = await Task.WhenAll(Enumerable.Range(0, 7).Select(i => _factory.CreateClient().PostAsJsonAsync($"/api/rooms/{code}/players",
+            new { nickname = "Player" + i, characterId = GameEngine.Characters[i % 4], appearance = "{}" })));
+        Assert.Equal(4, joins.Count(j => j.StatusCode == HttpStatusCode.OK));
+        foreach (var refused in joins.Where(j => j.StatusCode != HttpStatusCode.OK))
+            Assert.Equal("החדר מלא. ניתן להשתתף עם עד ארבעה שחקנים.", (await Body(refused)).GetProperty("message").GetString());
+        var info = await Body(await http.GetAsync($"/api/rooms/{code}"));
+        Assert.Equal(2, info.GetProperty("minPlayers").GetInt32());
+        Assert.Equal(4, info.GetProperty("maxPlayers").GetInt32());
+    }
+
+    [Fact]
+    public void The_last_portal_hints_never_state_an_answer()
+    {
+        var s = Catalog.Get("last-portal");
+        string[] answers = ["שער", "749", "7, 4, 9", "שבע, ארבע, תשע", "אמונה", "שמש, כתר, עלה", "ג׳, אחריו א׳", "טיפה היא ש", "מראות א׳"];
+        foreach (var p in s.Puzzles)
+        {
+            Assert.Equal(3, p.Hints.Count);
+            foreach (var h in p.Hints)
+                foreach (var a in answers) Assert.DoesNotContain(a, h);
+        }
+        // the same texts are what players see in the hint captions
+        var voice = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(FindRepo(), "client", "public", "audio", "he", "voice-script.json")));
+        var lines = voice.RootElement.GetProperty("lines").EnumerateArray()
+            .Where(l => System.Text.RegularExpressions.Regex.IsMatch(l.GetProperty("id").GetString()!, @"^p\d-[a-z]+_hint\d$")).ToList();
+        Assert.Equal(18, lines.Count);
+        foreach (var l in lines)
+        {
+            var id = l.GetProperty("id").GetString()!;
+            var puzzle = s.Puzzles.First(p => id.StartsWith(p.Id + "_"));
+            Assert.Equal(puzzle.Hints[int.Parse(id[^1..]) - 1], l.GetProperty("text").GetString());
+        }
+    }
+
+    private static string FindRepo()
+    {
+        var d = new DirectoryInfo(AppContext.BaseDirectory);
+        while (d != null && !Directory.Exists(Path.Combine(d.FullName, "client"))) d = d.Parent;
+        return d!.FullName;
     }
 
     [Fact]

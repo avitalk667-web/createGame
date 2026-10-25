@@ -28,7 +28,7 @@ export type Sfx =
   | 'click' | 'pickup' | 'wrong' | 'success' | 'door' | 'whoosh' | 'hint' | 'chat' | 'letter' | 'open' | 'step'
   // actions in the newer rooms
   | 'select' | 'drawer' | 'key' | 'lever' | 'gear' | 'place' | 'misplace' | 'spin' | 'codeOk' | 'points' | 'complete'
-  | 'paper' | 'find' | 'metal' | 'mechanism' | 'mirror' | 'beam' | 'gate' | 'cabinet' | 'glass' | 'oil' | 'decode' | 'transition';
+  | 'paper' | 'find' | 'metal' | 'mechanism' | 'scale' | 'beam' | 'gate' | 'cabinet' | 'glass' | 'oil' | 'decode' | 'transition';
 
 type Voice = 'pluck' | 'piano' | 'bell' | 'glow';
 
@@ -351,9 +351,11 @@ export class AudioService {
         this.noise(t, 1.3, 220, 0.18);
         [392, 523, 659].forEach((f, i) => this.tone(f, t + 1.0 + i * 0.1, 0.9, 'triangle', 0.1, true));
         break;
-      case 'mirror':
-        this.tone(1319, t, 0.3, 'sine', 0.06, true);
-        this.tone(1976, t + 0.05, 0.3, 'sine', 0.04, true);
+      case 'scale':
+        // the brass beam swings: a soft creak and a small chime of the pans
+        this.noise(t, 0.25, 500, 0.06);
+        this.tone(988, t + 0.12, 0.5, 'sine', 0.05, true);
+        this.tone(1480, t + 0.16, 0.4, 'sine', 0.03, true);
         break;
       case 'glass':
         [2093, 2637, 3136].forEach((f, i) => this.tone(f, t + i * 0.06, 0.5, 'sine', 0.05, true));

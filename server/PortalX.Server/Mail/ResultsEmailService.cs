@@ -20,11 +20,11 @@ public sealed record EndOfGameReply(bool Ok, string Code, string Message, string
 /// records. Mail goes out from the server only, built from the stored game data, once per player and round.
 /// </summary>
 public sealed partial class ResultsEmailService(
-    PortalDbContext db, RoomService rooms, ScenarioCatalog scenarios, IEmailSender sender, SiteOptions site,
+    PortalDbContext db, RoomService rooms, ScenarioCatalog scenarios, IEmailSender sender, SiteOptions site, ResultsEmailPolicy policy,
     UnsubscribeLinks links, ILogger<ResultsEmailService> logger)
 {
-    public const string ConsentVersion = "2026-10-v1";
-    public const string ConsentText = "אני מסכים/ה לקבל מיילים שיווקיים ועדכונים מ-PORTAL X על משחקים חדשים, הטבות, קופונים ותכנים נוספים. ניתן להסיר את ההסכמה בכל עת.";
+    public const string ConsentVersion = "2026-10-v2";
+    public const string ConsentText = "אני מסכים/ה לקבל מיילים שיווקיים ועדכונים מ-PORTAL X על משחקים חדשים, הטבות, קופונים ותכנים נוספים. ניתן לבטל את ההסכמה בכל עת.";
     public const string SentMessage = "התוצאות נשלחו! כדאי לבדוק גם בתיקיית הספאם.";
     public const string FailedMessage = "לא הצלחנו לשלוח את המייל כרגע. התוצאות שמורות — אפשר לנסות שוב בעוד רגע.";
     public const string UncertainMessage = "לא ברור אם המייל נשלח (החיבור נקטע). בדקו בעוד כמה דקות את תיבת הדואר וגם את תיקיית הספאם; אם לא הגיע, אפשר לנסות שוב.";
@@ -61,6 +61,9 @@ public sealed partial class ResultsEmailService(
         if (player == null) return (new(false, "not-in-room", "רק משתתף במשחק יכול לבקש את התוצאות שלו."), 403);
         if (room.Phase != RoomPhase.Completed) return (new(false, "not-finished", "התוצאות יהיו זמינות בסיום המשחק."), 409);
         if (!c.SendResults && !c.MarketingConsent && !c.CommunityLink) return (new(false, "nothing-chosen", "לא נבחרה אף אפשרות."), 400);
+        // the business rule (ResultsEmailPolicy): results go only with explicit marketing consent given in this same form
+        if (c.SendResults && policy.RequireMarketingConsent && !c.MarketingConsent)
+            return (new(false, "consent-required", ResultsEmailPolicy.ConsentRequiredMessage), 400);
 
         string? email = null;
         if (c.SendResults || c.MarketingConsent)

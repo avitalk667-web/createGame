@@ -99,7 +99,7 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
         // a disconnected player's reserved seat counts; an expired reservation does not
         // checked under the room's lock, so two players joining at the same moment can never both take the last seat
         if (SeatsTaken(room, now) >= MaxPlayers(room))
-            return ActionOutcome.Fail("room-full", "המשחק מלא. אפשר להצטרף לאחר שמתפנה מקום.");
+            return ActionOutcome.Fail("room-full", scenario.FullMessage ?? "המשחק מלא. אפשר להצטרף לאחר שמתפנה מקום.");
         ReleaseExpiredSeats(room, now);
 
         var nameError = ValidateNickname(nickname);
@@ -155,7 +155,7 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
         var scenario = catalog.Get(room.ScenarioId);
         var present = ActivePlayers(room).Where(p => p.IsConnected).ToList();
         var min = MinPlayers(scenario);
-        if (present.Count < min) return $"צריך לפחות {min} משתתפים מחוברים כדי להתחיל (כרגע {present.Count}).";
+        if (present.Count < min) return scenario.MinPlayersMessage ?? $"צריך לפחות {min} משתתפים מחוברים כדי להתחיל (כרגע {present.Count}).";
         var notReady = present.Where(p => !p.IsReady && p.Id != room.HostPlayerId).Select(p => p.Nickname).ToList();
         if (notReady.Count > 0) return "ממתינים שכולם יסמנו „מוכן”: " + string.Join(", ", notReady);
         return null;

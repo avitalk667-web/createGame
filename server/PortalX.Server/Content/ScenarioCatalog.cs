@@ -14,6 +14,10 @@ public sealed class ScenarioContent
     public required string Difficulty { get; init; }
     public int MinPlayers { get; init; } = 1;
     public int MaxPlayers { get; init; } = 4;
+    /// <summary>Shown in the lobby while fewer than MinPlayers are present (e.g. a game that needs at least two).</summary>
+    public string? MinPlayersMessage { get; init; }
+    /// <summary>Shown to a player who cannot join because the game is full; the general message is used otherwise.</summary>
+    public string? FullMessage { get; init; }
     public required string FinalWord { get; init; }
     public required List<ZoneContent> Zones { get; init; }
     public required List<ItemContent> Items { get; init; }

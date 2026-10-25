@@ -21,20 +21,20 @@ interface Toast { id: number; text: string; kind: string }
 
 const PUZZLE_PANEL: Record<string, HPanel> = {
   'h1-riddle': 'riddle', 'h2-lamp': 'lamp', 'h3-maze': 'maze', 'h3-box': 'box', 'h4-wheel': 'wheel', 'h5-stand': 'stand',
-  'g1-cabinet': 'cabinet', 'g2-mirrors': 'mirror',
+  'g1-cabinet': 'cabinet',
   'h5-lock': 'lock', 'h6-jugs': 'jugs', 'h7-mosaic': 'mosaic', 'h8-pedestals': 'pedestals', 'h8-final': 'final',
 };
 
 /** The Hanukkah game: opening scene, eight rooms, puzzles, scores, chat, finale and results. */
 /** The sound of each solved puzzle, heard once by every player with its celebration (spec 3, 4). */
 const SOLVE_SOUND: Record<string, Sfx> = {
-  'g1-map': 'decode', 'g1-symbols': 'success', 'g1-cabinet': 'cabinet', 'g2-gears': 'mechanism', 'g2-mirrors': 'beam',
+  'g1-map': 'decode', 'g1-symbols': 'success', 'g1-cabinet': 'cabinet', 'g2-gears': 'mechanism', 'g2-scales': 'gate',
   'h1-riddle': 'decode', 'h2-lamp': 'beam', 'h3-maze': 'success', 'h3-box': 'drawer', 'h4-wheel': 'decode',
   'h5-stand': 'success', 'h5-lock': 'codeOk', 'h6-jugs': 'oil', 'h7-mosaic': 'beam', 'h8-pedestals': 'success',
 };
 
 /** Laying a part in its place on a table: map paper, a gear on its axle, a dreidel on its stand. */
-const PLACE_SOUND: Record<string, Sfx> = { 'g1-map': 'paper', 'g2-gears': 'gear', 'g1-symbols': 'place', 'h5-stand': 'place', 'h2-lamp': 'place' };
+const PLACE_SOUND: Record<string, Sfx> = { 'g1-map': 'paper', 'g2-gears': 'gear', 'g2-scales': 'scale', 'g1-symbols': 'place', 'h5-stand': 'place', 'h2-lamp': 'place' };
 
 function pickupSound(item: string): Sfx {
   if (item.startsWith('map-')) return 'find';
@@ -75,6 +75,7 @@ function pickupSound(item: string): Sfx {
     }
 
     @if (phase() === 'playing') {
+      <div class="hud-col">
       <header class="hud-top">
         <div class="zone card">
           <b>{{ zoneName(zone()) }}</b>
@@ -120,6 +121,7 @@ function pickupSound(item: string): Sfx {
           </p>
         }
       </aside>
+      </div>
 
       @if (focus(); as f) {
         <section class="bench card" role="region" [attr.aria-label]="focusPuzzle()?.title">
@@ -132,6 +134,9 @@ function pickupSound(item: string): Sfx {
           } @else {
             <p class="b-ins">{{ FOCUS_HELP[f] || focusPuzzle()?.instructions }}</p>
             @if (f !== 'h3-maze' && !benchHasParts()) { <p class="muted small">{{ EMPTY_LABEL[f] }}</p> }
+            @if (f === 'g2-scales' && scaleNotes().length) {
+              <ul class="b-notes" aria-label="החריטות שמצאתם">@for (n of scaleNotes(); track n) { <li>📜 {{ n }}</li> }</ul>
+            }
             @if (f === 'h3-maze') { <p class="muted small">סמלים שהמפתח עבר לפי הסדר: {{ game.snapshot()?.mechanisms?.['h3-maze']?.progress ?? 0 }} מתוך 3</p> }
             @if (benchMsg(); as m) { <p class="b-msg" [class.bad]="!m.ok" role="status">{{ m.text }}</p> }
             @for (h of focusState()?.hints ?? []; track $index) { <p class="b-hint">💡 {{ h }}</p> }
@@ -186,7 +191,6 @@ function pickupSound(item: string): Sfx {
 
       @if (touch && !focus()) {
         <px-joystick class="joy" (changed)="world?.setJoystick($event.x, $event.y)" />
-        <button class="btn primary act" (click)="interactNearest()">פעולה</button>
       }
     }
 
@@ -251,7 +255,8 @@ function pickupSound(item: string): Sfx {
       background: linear-gradient(180deg, rgba(40,30,8,.92), rgba(14,20,44,.94)); border:1px solid var(--gold); }
     .bench header { display:flex; justify-content:space-between; align-items:center; gap:.6rem; } .bench header b { font-family: var(--font-title); color: var(--gold-2); font-size:1.2rem; }
     .b-ins { margin:0; line-height:1.6; } .b-msg { margin:0; color:#9be3b4; } .b-msg.bad { color:#ffb4a3; } .b-ok { margin:0; color:#9be3b4; font-size:1.1rem; }
-    .b-hint { margin:0; color:#cfe2ff; } .b-actions { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; }
+    .b-hint { margin:0; color:#cfe2ff; }
+    .b-notes { margin:0; padding:0; list-style:none; display:grid; gap:.2rem; color:#f3e2b8; font-size:.92rem; } .b-actions { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; }
     @media (max-width: 760px) {
       .bench { bottom:8px; padding:.6rem .7rem; gap:.3rem; }
       .bench .b-ins { font-size:.84rem; line-height:1.45; max-height:4.4em; overflow:auto; }
@@ -264,6 +269,8 @@ function pickupSound(item: string): Sfx {
     .mission { position:fixed; top:14vh; left:0; right:0; margin-inline:auto; z-index:7; max-width:540px; width:calc(100% - 32px); animation: fadein .8s ease both; }
     .mission ul { line-height:1.9; padding-inline-start:1.2rem; }
     .cine-actions { position:fixed; bottom: calc(9vh + 12px); inset-inline-end:16px; z-index:8; }
+    /* on a computer the column is only a wrapper: its parts keep their own places */
+    .hud-col { display:contents; }
     .hud-top { position:fixed; top:10px; inset-inline:10px; display:flex; gap:.6rem; align-items:flex-start; z-index:10; pointer-events:none; flex-wrap:wrap; }
     .hud-top > * { pointer-events:auto; }
     .zone { display:flex; align-items:center; gap:.6rem; padding:.5rem .9rem; color: var(--gold-2); }
@@ -306,7 +313,6 @@ function pickupSound(item: string): Sfx {
     .toast.zone-unlocked, .toast.clue, .toast.mechanism { border-color: var(--gold-2); color: var(--gold-2); } .toast.wrong-answer { border-color: rgba(226,113,91,.6); }
     .toast.hint { border-color: var(--blue); } .toast.score-group { border-color: var(--ok); color:#9be3b4; }
     .joy { position:fixed; bottom:90px; left:20px; z-index:11; }
-    .act { position:fixed; bottom:110px; right:20px; z-index:11; width:86px; height:86px; border-radius:50%; }
     .celebrate { position:fixed; inset:0; z-index:70; pointer-events:none; display:flex; justify-content:center; align-items:flex-start; padding-top:15vh; }
     .card-c { pointer-events:auto; text-align:center; background: linear-gradient(180deg, rgba(40,30,8,.95), rgba(14,20,44,.95)); border:2px solid var(--gold-2);
       border-radius:20px; padding:1rem 2rem 1.2rem; box-shadow: 0 0 60px rgba(224,185,92,.45); animation: popIn .5s cubic-bezier(.2,1.4,.4,1) both; max-width:calc(100% - 32px); }
@@ -321,8 +327,23 @@ function pickupSound(item: string): Sfx {
     .host-away { position:fixed; top:58px; left:0; right:0; margin-inline:auto; width:fit-content; z-index:12; background: rgba(122,58,18,.92); color:#fff;
       border-radius:999px; padding:.3rem .5rem .3rem 1rem; display:flex; gap:.6rem; align-items:center; }
     @media (max-width: 760px) {
-      .objectives { top:auto; bottom:150px; width:calc(100% - 20px); max-height:30vh; overflow:auto; } .objectives.collapsed { width:auto; }
-      .score { top:104px; width:170px; font-size:.85rem; } .hover-label { display:none; } .inventory { max-width: calc(100% - 150px); }
+      /* one column at the top — the bar, then the tasks beside the score — laid out in flow, so they never overlap */
+      .hud-col { display:flex; flex-direction:column; gap:.4rem; position:fixed; z-index:10; pointer-events:none;
+        top:max(8px, env(safe-area-inset-top)); inset-inline:max(8px, env(safe-area-inset-left)); max-height:52vh; }
+      .hud-col > * { pointer-events:auto; }
+      .hud-col .hud-top { position:static; inset:auto; }
+      .hud-col .objectives, .hud-col .score { position:static; inset:auto; margin:0; }
+      .hud-col .objectives { order:2; width:auto; flex:1 1 auto; min-height:0; max-height:34vh; overflow:auto; overscroll-behavior:contain; touch-action:pan-y; padding:.5rem .7rem; }
+      .hud-col .objectives.collapsed { flex:0 0 auto; align-self:flex-start; }
+      .hud-col .score { order:3; width:auto; font-size:.82rem; max-height:16vh; overflow:auto; overscroll-behavior:contain; padding:.35rem .6rem; }
+      .hover-label { display:none; }
+      /* the bag: one row that scrolls sideways, at the bottom edge — it never grows over the tasks */
+      .hud-bottom { bottom:max(8px, env(safe-area-inset-bottom)); }
+      .inventory { flex-wrap:nowrap; overflow-x:auto; overscroll-behavior:contain; max-width: calc(100% - 150px); padding:.35rem .6rem; }
+      .inventory > * { flex-shrink:0; }
+      /* the bag keeps its name for screen readers (aria-label); on a narrow screen the room goes to the items */
+      .inventory > .muted.small { display:none; }
+      .joy { bottom:calc(84px + env(safe-area-inset-bottom)); }
     }
   `],
 })
@@ -330,8 +351,8 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
   game = inject(GameService);
   private audio = inject(AudioService);
   settings = inject(SettingsService);
-  /** Mirror positions last heard, so a turn sounds once for everyone who sees it move. */
-  private mirrorDials?: string;
+  /** Where the scales leaned when last heard, so a swing sounds once for everyone who sees it. */
+  private scaleTilt?: number;
   private ngZone = inject(NgZone);
   private destroyRef = inject(DestroyRef);
   leave = output<void>();
@@ -349,14 +370,15 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
   texts = computed(() => this.isSample()
     ? { title: 'שער הסודות — משחק התנסות חינמי', mission: 'עברו את שער הסודות', rooms: 'שני חדרים — כל חדר שנפתר פותח את הדלת לבא אחריו', done: 'עברתם את שער הסודות! ראו את התוצאות, וגלו את המשחקים המלאים של PORTAL X.' }
     : { title: 'סוד פך השמן — מסע בעקבות נס החנוכה', mission: 'גלו את סוד פך השמן', rooms: 'שמונה חדרים רציפים — כל חדר שנפתר פותח את הדלת לבא אחריו', done: 'גיליתם את סוד פך השמן והשלמתם את מסע החנוכה.' });
-  readonly CHECK_LABEL: Record<string, string> = { 'h2-lamp': 'בדוק הרכבה', 'g1-map': 'בדוק את המפה', 'g2-gears': 'הפעלת הידית' };
-  readonly RESET_LABEL: Record<string, string> = { 'h5-stand': 'החזר סביבונים', 'g1-symbols': 'החזר סמלים', 'g1-map': 'החזר חלקים', 'g2-gears': 'החזר גלגלים' };
+  readonly CHECK_LABEL: Record<string, string> = { 'h2-lamp': 'בדוק הרכבה', 'g1-map': 'בדוק את המפה', 'g2-gears': 'הפעלת הידית', 'g2-scales': 'בדיקת האיזון' };
+  readonly RESET_LABEL: Record<string, string> = { 'h5-stand': 'החזר סביבונים', 'g1-symbols': 'החזר סמלים', 'g1-map': 'החזר חלקים', 'g2-gears': 'החזר גלגלים', 'g2-scales': 'הורדת החפצים' };
   readonly EMPTY_LABEL: Record<string, string> = {
     'h2-lamp': 'אין חלקים על השולחן — חפשו את חלקי המנורה בחדר והרימו אותם.',
     'h5-stand': 'אין סביבונים בתיק — חפשו את ארבעת הסביבונים בחדר והרימו אותם.',
     'g1-map': 'אין חלקי מפה בתיק — חפשו אותם על השולחן, במגירה ובמדף.',
     'g1-symbols': 'אין סמלים בתיק — חפשו בחדר את המצפן, המפתח, הספר והמנורה.',
     'g2-gears': 'אין גלגלי שיניים בתיק — חפשו אותם בסדנה והרימו אותם.',
+    'g2-scales': 'אין חפצים לשקילה בתיק — חפשו בסדנה נוצה, מפתח עתיק, גביש קסום ושעון חול.',
   };
   hover = signal<HInteractable | null>(null);
   panel = signal<{ id: HPanel; ref?: string } | null>(null);
@@ -385,12 +407,18 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     const accepts: string[] = this.focusPuzzle()?.publicData?.accepts ?? [];
     return accepts.some((i) => s?.inventory.includes(i)) || Object.keys((id && s?.mechanisms?.[id]?.slots) || {}).length > 0;
   });
+  /** The inscriptions of the scales the group has read so far, shown beside the scales. */
+  scaleNotes = computed(() => {
+    const read = this.game.snapshot()?.clues ?? {};
+    return (this.game.scenario()?.clues ?? []).filter((c) => c.id.startsWith('g2-scale-') && read[c.id]).map((c) => c.text);
+  });
   readonly FOCUS_HELP: Record<string, string> = {
     'h2-lamp': '',
     'h5-stand': 'גררו כל סביבון אל אחת מארבע המשבצות במתקן, לפי ארבעת הרמזים. אפשר להרים סביבון ולהניח אותו מחדש. כשסיימתם — לחצו „בדוק סידור”.',
     'g1-map': 'גררו כל חלק מפה אל מקומו על השולחן — לכל חלק צד ישר אחד שמראה איפה הוא. כשהמפה שלמה, יופיע עליה רמז.',
     'g1-symbols': 'גררו את ארבעת הסמלים אל ארבעת המקומות הממוספרים, לפי ההוראה שעל המפה. כשסיימתם — לחצו „בדוק סידור”.',
     'g2-gears': 'גררו כל גלגל שיניים אל הציר המתאים לפי האיור שעל הקיר, ואז לחצו על הידית האדומה (או על „הפעלת הידית”).',
+    'g2-scales': 'גררו כל חפץ אל אחת מכפות המאזניים — או הקישו על חפץ ואחר כך על מקום פנוי בכף. אפשר להעביר חפץ בין הכפות או להחזיר אותו לשולחן. היעזרו בשלוש החריטות שעל הקיר, וכשכל החפצים על המאזניים — לחצו „בדיקת האיזון”.',
     'h3-maze': 'גררו את המפתח על הלוח לאורך המסלול — הוא לא עובר דרך קירות. לחצו על ידית כדי להזיז אותה ולפתוח או לסגור שער. התיבה שבצד נפתחת בקוד שיתגלה ביציאה.',
   };
   readonly FOCUS_DONE: Record<string, string> = {
@@ -398,7 +426,8 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     'h5-stand': 'כל הסביבונים במקומם! קראו את הספרות שלפניהם משמאל לימין, שורה אחר שורה, והזינו את הקוד במנעול שבדלת.',
     'g1-map': 'המפה שלמה! עליה כתוב: „התחילו במה שמראה כיוון, המשיכו במה שפותח מנעול, אחר כך חפשו את מה שקוראים בו, וסיימו במה שמפיצה אור.”',
     'g1-symbols': 'הסמלים במקומם! הספרות מופיעות לפני הסמלים — קראו אותן לפי סדר המקומות והזינו בארון.',
-    'g2-gears': 'המנגנון מסתובב ומקור האור הכחול נדלק! עכשיו כוונו את שתי המראות בחדר.',
+    'g2-gears': 'המנגנון מסתובב והמאזניים העתיקים השתחררו! עכשיו אזנו אותם בעזרת ארבעת החפצים.',
+    'g2-scales': 'הצלחתם לאזן את המאזניים! המנגנון העתיק התעורר לחיים.',
     'h3-maze': 'המפתח הגיע ליציאה! הקוד שהתגלה מוצג ליד הלוח — לחצו על התיבה שבצד כדי להזין אותו.',
   };
   tick = signal(0);
@@ -561,15 +590,12 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     return zone === 'mosaic' ? 'magic' : 'hanukkah';
   }
 
-  /** Room music, the light source's hum and the mirrors — all follow the shared server state, so everyone hears the same. */
+  /** Room music and the swing of the scales — both follow the shared server state, so everyone hears the same. */
   private updateSound(s: RoomSnapshot) {
     if (s.phase === 'playing') this.audio.setMusic(this.musicFor(s));
-    const light = this.isSample() && s.phase === 'playing' && this.zone() === 'gearworks'
-      && s.puzzles.find((p) => p.id === 'g2-gears')?.status === 'solved';
-    this.audio.setAmbience(light ? 'light' : null);
-    const dials = JSON.stringify(s.mechanisms?.['g2-mirrors']?.rotations ?? null);
-    if (this.mirrorDials !== undefined && dials !== this.mirrorDials && s.phase === 'playing') this.audio.sfx('mirror');
-    this.mirrorDials = dials;
+    const tilt = s.mechanisms?.['g2-scales']?.tilt ?? 0;
+    if (this.scaleTilt !== undefined && tilt !== this.scaleTilt && s.phase === 'playing') this.audio.sfx('scale');
+    this.scaleTilt = tilt;
   }
 
   private onPhase(phase: string) {
@@ -767,7 +793,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     if (!content) return;
     const nextPuzzle = sc!.puzzles.find((p) => p.requiresPuzzle === puzzleId);
     const next = nextPuzzle?.objective ?? (content.unlocksZone ? `עוברים יחד אל ${this.zoneName(content.unlocksZone)}` : undefined);
-    const mechanism = ['slots', 'maze', 'mosaic'].includes(content.type);
+    const mechanism = ['slots', 'maze', 'mosaic', 'balance'].includes(content.type);
     this.audio.cue(SOLVE_SOUND[puzzleId] ?? 'success', 80);
     this.celebration.set({
       name: this.game.playerName(state?.solvedBy) || 'הקבוצה',
@@ -839,7 +865,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
         else if (def.panel === 'symbols') this.openBench('g1-symbols');
         else if (def.panel === 'gears') this.openBench('g2-gears');
         else if (def.panel === 'cabinet') this.openBox('g1-cabinet', 'cabinet');
-        else if (def.panel === 'mirror') this.turnMirror(+(def.ref ?? 0));
+        else if (def.panel === 'scales') this.openScales();
         else this.panel.set({ id: def.panel!, ref: def.ref });
         return;
     }
@@ -861,7 +887,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
       .filter((x) => x.zone === this.zone())
       .sort((a, b) => a.order - b.order)
       .find((x) => s?.puzzles.find((y) => y.id === x.id)?.status === 'active');
-    if (p && ['h2-lamp', 'h5-stand', 'g1-map', 'g1-symbols', 'g2-gears'].includes(p.id)) this.openBench(p.id);
+    if (p && ['h2-lamp', 'h5-stand', 'g1-map', 'g1-symbols', 'g2-gears', 'g2-scales'].includes(p.id)) this.openBench(p.id);
     else if (p?.id === 'h3-maze') this.openMaze();
     else if (p && PUZZLE_PANEL[p.id]) this.panel.set({ id: PUZZLE_PANEL[p.id] });
     else this.toast('אין בחדר הזה חידה פתוחה.', 'info');
@@ -892,6 +918,16 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     this.benchMsg.set(null);
     this.world.enterBench(puzzle);
     this.focus.set(this.world.isBench ? puzzle : null);
+  }
+
+  /** The scales hang still until the gears turn the mechanism. */
+  openScales() {
+    if (this.game.snapshot()?.puzzles.find((p) => p.id === 'g2-scales')?.status === 'locked') {
+      this.audio.sfx('wrong');
+      this.toast('המאזניים עדיין נעולים — קודם הפעילו את מנגנון גלגלי השיניים.', 'info');
+      return;
+    }
+    this.openBench('g2-scales');
   }
 
   openMaze() {
@@ -959,6 +995,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     }
     if (!slot) {
       this.audio.sfx('click');
+      this.benchMsg.set(null);
       return;
     }
     const r = await this.benchOp(puzzle, { op: 'place', slot, item });
@@ -983,7 +1020,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     if (puzzle === 'g2-gears') this.audio.sfx('lever');
     const r = await this.benchOp(puzzle, { op: 'activate' });
     if (r.ok) {
-      this.benchMsg.set({ ok: true, text: puzzle === 'h2-lamp' ? 'המנורה מורכבת נכון!' : 'הסידור נכון!' });
+      this.benchMsg.set({ ok: true, text: puzzle === 'h2-lamp' ? 'המנורה מורכבת נכון!' : puzzle === 'g2-scales' ? 'המאזניים מאוזנים!' : 'הסידור נכון!' });
       return;
     }
     this.benchMsg.set({ ok: false, text: r.message });
@@ -1009,19 +1046,6 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     } finally {
       this.benchBusy.set(false);
     }
-  }
-
-  /** A mirror in the workshop turns one eighth with every click, for everyone (spec 1.4). */
-  async turnMirror(index: number) {
-    const state = this.game.snapshot()?.puzzles.find((p) => p.id === 'g2-mirrors')?.status;
-    if (state === 'locked') {
-      this.toast('המראות עדיין לא מחוברות — קודם הפעילו את מנגנון גלגלי השיניים.', 'info');
-      return;
-    }
-    if (state === 'solved') return;
-    // the turn sounds for everyone once the mirror moves (updateSound)
-    const r = await this.game.operate('g2-mirrors', { op: 'rotate', index });
-    if (!r.ok) this.toast(r.message, 'info');
   }
 
   /** One step of the dragged maze key; the server checks walls, gates and the order of the symbols. */

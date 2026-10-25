@@ -48,6 +48,7 @@ builder.Services.Configure<AdminOptions>(builder.Configuration.GetSection("Admin
 builder.Services.AddScoped<AdminService>();
 // email: the contact address, SMTP settings (environment only), results emails, consents and unsubscribe links
 builder.Services.AddSingleton(sp => PortalX.Server.Mail.SiteOptions.FromConfig(sp.GetRequiredService<IConfiguration>()));
+builder.Services.AddSingleton(sp => PortalX.Server.Mail.ResultsEmailPolicy.FromConfig(sp.GetRequiredService<IConfiguration>()));
 // sending: Gmail API over HTTPS with OAuth (no SMTP); the refresh token is kept encrypted in the database
 builder.Services.AddSingleton(sp => PortalX.Server.Mail.GoogleMailOptions.FromConfig(sp.GetRequiredService<IConfiguration>(), sp.GetRequiredService<PortalX.Server.Mail.SiteOptions>()));
 builder.Services.AddSingleton<PortalX.Server.Mail.GoogleHttp>();

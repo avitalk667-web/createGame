@@ -316,6 +316,15 @@ const ACTIONS: Record<string, string> = {
                   <button class="btn" (click)="sendTestEmail()" [disabled]="busy() || !es.connected">שליחת מייל בדיקה אל {{ es.sender }}</button>
                 </div>
                 @if (testResult(); as t) { <p class="msg-box" [class.ok]="t.ok" role="status">{{ t.text }}</p> }
+                <h3>מדיניות הטופס בסיום המשחק</h3>
+                <ul class="status-list">
+                  <li>שליחת תוצאות במייל: <b>{{ es.resultsPolicy.requireMarketingConsent ? 'רק עם הסכמה שיווקית מפורשת באותו טופס' : 'גם בלי הסכמה שיווקית' }}</b>
+                    (הגדרה <code dir="ltr">PORTALX_RESULTS_REQUIRE_MARKETING_CONSENT</code>)</li>
+                  <li>נוסח ההסכמה (גרסה <span dir="ltr">{{ es.resultsPolicy.consentVersion }}</span>): „{{ es.resultsPolicy.consentText }}”</li>
+                  @if (es.resultsPolicy.requireMarketingConsent) { <li>הודעה למי שלא סימן הסכמה: „{{ es.resultsPolicy.refusedMessage }}”</li> }
+                  <li>ההסכמה ובקשת התוצאות נשמרות בנפרד. אין לסמן מראש. ביטול הסכמה עוצר דיוור, ואינו מתחדש בלי סימון חדש.</li>
+                </ul>
+                <p class="muted small">התניית מייל שירות בהסכמה שיווקית עשויה לעורר קושי משפטי — יש לבדוק עם עורך דין לפני הפעלה מסחרית.</p>
                 <p class="muted small">בחיבור תועברו לעמוד של Google. יש להתחבר בחשבון {{ es.sender }} ולאשר שליחת מיילים. הטוקנים נשמרים בשרת מוצפנים ואינם מוצגים כאן.</p>
               </section>
             }

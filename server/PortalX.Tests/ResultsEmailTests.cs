@@ -48,7 +48,7 @@ public class ResultsEmailTests
 
     public ResultsEmailTests(HubIntegrationTests.Factory factory) => _factory = factory;
 
-    private (WebApplicationFactory<Program> F, FakeEmailSender Mail) WithMail()
+    private (WebApplicationFactory<Program> F, FakeEmailSender Mail) WithMail(bool requireConsent = false)
     {
         var mail = new FakeEmailSender();
         var f = _factory.WithWebHostBuilder(b =>
@@ -57,6 +57,7 @@ public class ResultsEmailTests
             {
                 ["PORTALX_COMMUNITY_GROUP_URL"] = GroupUrl,
                 ["PORTALX_SITE_URL"] = "https://portalx.test",
+                ["PORTALX_RESULTS_REQUIRE_MARKETING_CONSENT"] = requireConsent ? "true" : "false",
                 ["RateLimits:ResultsEmailPer10Minutes"] = "100000",
                 ["RateLimits:UnsubscribePerMinute"] = "100000",
             }));
@@ -352,7 +353,7 @@ public class ResultsEmailTests
         Assert.False(site.GetProperty("communityGroup").GetBoolean());
         var (code, seats) = await FinishedGameAsync(_factory, "gate-of-secrets");
         var r = await http.PostAsJsonAsync($"/api/rooms/{code}/results-email",
-            new { token = seats[0].Token, sendResults = true, email = Unique("n"), marketingConsent = false, communityLink = false });
+            new { token = seats[0].Token, sendResults = true, email = Unique("n"), marketingConsent = true, communityLink = false });
         Assert.Equal(HttpStatusCode.ServiceUnavailable, r.StatusCode);
     }
 
@@ -434,6 +435,48 @@ public class ResultsEmailTests
         var site = SiteOptions.FromConfig(config);
         Assert.Equal(expected, site.CommunityGroupUrl);
         Assert.Equal(rejected, site.CommunityGroupRejected);
+    }
+
+    // the business rule: results by email only with explicit marketing consent, both stored apart
+    [Fact]
+    public async Task With_the_consent_rule_results_are_sent_only_with_explicit_marketing_consent()
+    {
+        var (f, mail) = WithMail(requireConsent: true);
+        using var _ = f;
+        var site = await Body(await f.CreateClient().GetAsync("/api/site"));
+        Assert.True(site.GetProperty("resultsRequireConsent").GetBoolean());
+        Assert.Contains("ניתן לבטל את ההסכמה בכל עת", site.GetProperty("consentText").GetString());
+
+        var (code, seats) = await FinishedGameAsync(f, "gate-of-secrets");
+        var address = Unique("rule");
+        var refused = await Ask(f, code, seats[0].Token, true, address);
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        var body = await Body(refused);
+        Assert.Equal("consent-required", body.GetProperty("code").GetString());
+        Assert.Equal(ResultsEmailPolicy.ConsentRequiredMessage, body.GetProperty("message").GetString());
+        Assert.Empty(mail.Sent);
+        Assert.False(await Db(f, db => db.ResultEmailRequests.AnyAsync(x => x.PlayerId == seats[0].Id)));
+        Assert.False(await Db(f, db => db.MarketingConsents.AnyAsync(c => c.Email == address.ToLowerInvariant())));
+
+        var ok = await Body(await Ask(f, code, seats[0].Token, true, address, marketing: true));
+        Assert.True(ok.GetProperty("ok").GetBoolean());
+        Assert.True(ok.GetProperty("consentRecorded").GetBoolean());
+        Assert.Single(mail.Sent);
+        // two separate records: the service request and the consent, each with its own status
+        var req = await Db(f, db => db.ResultEmailRequests.AsNoTracking().SingleAsync(x => x.PlayerId == seats[0].Id));
+        Assert.Equal(ResultEmailStatus.Sent, req.Status);
+        var consent = await Db(f, db => db.MarketingConsents.AsNoTracking().SingleAsync(c => c.Email == address.ToLowerInvariant()));
+        Assert.Equal(ConsentStatus.Active, consent.Status);
+        Assert.Equal("2026-10-v2", consent.ConsentVersion);
+        Assert.Equal("gate-of-secrets", consent.Source);
+
+        // after unsubscribing, a later request without a new tick is refused and does not re-subscribe
+        var token = mail.Sent[0].UnsubscribeUrl!.Split("#t=")[1];
+        Assert.Equal(HttpStatusCode.OK, (await f.CreateClient().PostAsJsonAsync("/api/unsubscribe", new { token })).StatusCode);
+        var (code2, seats2) = await FinishedGameAsync(f, "hanukkah-oil");
+        Assert.Equal(HttpStatusCode.BadRequest, (await Ask(f, code2, seats2[0].Token, true, address)).StatusCode);
+        Assert.Equal(ConsentStatus.Revoked, (await Db(f, db => db.MarketingConsents.AsNoTracking().SingleAsync(c => c.Email == address.ToLowerInvariant()))).Status);
+        Assert.Single(mail.Sent);
     }
 
     [Fact]

@@ -8,7 +8,7 @@ import { HPanel } from './h-layout';
 const PANEL_PUZZLE: Record<HPanel, string> = {
   riddle: 'h1-riddle', lamp: 'h2-lamp', maze: 'h3-maze', box: 'h3-box', wheel: 'h4-wheel', stand: 'h5-stand',
   lock: 'h5-lock', jugs: 'h6-jugs', mosaic: 'h7-mosaic', pedestals: 'h8-pedestals', final: 'h8-final',
-  map: 'g1-map', symbols: 'g1-symbols', cabinet: 'g1-cabinet', gears: 'g2-gears', mirror: 'g2-mirrors',
+  map: 'g1-map', symbols: 'g1-symbols', cabinet: 'g1-cabinet', gears: 'g2-gears', scales: 'g2-scales',
 };
 
 export const ITEM_EMOJI: Record<string, string> = {
@@ -17,6 +17,7 @@ export const ITEM_EMOJI: Record<string, string> = {
   'dreidel-pe': 'פ', 'flame-symbol': '🔥', 'golden-jug': '🏺', 'blue-crystal': '🔷',
   'map-left': '🗺️', 'map-middle': '🗺️', 'map-right': '🗺️', 'sym-compass': '🧭', 'sym-key': '🗝️', 'sym-book': '📖', 'sym-lamp': '🪔',
   'gs-golden-key': '🔑', 'gear-large': '⚙️', 'gear-small': '⚙️', 'gear-medium': '⚙️',
+  'sc-feather': '🪶', 'sc-key': '🗝️', 'sc-crystal': '💎', 'sc-hourglass': '⏳',
 };
 
 const LETTERS = 'אבגדהוזחטיכלמנסעפצקרשת'.split('');
@@ -104,15 +105,6 @@ const MAZE_SYMBOLS: Record<string, string> = { '*': '⭐', F: '🔥', M: '🕎',
             @case ('cabinet') {
               @if (backsLine()) { <p class="reveal">בגב הסמלים, לפי סדר המקומות: <b dir="ltr">{{ backsLine() }}</b></p> }
               <ng-container *ngTemplateOutlet="digits" />
-            }
-            @case ('mirror') {
-              <p class="muted small">אפשר ללחוץ על המראות בחדר עצמו, או כאן. כל לחיצה מסובבת מראה בשמינית סיבוב.</p>
-              <div class="options">
-                @for (d of data().dials; track $index; let i = $index) {
-                  <button class="btn" (click)="operate({ op: 'rotate', index: i, dir: -1 })" [disabled]="busy() || state()?.status === 'solved'">↺ {{ d.label }}</button>
-                  <button class="btn" (click)="operate({ op: 'rotate', index: i })" [disabled]="busy() || state()?.status === 'solved'">{{ d.label }} ↻</button>
-                }
-              </div>
             }
             @case ('lock') {
               @if (backsLine()) { <p class="reveal">בגב הסביבונים: <b dir="ltr">{{ backsLine() }}</b></p> }
