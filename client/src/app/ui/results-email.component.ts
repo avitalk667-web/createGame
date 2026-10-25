@@ -132,7 +132,7 @@ export class ResultsEmailComponent {
       });
       if (r.resultsStatus === 'sent') this.sent.set(true);
       // a failed send keeps the other choices (already saved) and offers to try again — never a second email after success
-      this.failed.set(!r.ok && r.code === 'send-failed');
+      this.failed.set(!r.ok && (r.code === 'send-failed' || r.code === 'send-uncertain'));
       if (r.consentRecorded) this.consentSaved.set(true);
       if (r.communityGroupUrl) this.groupUrl.set(r.communityGroupUrl);
       this.reply.set({ ok: r.ok, message: r.message });

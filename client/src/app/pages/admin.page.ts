@@ -3,9 +3,9 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { Router, RouterLink } from '@angular/router';
 import { sessionStore } from '../core/api.service';
 import {
-  AdminApiService, AdminFilters, AdminGame, AdminOrder, AdminProduct, AuditEntry, CouponRow, CouponUse, Dashboard, FaqRow, MailingFilters, MailingList, MailStatus } from '../core/admin-api.service';
+  AdminApiService, AdminFilters, AdminGame, AdminOrder, AdminProduct, AuditEntry, CouponRow, CouponUse, Dashboard, FaqRow, EmailSetup, MailingFilters, MailingList } from '../core/admin-api.service';
 
-type Tab = 'dashboard' | 'orders' | 'games' | 'products' | 'faq' | 'coupons' | 'mailing' | 'audit';
+type Tab = 'dashboard' | 'orders' | 'games' | 'products' | 'faq' | 'coupons' | 'mailing' | 'email-setup' | 'audit';
 
 /** The coupon form as typed (spec 4.3). Dates are local date-time strings from the inputs. */
 interface CouponForm {
@@ -292,6 +292,34 @@ const ACTIONS: Record<string, string> = {
             <h2>שאלות קבועות (מגיעות עם האתר)</h2>
             <ol class="fixed-faq">@for (q of faqBuiltIn(); track q.question) { <li><b>{{ q.question }}</b> {{ q.answer }}</li> }</ol>
           }
+          @case ('email-setup') {
+            @if (gmailResult(); as g) {
+              <p class="msg-box" [class.ok]="GMAIL_RESULT[g]?.ok" role="status">{{ GMAIL_RESULT[g]?.text ?? ('תוצאת החיבור: ' + g) }}</p>
+            }
+            @if (emailSetup(); as es) {
+              <section class="card setup">
+                <h2>הגדרת שליחת מיילים — Gmail API</h2>
+                <p class="muted small">המיילים נשלחים מהשרת דרך Gmail API (HTTPS) מהחשבון <b dir="ltr">{{ es.sender }}</b>, בהרשאת שליחה בלבד. אין שימוש ב־SMTP.</p>
+                <ul class="status-list">
+                  <li>הגדרות OAuth בשרת: <b>{{ es.configured ? 'קיימות' : 'חסרות' }}</b>
+                    @if (!es.configured) { — <span dir="ltr">{{ es.missing.join(', ') }}</span> }</li>
+                  <li>כתובת החזרה (Redirect URI) שיש להגדיר ב־Google Cloud: <code dir="ltr">{{ es.redirectUri ?? 'לא הוגדרה' }}</code></li>
+                  <li>מצב החיבור: <b [class.good]="es.connected" [class.bad]="es.needsReconnect">{{ es.connected ? 'מחובר' : es.needsReconnect ? 'דרוש חיבור מחדש' : 'לא מחובר' }}</b>
+                    @if (es.connectedAt) { · חובר ב־{{ es.connectedAt | date: 'd.M.yy HH:mm' }} }</li>
+                  @if (es.lastError) { <li>שגיאה אחרונה: <b class="bad">{{ emailErrorLabel(es.lastError) }}</b> @if (es.lastErrorAt) { ({{ es.lastErrorAt | date: 'd.M.yy HH:mm' }}) }</li> }
+                  <li>מייל בדיקה אחרון שאושר: {{ es.lastTestSentAt ? (es.lastTestSentAt | date: 'd.M.yy HH:mm') : 'עדיין לא נשלח' }}</li>
+                  <li>שליחה אחרונה שאושרה: {{ es.lastSendAt ? (es.lastSendAt | date: 'd.M.yy HH:mm') : '—' }}</li>
+                  <li>קישור לקבוצת העדכונים: {{ es.communityGroup ? 'מוגדר' : es.communityGroupRejected ? 'הוגדר אבל אינו קישור https תקין' : 'לא מוגדר' }}</li>
+                </ul>
+                <div class="actions-row">
+                  <button class="btn primary" (click)="connectGmail()" [disabled]="busy() || !es.configured">{{ es.connected || es.needsReconnect ? 'חיבור Gmail מחדש' : 'חיבור חשבון Gmail' }}</button>
+                  <button class="btn" (click)="sendTestEmail()" [disabled]="busy() || !es.connected">שליחת מייל בדיקה אל {{ es.sender }}</button>
+                </div>
+                @if (testResult(); as t) { <p class="msg-box" [class.ok]="t.ok" role="status">{{ t.text }}</p> }
+                <p class="muted small">בחיבור תועברו לעמוד של Google. יש להתחבר בחשבון {{ es.sender }} ולאשר שליחת מיילים. הטוקנים נשמרים בשרת מוצפנים ואינם מוצגים כאן.</p>
+              </section>
+            }
+          }
           @case ('mailing') {
             <form class="filters card" (submit)="$event.preventDefault(); reload()">
               <label>חיפוש כתובת <input dir="ltr" [value]="mf().search ?? ''" (input)="setM('search', $any($event.target).value)" placeholder="name@" /></label>
@@ -302,7 +330,7 @@ const ACTIONS: Record<string, string> = {
               </label>
               <label>שליחת תוצאות
                 <select [value]="mf().status ?? ''" (change)="setM('status', $any($event.target).value)">
-                  <option value="">הכול</option><option value="sent">נשלח</option><option value="pending">ממתין</option><option value="failed">נכשל</option>
+                  <option value="">הכול</option><option value="sent">נשלח</option><option value="pending">ממתין</option><option value="failed">נכשל</option><option value="uncertain">לא ודאי</option>
                 </select>
               </label>
               <label>משחק
@@ -315,23 +343,6 @@ const ACTIONS: Record<string, string> = {
               <label>עד תאריך <input type="date" [value]="mf().to ?? ''" (change)="setM('to', $any($event.target).value)" /></label>
               <button class="btn small" type="submit">סינון</button>
             </form>
-            @if (mailStatus(); as ms) {
-              <section class="card mail-status" [class.bad]="ms.smtpServer !== 'reachable'">
-                <h2>מצב שליחת המיילים</h2>
-                <ul>
-                  <li>הגדרות SMTP: {{ ms.smtpConfigured ? 'התקבלו' : 'חסרות — ' + ms.missing.join(', ') }}
-                    @if (ms.smtpConfigured) { <span dir="ltr">({{ ms.host }}:{{ ms.port }}{{ ms.tls ? ', TLS' : '' }})</span> · משתמש {{ ms.usernameSet ? '✓' : '✗' }} · סיסמת אפליקציה {{ ms.appPasswordSet ? '✓' : '✗' }} }</li>
-                  <li>חיבור לשרת הדואר: <b>{{ reachLabel(ms.smtpServer) }}</b></li>
-                  <li>שולח: <span dir="ltr">{{ ms.fromName }} &lt;{{ ms.fromEmail }}&gt;</span> · מענה ל־<span dir="ltr">{{ ms.replyTo }}</span></li>
-                  <li>כתובת האתר לקישורים: <span dir="ltr">{{ ms.siteUrl ?? 'לפי כתובת הבקשה' }}</span></li>
-                  <li>קישור לקבוצה: {{ ms.communityGroup ? 'מוגדר' : ms.communityGroupRejected ? 'הוגדר אבל אינו קישור https תקין' : 'לא מוגדר' }}</li>
-                  <li>מפתח קישורי הסרה: {{ ms.unsubscribeSecretSet ? 'מוגדר' : ms.unsubscribeSecretTooShort ? 'קצר מדי (נדרשים 32 תווים לפחות) — נעשה שימוש במפתח השמור במסד' : 'נשמר במסד (לא הוגדר משתנה)' }}</li>
-                </ul>
-                @if (ms.smtpServer === 'timeout' || ms.smtpServer === 'unreachable') {
-                  <p class="muted small">השרת לא מצליח להתחבר לשרת הדואר. ב־Render בתוכנית החינמית חסומות יציאות SMTP (25, 465, 587) — צריך תוכנית בתשלום או שירות שליחה דרך HTTPS.</p>
-                }
-              </section>
-            }
             @if (mailing(); as m) {
               <div class="cards">
                 <div class="stat card"><span>כתובות שביקשו תוצאות</span><b>{{ m.totals.resultsAddresses }}</b><small>{{ m.totals.resultsSent }} מיילי תוצאות נשלחו · אינם מנויים שיווקיים</small></div>
@@ -341,12 +352,13 @@ const ACTIONS: Record<string, string> = {
               <div class="bar"><span class="muted">{{ m.rows.length }} כתובות</span><a class="btn small" [href]="mailingCsvUrl()" download>ייצוא CSV</a></div>
               <div class="table-wrap">
                 <table>
-                  <thead><tr><th>כתובת מייל</th><th>בקשת תוצאות</th><th>משחק אחרון</th><th>שליחת תוצאות</th><th>הסכמה שיווקית</th><th>תאריך הסכמה</th><th>תאריך ביטול</th><th>קישור לקבוצה</th><th>מקור</th></tr></thead>
+                  <thead><tr><th>כתובת מייל</th><th>בקשת תוצאות</th><th>שליחה אחרונה</th><th>משחק אחרון</th><th>שליחת תוצאות</th><th>הסכמה שיווקית</th><th>תאריך הסכמה</th><th>תאריך ביטול</th><th>קישור לקבוצה</th><th>מקור</th></tr></thead>
                   <tbody>
                     @for (r of m.rows; track r.email) {
                       <tr>
                         <td dir="ltr">{{ r.email }}</td>
                         <td>{{ r.lastResultsRequestAt ? (r.lastResultsRequestAt | date: 'd.M.yy HH:mm') : '—' }}</td>
+                        <td>{{ r.lastSentAt ? (r.lastSentAt | date: 'd.M.yy HH:mm') : '—' }}</td>
                         <td>{{ r.lastGameName ?? '—' }}</td>
                         <td>@if (r.resultsStatus) { <span class="st" [attr.data-s]="r.resultsStatus === 'sent' ? 'paid' : r.resultsStatus === 'failed' ? 'failed' : ''">{{ mailLabel(r.resultsStatus) }}</span> } @else { — }</td>
                         <td><span class="st" [attr.data-s]="r.consent === 'active' ? 'paid' : r.consent === 'revoked' ? 'failed' : ''">{{ consentLabel(r.consent) }}</span></td>
@@ -355,7 +367,7 @@ const ACTIONS: Record<string, string> = {
                         <td>{{ r.groupLinkRequested ? 'ביקש קישור' : '—' }}</td>
                         <td>{{ gameName(r.source) }}</td>
                       </tr>
-                    } @empty { <tr><td colspan="9" class="muted">אין כתובות בסינון הזה.</td></tr> }
+                    } @empty { <tr><td colspan="10" class="muted">אין כתובות בסינון הזה.</td></tr> }
                   </tbody>
                 </table>
               </div>
@@ -470,8 +482,11 @@ const ACTIONS: Record<string, string> = {
     .filters label.check { flex-direction:row; align-items:center; gap:.4rem; }
     .cards { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:.8rem; }
     .stat { display:flex; flex-direction:column; gap:.2rem; padding:1rem; }
-    .mail-status { padding:1rem; margin-bottom:1rem; border-color:var(--ok); } .mail-status.bad { border-color:var(--bad); }
-    .mail-status h2 { margin:0 0 .4rem; font-size:1.1rem; } .mail-status ul { margin:0; padding-inline-start:1.2rem; line-height:1.8; }
+    .setup { padding:1.1rem; } .setup h2 { margin:0 0 .4rem; font-size:1.2rem; }
+    .status-list { margin:.6rem 0; padding-inline-start:1.2rem; line-height:1.9; } .status-list code { background:rgba(255,255,255,.06); padding:.1rem .4rem; border-radius:6px; word-break:break-all; }
+    .good { color:#9be3b4; } .bad { color:#ffb4a6; }
+    .actions-row { display:flex; gap:.6rem; flex-wrap:wrap; margin:.6rem 0; }
+    .msg-box { padding:.6rem .9rem; border-radius:10px; background:rgba(255,120,100,.12); color:#ffd2c8; } .msg-box.ok { background:rgba(120,220,160,.12); color:#bff0cf; }
     .free-report { padding:1rem; margin:1.2rem 0; border-color:var(--gold); }
     .free-report h2 { margin:0; font-size:1.2rem; } .free-report .cards { grid-template-columns:repeat(3, minmax(0,1fr)); margin:.8rem 0 .4rem; }
     .stat b.date { font-size:1.15rem; }
@@ -516,7 +531,7 @@ export class AdminPage {
   private router = inject(Router);
   tabs: { id: Tab; label: string }[] = [
     { id: 'dashboard', label: 'לוח בקרה' }, { id: 'orders', label: 'רכישות' }, { id: 'games', label: 'משחקים' },
-    { id: 'products', label: 'מוצרים ומחירים' }, { id: 'faq', label: 'שאלות ותשובות' }, { id: 'coupons', label: 'קופונים והנחות' }, { id: 'mailing', label: 'רשימת מיילים והסכמות' },
+    { id: 'products', label: 'מוצרים ומחירים' }, { id: 'faq', label: 'שאלות ותשובות' }, { id: 'coupons', label: 'קופונים והנחות' }, { id: 'mailing', label: 'מיילים ותוצאות' }, { id: 'email-setup', label: 'הגדרת שליחת מיילים' },
     { id: 'audit', label: 'יומן פעולות' },
   ];
   state = signal<'loading' | 'denied' | 'ok'>('loading');
@@ -539,10 +554,56 @@ export class AdminPage {
   // mailing list and consents (results emails, marketing consent and group-link requests kept apart)
   mf = signal<MailingFilters>({});
   mailing = signal<MailingList | null>(null);
-  mailStatus = signal<MailStatus | null>(null);
-  reachLabel = (s: string) => ({ reachable: 'מחובר', timeout: 'אין תגובה (חסום?)', unreachable: 'לא נגיש', 'not-configured': 'לא הוגדר' } as Record<string, string>)[s] ?? s;
+  // email setup: Gmail API with OAuth (status only — the page never sees a token)
+  emailSetup = signal<EmailSetup | null>(null);
+  gmailResult = signal<string | null>(null);
+  testResult = signal<{ ok: boolean; text: string } | null>(null);
+  readonly GMAIL_RESULT: Record<string, { ok: boolean; text: string }> = {
+    connected: { ok: true, text: 'חשבון Gmail חובר בהצלחה. אפשר לשלוח מייל בדיקה.' },
+    denied: { ok: false, text: 'האישור בוטל בעמוד של Google. החשבון לא חובר.' },
+    'wrong-account': { ok: false, text: 'אושר חשבון אחר. יש להתחבר בחשבון info.portalx@gmail.com בלבד. ההרשאה של החשבון האחר בוטלה.' },
+    'missing-scope': { ok: false, text: 'לא אושרה הרשאת השליחה. יש לחבר שוב ולאשר את שליחת המיילים.' },
+    'no-refresh-token': { ok: false, text: 'Google לא החזיר הרשאה קבועה. יש לחבר שוב.' },
+    'expired-state': { ok: false, text: 'עבר זמן רב מדי מתחילת החיבור. יש להתחיל מחדש.' },
+    'used-state': { ok: false, text: 'קישור החיבור כבר נוצל. יש להתחיל מחדש.' },
+    'bad-state': { ok: false, text: 'בקשת החיבור אינה תקפה (ייתכן שנפתחה בדפדפן אחר). יש להתחיל מחדש מהדף הזה.' },
+    'exchange-failed': { ok: false, text: 'Google לא אישר את קוד החיבור. בדקו את הגדרות ה־OAuth ונסו שוב.' },
+    'not-configured': { ok: false, text: 'הגדרות OAuth חסרות בשרת.' },
+    'google-error': { ok: false, text: 'Google החזיר שגיאה. נסו שוב.' },
+  };
+  emailErrorLabel = (e?: string | null) => (e ? ({
+    invalid_grant: 'ההרשאה בוטלה או פגה (למשל אחרי 7 ימים במצב Testing)', 'key-changed': 'מפתח ההצפנה השתנה', 'token-unreadable': 'הטוקן השמור אינו קריא',
+    unauthorized: 'Gmail דחה את ההרשאה', 'insufficient-scope': 'חסרה הרשאת שליחה', invalid_client: 'פרטי ה־OAuth Client שגויים', unauthorized_client: 'ה־OAuth Client אינו מורשה',
+  } as Record<string, string>)[e] ?? e : '');
+
+  async connectGmail() {
+    this.busy.set(true);
+    this.testResult.set(null);
+    try {
+      const r = await this.api.startGmail();
+      // Google's consent page; it returns to the server's callback, which brings the admin back here
+      location.href = r.url;
+    } catch (e: any) {
+      this.error.set(e.message);
+      this.busy.set(false);
+    }
+  }
+
+  async sendTestEmail() {
+    this.busy.set(true);
+    this.testResult.set(null);
+    try {
+      const r = await this.api.testEmail();
+      this.testResult.set({ ok: true, text: r.message });
+    } catch (e: any) {
+      this.testResult.set({ ok: false, text: e.message });
+    } finally {
+      this.busy.set(false);
+      this.emailSetup.set(await this.api.emailSetup());
+    }
+  }
   mailingCsvUrl = computed(() => this.api.mailingCsvUrl(this.mf()));
-  mailLabel = (s: string) => ({ sent: 'נשלח', pending: 'ממתין', failed: 'נכשל' } as Record<string, string>)[s] ?? s;
+  mailLabel = (s: string) => ({ sent: 'נשלח', pending: 'ממתין', failed: 'נכשל', uncertain: 'לא ודאי' } as Record<string, string>)[s] ?? s;
   consentLabel = (s: string) => ({ active: 'פעילה', revoked: 'בוטלה', pending: 'ממתינה לאימות', none: 'אין' } as Record<string, string>)[s] ?? s;
   gameName = (id?: string | null) => (id ? this.products().find((p) => (p.scenarioId ?? p.id) === id)?.name ?? id : '—');
   setM(key: keyof MailingFilters, value: string) {
@@ -573,6 +634,13 @@ export class AdminPage {
       const products = await this.api.products();
       this.products.set(products);
       this.freeProduct.set(products.find((p) => p.playable)?.id ?? '');
+      // back from Google's consent page: open the email setup and show the result (a short code, never a token)
+      const q = new URLSearchParams(location.search);
+      if (q.get('tab') === 'email-setup') {
+        this.tab.set('email-setup');
+        this.gmailResult.set(q.get('gmail'));
+        history.replaceState(null, '', location.pathname);
+      }
       await this.reload();
     } catch (e: any) {
       if (e.code === 'unauthorized' || e.code === 'forbidden') this.state.set('denied');
@@ -620,10 +688,11 @@ export class AdminPage {
           break;
         }
         case 'coupons': this.coupons.set(await this.api.coupons()); break;
+        case 'email-setup': this.emailSetup.set(await this.api.emailSetup()); break;
         case 'mailing':
           if (!this.products().length) this.products.set(await this.api.products());
           this.mailing.set(await this.api.mailing(this.mf()));
-          this.api.mailStatus().then((s) => this.mailStatus.set(s)).catch(() => {});
+
           break;
       }
     } catch (e: any) {

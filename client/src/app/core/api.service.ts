@@ -149,7 +149,7 @@ export interface EndOfGameReply {
   ok: boolean;
   code: string;
   message: string;
-  resultsStatus?: 'sent' | 'pending' | 'failed' | null;
+  resultsStatus?: 'sent' | 'pending' | 'failed' | 'uncertain' | null;
   consentRecorded: boolean;
   communityGroupUrl?: string | null;
 }

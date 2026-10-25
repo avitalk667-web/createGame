@@ -18,10 +18,10 @@ public static class MailEndpoints
     public static void MapMailEndpoints(this RouteGroupBuilder api)
     {
         // public site details: the one contact address, and which end-of-game options this server can offer
-        api.MapGet("/site", (SiteOptions site, IEmailSender sender) => Results.Ok(new
+        api.MapGet("/site", async (SiteOptions site, IEmailSender sender) => Results.Ok(new
         {
             contactEmail = site.ContactEmail,
-            resultsEmail = sender.Available,
+            resultsEmail = await sender.IsAvailableAsync(),
             communityGroup = site.CommunityGroupUrl != null,
             consentText = ResultsEmailService.ConsentText,
             consentVersion = ResultsEmailService.ConsentVersion,
@@ -58,33 +58,6 @@ public static class MailEndpoints
     /// <summary>Admin only (inside the secured admin group): the list of addresses and their separate consents.</summary>
     public static void MapAdminMailing(this RouteGroupBuilder secured)
     {
-        // what the server received and whether it can reach the mail server — without sending anything or showing secrets
-        secured.MapGet("/mail-status", async (SmtpOptions smtp, SiteOptions site, IEmailSender sender, MailReachability reachability, IConfiguration config) =>
-        {
-            // a fresh, short check (6 s); it also updates whether the results email is offered to players
-            var reach = await reachability.ProbeAsync();
-            return Results.Ok(new
-            {
-                smtpConfigured = smtp.Configured,
-                sendingOffered = sender.Available,
-                host = smtp.Host,
-                port = smtp.Port,
-                tls = smtp.UseTls,
-                usernameSet = !string.IsNullOrWhiteSpace(smtp.Username),
-                appPasswordSet = !string.IsNullOrEmpty(smtp.Password),
-                fromEmail = smtp.FromEmail,
-                fromName = smtp.FromName,
-                replyTo = smtp.ReplyTo,
-                missing = smtp.Missing(),
-                smtpServer = reach,
-                siteUrl = site.SiteUrl,
-                communityGroup = site.CommunityGroupUrl != null,
-                communityGroupRejected = site.CommunityGroupRejected,
-                unsubscribeSecretSet = (config["PORTALX_UNSUBSCRIBE_SECRET"]?.Length ?? 0) >= 32,
-                unsubscribeSecretTooShort = config["PORTALX_UNSUBSCRIBE_SECRET"] is { Length: > 0 and < 32 },
-            });
-        });
-
         secured.MapGet("/mailing", async (HttpRequest r, MailingAdmin m) => Results.Ok(await m.ListAsync(MailingFilter.Parse(r))));
 
         secured.MapGet("/mailing.csv", async (HttpRequest r, HttpContext ctx, MailingAdmin m, AdminService s, SiteOptions site) =>
@@ -110,7 +83,7 @@ public sealed record MailingFilter(string? Search, string? Consent, string? Stat
 }
 
 public sealed record MailingRow(
-    string Email, DateTime? LastResultsRequestAt, string? LastGame, string? LastGameName, string? ResultsStatus, int ResultsRequests,
+    string Email, DateTime? LastResultsRequestAt, DateTime? LastSentAt, string? LastGame, string? LastGameName, string? ResultsStatus, int ResultsRequests,
     string Consent, DateTime? ConsentedAt, DateTime? RevokedAt, string? ConsentSource, bool GroupLinkRequested, string? Source);
 
 /// <summary>
@@ -156,7 +129,7 @@ public sealed class MailingAdmin(PortalDbContext db, UnsubscribeLinks links)
             consents.TryGetValue(e, out var c);
             var consent = c == null ? "none" : c.Status == ConsentStatus.Active ? "active" : c.Status == ConsentStatus.Revoked ? "revoked" : "pending";
             var lastGame = (sentLast ?? last)?.ScenarioId;
-            return new MailingRow(e, last?.RequestedAt, lastGame, lastGame != null && names.TryGetValue(lastGame, out var n) ? n : lastGame,
+            return new MailingRow(e, last?.RequestedAt, reqs.Where(x => x.SentAt != null).Max(x => x.SentAt), lastGame, lastGame != null && names.TryGetValue(lastGame, out var n) ? n : lastGame,
                 last == null ? null : last.Status == ResultEmailStatus.Sending ? "pending" : last.Status.ToString().ToLowerInvariant(), reqs.Count,
                 consent, c?.ConsentedAt, c?.RevokedAt, c?.Source, groupEmails.Contains(e), last?.ScenarioId ?? c?.Source);
         });
@@ -186,14 +159,14 @@ public sealed class MailingAdmin(PortalDbContext db, UnsubscribeLinks links)
             return s.IndexOfAny([',', '"', '\n', '\r']) >= 0 ? "\"" + s.Replace("\"", "\"\"") + "\"" : s;
         }
         static string Consent(string c) => c switch { "active" => "פעילה", "revoked" => "בוטלה", "pending" => "ממתינה לאימות", _ => "אין" };
-        static string Status(string? s) => s switch { "sent" => "נשלח", "failed" => "נכשל", "pending" => "ממתין", _ => "" };
+        static string Status(string? s) => s switch { "sent" => "נשלח", "failed" => "נכשל", "pending" => "ממתין", "uncertain" => "לא ודאי", _ => "" };
 
         var rows = await RowsAsync(f);
         var consents = await db.MarketingConsents.AsNoTracking().Where(x => x.Status == ConsentStatus.Active).ToDictionaryAsync(x => x.Email);
         var sb = new StringBuilder("﻿");
         sb.AppendLine(string.Join(",", new[]
         {
-            "כתובת מייל", "בקשת תוצאות אחרונה", "משחק אחרון", "סטטוס שליחת תוצאות", "מספר בקשות תוצאות",
+            "כתובת מייל", "בקשת תוצאות אחרונה", "שליחה אחרונה", "משחק אחרון", "סטטוס שליחת תוצאות", "מספר בקשות תוצאות",
             "הסכמה שיווקית", "תאריך הסכמה", "מקור ההסכמה", "תאריך ביטול", "ביקש קישור לקבוצה", "מקור", "קישור הסרה (למנויים פעילים)",
         }.Select(Cell)));
         foreach (var r in rows)
@@ -202,7 +175,7 @@ public sealed class MailingAdmin(PortalDbContext db, UnsubscribeLinks links)
             var unsub = consents.TryGetValue(r.Email, out var c) ? await links.UrlAsync(c, siteUrl) : null;
             sb.AppendLine(string.Join(",", new object?[]
             {
-                r.Email, r.LastResultsRequestAt, r.LastGameName, Status(r.ResultsStatus), r.ResultsRequests,
+                r.Email, r.LastResultsRequestAt, r.LastSentAt, r.LastGameName, Status(r.ResultsStatus), r.ResultsRequests,
                 Consent(r.Consent), r.ConsentedAt, r.ConsentSource, r.RevokedAt, r.GroupLinkRequested, r.Source, unsub,
             }.Select(Cell)));
         }

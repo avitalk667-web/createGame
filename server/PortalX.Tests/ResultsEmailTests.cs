@@ -22,18 +22,19 @@ public sealed class FakeEmailSender : IEmailSender
     public int FailNext { get; set; }
     public bool Transient { get; set; } = true;
     public int Calls { get; private set; }
-    public bool Available => true;
+    public Task<bool> IsAvailableAsync(CancellationToken ct = default) => Task.FromResult(true);
 
-    public async Task SendAsync(EmailMessage message, CancellationToken ct = default)
+    public async Task<string> SendAsync(EmailMessage message, CancellationToken ct = default)
     {
         Calls++;
         await Task.Delay(30, ct);
         if (FailNext > 0)
         {
             FailNext--;
-            throw new EmailSendException("smtp-error", Transient);
+            throw new EmailSendException("google-error", Transient);
         }
         lock (Sent) Sent.Add(message);
+        return "fake-" + Calls;
     }
 }
 
@@ -68,13 +69,13 @@ public class ResultsEmailTests
 
     private static string Unique(string name) => $"{name}.{Guid.NewGuid():N}"[..20] + "@Example.org";
 
-    private sealed record Seat(Guid Id, string Token, string Nickname);
+    internal sealed record Seat(Guid Id, string Token, string Nickname);
 
     /// <summary>
     /// A real game opened and joined through the API, then finished: the score board gets known points and the
     /// result is built by the game engine itself — the email must show exactly these numbers.
     /// </summary>
-    private static async Task<(string Code, List<Seat> Seats)> FinishedGameAsync(WebApplicationFactory<Program> f, string scenario)
+    internal static async Task<(string Code, List<Seat> Seats)> FinishedGameAsync(WebApplicationFactory<Program> f, string scenario)
     {
         var http = f.CreateClient();
         string code, claim;
@@ -295,7 +296,7 @@ public class ResultsEmailTests
         var req = await Db(f, db => db.ResultEmailRequests.AsNoTracking().FirstAsync(x => x.PlayerId == seats[0].Id));
         Assert.Equal(ResultEmailStatus.Failed, req.Status);
         Assert.Equal(2, req.Attempts);
-        Assert.Equal("smtp-error", req.LastError);
+        Assert.Equal("google-error", req.LastError);
         Assert.Empty(mail.Sent);
 
         var retry = await Body(await Ask(f, code, seats[0].Token, true, address));
@@ -418,58 +419,14 @@ public class ResultsEmailTests
         Assert.Contains("11 מתוך 11", text);
     }
 
-    [Fact]
-    public async Task A_mail_server_that_never_answers_fails_within_the_time_limit()
-    {
-        // a server that accepts the connection and then stays silent (like a blocked or broken route)
-        var silent = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-        silent.Start();
-        var port = ((IPEndPoint)silent.LocalEndpoint).Port;
-        var accept = silent.AcceptTcpClientAsync();
-        try
-        {
-            var options = new SmtpOptions { Host = "127.0.0.1", Port = port, UseTls = false };
-            var reach = new MailReachability(options, Microsoft.Extensions.Logging.Abstractions.NullLogger<MailReachability>.Instance);
-            Assert.Equal("reachable", await reach.ProbeAsync());
-            var sender = new SmtpEmailSender(options, reach, Microsoft.Extensions.Logging.Abstractions.NullLogger<SmtpEmailSender>.Instance);
-            Assert.True(sender.Available);
-            var started = DateTime.UtcNow;
-            var ex = await Assert.ThrowsAsync<EmailSendException>(() => sender.SendAsync(new EmailMessage("a@example.org", "s", "<p>h</p>", "t")));
-            Assert.Equal("smtp-unreachable", ex.Code);
-            Assert.True(DateTime.UtcNow - started < SmtpEmailSender.AttemptTimeout + TimeSpan.FromSeconds(5));
-            // after a send that could not get through, the option is no longer offered
-            Assert.False(sender.Available);
-        }
-        finally
-        {
-            silent.Stop();
-        }
-    }
-
-    [Fact]
-    public async Task A_blocked_mail_server_is_not_offered()
-    {
-        // nothing listens on this port: like an outbound SMTP block, the check fails fast and mail is not offered
-        var free = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-        free.Start();
-        var port = ((IPEndPoint)free.LocalEndpoint).Port;
-        free.Stop();
-        var options = new SmtpOptions { Host = "127.0.0.1", Port = port };
-        var reach = new MailReachability(options, Microsoft.Extensions.Logging.Abstractions.NullLogger<MailReachability>.Instance);
-        var sender = new SmtpEmailSender(options, reach, Microsoft.Extensions.Logging.Abstractions.NullLogger<SmtpEmailSender>.Instance);
-        Assert.False(sender.Available); // not checked yet: not offered
-        var started = DateTime.UtcNow;
-        Assert.NotEqual("reachable", await reach.ProbeAsync());
-        Assert.True(DateTime.UtcNow - started < MailReachability.ProbeTimeout + TimeSpan.FromSeconds(2));
-        Assert.False(sender.Available);
-    }
-
     [Theory]
     [InlineData("https://chat.whatsapp.com/AbC123", "https://chat.whatsapp.com/AbC123", false)]
     [InlineData("chat.whatsapp.com/AbC123", "https://chat.whatsapp.com/AbC123", false)]
     [InlineData("  chat.whatsapp.com/AbC123  ", "https://chat.whatsapp.com/AbC123", false)]
     [InlineData("http://chat.whatsapp.com/AbC123", null, true)]
     [InlineData("not a link", null, true)]
+    [InlineData("javascript:alert(1)", null, true)]
+    [InlineData("https://chat.whatsapp.com/A<script>", null, true)]
     [InlineData(null, null, false)]
     public void The_group_link_setting_is_read_safely(string? value, string? expected, bool rejected)
     {
@@ -477,22 +434,6 @@ public class ResultsEmailTests
         var site = SiteOptions.FromConfig(config);
         Assert.Equal(expected, site.CommunityGroupUrl);
         Assert.Equal(rejected, site.CommunityGroupRejected);
-    }
-
-    [Fact]
-    public async Task The_mail_status_is_admin_only_and_shows_no_secret()
-    {
-        var anon = await _factory.CreateClient().GetAsync("/api/admin/mail-status");
-        Assert.True(anon.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden);
-        var admin = _factory.CreateClient();
-        (await admin.PostAsJsonAsync("/api/admin/login", new { username = AdminTests.Username, password = AdminTests.Password })).EnsureSuccessStatusCode();
-        admin.DefaultRequestHeaders.Add(AdminAuth.CsrfHeader, "1");
-        var s = await Body(await admin.GetAsync("/api/admin/mail-status"));
-        Assert.False(s.GetProperty("smtpConfigured").GetBoolean());
-        Assert.Equal("not-configured", s.GetProperty("smtpServer").GetString());
-        Assert.Contains("SMTP_HOST", s.GetProperty("missing").EnumerateArray().Select(x => x.GetString()));
-        Assert.False(s.TryGetProperty("password", out _));
-        Assert.False(s.TryGetProperty("appPassword", out _));
     }
 
     [Fact]

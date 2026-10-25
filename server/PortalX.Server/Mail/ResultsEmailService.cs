@@ -27,6 +27,7 @@ public sealed partial class ResultsEmailService(
     public const string ConsentText = "אני מסכים/ה לקבל מיילים שיווקיים ועדכונים מ-PORTAL X על משחקים חדשים, הטבות, קופונים ותכנים נוספים. ניתן להסיר את ההסכמה בכל עת.";
     public const string SentMessage = "התוצאות נשלחו! כדאי לבדוק גם בתיקיית הספאם.";
     public const string FailedMessage = "לא הצלחנו לשלוח את המייל כרגע. התוצאות שמורות — אפשר לנסות שוב בעוד רגע.";
+    public const string UncertainMessage = "לא ברור אם המייל נשלח (החיבור נקטע). בדקו בעוד כמה דקות את תיבת הדואר וגם את תיקיית הספאם; אם לא הגיע, אפשר לנסות שוב.";
     public const string BadEmailMessage = "כתובת המייל אינה תקינה. בדקו אותה ונסו שוב.";
     public const int MaxAttempts = 6;
     private static readonly TimeSpan StaleSending = TimeSpan.FromMinutes(2);
@@ -67,7 +68,7 @@ public sealed partial class ResultsEmailService(
             email = NormalizeEmail(c.Email);
             if (email == null) return (new(false, "bad-email", BadEmailMessage), 400);
         }
-        if (c.SendResults && !sender.Available)
+        if (c.SendResults && !await sender.IsAvailableAsync())
             return (new(false, "email-unavailable", "שליחת תוצאות במייל עדיין לא זמינה באתר. התוצאות מוצגות על המסך."), 503);
         if (c.CommunityLink && site.CommunityGroupUrl == null)
             return (new(false, "no-group", "קבוצת העדכונים עדיין לא זמינה."), 409);
@@ -180,37 +181,45 @@ public sealed partial class ResultsEmailService(
 
         var message = await BuildMessageAsync(room, player, result, email, siteUrl);
         string? error = null;
+        string? messageId = null;
+        var uncertain = false;
         var attempts = 0;
-        // a short, controlled retry for temporary failures; a refused address or bad settings are not retried
+        // one short retry for a temporary server error only; quota, a refused address, a lost grant or an uncertain
+        // outcome are never retried automatically
         for (var i = 0; i < 2; i++)
         {
             attempts++;
             try
             {
-                await sender.SendAsync(message);
+                messageId = await sender.SendAsync(message);
                 error = null;
                 break;
             }
             catch (EmailSendException ex)
             {
                 error = ex.Code;
-                // a refused address, bad settings or an unreachable server: trying again at once will not help
-                if (!ex.Transient || ex.Code == "smtp-unreachable") break;
+                uncertain = ex.Uncertain;
+                if (!ex.Transient || ex.Uncertain || ex.Code is "quota" or "google-unreachable") break;
                 await Task.Delay(400);
             }
         }
 
-        var done = error == null;
+        // "sent" only with the provider's confirmation (its message id) — and only after the status is saved
+        var done = error == null && !string.IsNullOrEmpty(messageId);
+        var status = done ? ResultEmailStatus.Sent : uncertain ? ResultEmailStatus.Uncertain : ResultEmailStatus.Failed;
         await db.ResultEmailRequests.Where(x => x.Id == req.Id).ExecuteUpdateAsync(s => s
-            .SetProperty(x => x.Status, done ? ResultEmailStatus.Sent : ResultEmailStatus.Failed)
+            .SetProperty(x => x.Status, status)
             .SetProperty(x => x.Attempts, x => x.Attempts + attempts)
             .SetProperty(x => x.LastAttemptAt, DateTime.UtcNow)
             .SetProperty(x => x.SentAt, x => done ? DateTime.UtcNow : x.SentAt)
-            .SetProperty(x => x.LastError, error));
+            .SetProperty(x => x.ProviderMessageId, x => done ? messageId : x.ProviderMessageId)
+            .SetProperty(x => x.LastError, done ? null : error ?? "no-message-id"));
         // the log names the request, never the address
         if (done) logger.LogInformation("Results email {Request} sent for room {Code}", req.Id, room.Code);
-        else logger.LogWarning("Results email {Request} for room {Code} failed: {Error}", req.Id, room.Code, error);
-        return done ? new(true, "sent", SentMessage, "sent") : new(false, "send-failed", FailedMessage, "failed");
+        else logger.LogWarning("Results email {Request} for room {Code} not confirmed: {Error}", req.Id, room.Code, error);
+        if (done) return new(true, "sent", SentMessage, "sent");
+        if (uncertain) return new(false, "send-uncertain", UncertainMessage, "uncertain");
+        return new(false, "send-failed", FailedMessage, "failed");
     }
 
     /// <summary>The email's content, from the stored result and scores of this game only.</summary>

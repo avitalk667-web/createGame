@@ -60,15 +60,17 @@ export interface AdminProduct {
 export interface MailingFilters { search?: string; consent?: string; status?: string; game?: string; from?: string; to?: string }
 
 export interface MailingRow {
-  email: string; lastResultsRequestAt?: string | null; lastGame?: string | null; lastGameName?: string | null; resultsStatus?: string | null;
+  email: string; lastResultsRequestAt?: string | null; lastSentAt?: string | null; lastGame?: string | null; lastGameName?: string | null; resultsStatus?: string | null;
   resultsRequests: number; consent: 'active' | 'revoked' | 'pending' | 'none'; consentedAt?: string | null; revokedAt?: string | null;
   consentSource?: string | null; groupLinkRequested: boolean; source?: string | null;
 }
 
-export interface MailStatus {
-  smtpConfigured: boolean; sendingOffered: boolean; host?: string | null; port: number; tls: boolean; usernameSet: boolean; appPasswordSet: boolean;
-  fromEmail: string; fromName: string; replyTo: string; missing: string[]; smtpServer: 'reachable' | 'timeout' | 'unreachable' | 'not-configured';
-  siteUrl?: string | null; communityGroup: boolean; communityGroupRejected: boolean; unsubscribeSecretSet: boolean; unsubscribeSecretTooShort: boolean;
+/** Email setup (Gmail API with OAuth). Never contains a token or a secret. */
+export interface EmailSetup {
+  configured: boolean; missing: string[]; redirectUri?: string | null; sender: string;
+  status: 'connected' | 'needs-reconnect' | 'not-connected'; connected: boolean; needsReconnect: boolean;
+  lastError?: string | null; lastErrorAt?: string | null; connectedAt?: string | null; lastSendAt?: string | null; lastTestSentAt?: string | null;
+  sendScopeGranted: boolean; siteUrl?: string | null; communityGroup: boolean; communityGroupRejected: boolean;
 }
 
 export interface MailingList {
@@ -144,7 +146,9 @@ export class AdminApiService {
   freeGame(productId: string) { return this.request<{ code: string; hostClaim: string }>('POST', '/api/admin/free-game', { productId }); }
   reclaim(code: string) { return this.request<{ code: string; hostClaim?: string | null }>('POST', `/api/admin/games/${encodeURIComponent(code)}/host-claim`); }
   audit() { return this.request<AuditEntry[]>('GET', '/api/admin/audit'); }
-  mailStatus() { return this.request<MailStatus>('GET', '/api/admin/mail-status'); }
+  emailSetup() { return this.request<EmailSetup>('GET', '/api/admin/email/status'); }
+  startGmail() { return this.request<{ url: string }>('POST', '/api/admin/email/google/start'); }
+  testEmail() { return this.request<{ ok: boolean; message: string }>('POST', '/api/admin/email/test'); }
   mailing(f: MailingFilters) { return this.request<MailingList>('GET', '/api/admin/mailing' + mailingQuery(f)); }
   mailingCsvUrl(f: MailingFilters) { return '/api/admin/mailing.csv' + mailingQuery(f); }
   faq() { return this.request<{ builtIn: { question: string; answer: string }[]; custom: FaqRow[] }>('GET', '/api/admin/faq'); }

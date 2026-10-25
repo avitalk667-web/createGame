@@ -25,6 +25,8 @@ public sealed class SiteOptions
         var group = Clean(c["PORTALX_COMMUNITY_GROUP_URL"]);
         // an invite link pasted without its scheme (e.g. "chat.whatsapp.com/...") is taken as https
         if (group != null && !group.Contains("://")) group = "https://" + group.TrimStart('/');
+        // no spaces, quotes or angle brackets: a link only, never markup or script
+        if (group != null && group.IndexOfAny([' ', '<', '>', '"', '\'', '`', '\\']) >= 0) group = null;
         if (group != null && (!Uri.TryCreate(group, UriKind.Absolute, out var u) || u.Scheme != Uri.UriSchemeHttps || !u.Host.Contains('.'))) group = null;
         var site = Clean(c["PORTALX_SITE_URL"]);
         if (site != null && !Uri.TryCreate(site, UriKind.Absolute, out _)) site = null;
@@ -39,49 +41,56 @@ public sealed class SiteOptions
     }
 }
 
+
 /// <summary>
-/// SMTP connection, only from the environment or the host's secret settings — never from the code or Git:
-/// SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_APP_PASSWORD, SMTP_FROM_EMAIL, SMTP_FROM_NAME, SMTP_REPLY_TO.
-/// With Gmail: smtp.gmail.com, port 587, the account's address as user name and an App Password
-/// (2-Step Verification must be on); the account's normal password is never used.
+/// Gmail API over HTTPS with OAuth 2.0 (no SMTP). Read only from the environment — never from the code or Git:
+/// GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI and GOOGLE_TOKEN_ENCRYPTION_KEY.
+/// The redirect URI defaults to {PORTALX_SITE_URL}/api/admin/email/google/callback and must equal, character for
+/// character, the one registered in Google Cloud Console.
 /// </summary>
-public sealed class SmtpOptions
+public sealed class GoogleMailOptions
 {
-    public string? Host { get; init; }
-    public int Port { get; init; } = 587;
-    public string? Username { get; init; }
-    public string? Password { get; init; }
-    public string FromEmail { get; init; } = SiteOptions.DefaultContactEmail;
-    public string FromName { get; init; } = "PORTAL X";
-    public string ReplyTo { get; init; } = SiteOptions.DefaultContactEmail;
-    /// <summary>STARTTLS on by default (Gmail requires it). SMTP_USE_TLS=false is only for a local test mail server.</summary>
-    public bool UseTls { get; init; } = true;
+    public const string CallbackPath = "/api/admin/email/google/callback";
+    /// <summary>Sending only, plus the account's address (to check that the right mailbox was connected).</summary>
+    public static readonly string[] Scopes = ["https://www.googleapis.com/auth/gmail.send", "openid", "email"];
+    public const string SendScope = "https://www.googleapis.com/auth/gmail.send";
 
-    public bool Configured => !string.IsNullOrWhiteSpace(Host);
+    public string? ClientId { get; init; }
+    public string? ClientSecret { get; init; }
+    public string? RedirectUri { get; init; }
+    public string? EncryptionKey { get; init; }
+    /// <summary>The only mailbox that may be connected and that mail is sent from.</summary>
+    public string SenderEmail { get; init; } = SiteOptions.DefaultContactEmail;
+    public string SenderName { get; init; } = "PORTAL X";
 
-    /// <summary>What is still missing to send mail (names of settings only, never values).</summary>
+    public bool Configured => Missing().Count == 0;
+
+    /// <summary>Names of settings that are missing or unusable (never their values).</summary>
     public IReadOnlyList<string> Missing()
     {
         var m = new List<string>();
-        if (string.IsNullOrWhiteSpace(Host)) m.Add("SMTP_HOST");
-        if (string.IsNullOrWhiteSpace(Username)) m.Add("SMTP_USERNAME");
-        if (string.IsNullOrWhiteSpace(Password)) m.Add("SMTP_APP_PASSWORD");
+        if (string.IsNullOrWhiteSpace(ClientId)) m.Add("GOOGLE_CLIENT_ID");
+        if (string.IsNullOrWhiteSpace(ClientSecret)) m.Add("GOOGLE_CLIENT_SECRET");
+        if (string.IsNullOrWhiteSpace(RedirectUri)) m.Add("GOOGLE_REDIRECT_URI");
+        if (string.IsNullOrWhiteSpace(EncryptionKey) || EncryptionKey.Length < 32) m.Add("GOOGLE_TOKEN_ENCRYPTION_KEY");
         return m;
     }
 
-    public static SmtpOptions FromConfig(IConfiguration c, SiteOptions site)
+    public static GoogleMailOptions FromConfig(IConfiguration c, SiteOptions site)
     {
         static string? Clean(string? v) => string.IsNullOrWhiteSpace(v) ? null : v.Trim();
-        return new SmtpOptions
+        var redirect = Clean(c["GOOGLE_REDIRECT_URI"]) ?? (site.SiteUrl != null ? site.SiteUrl + CallbackPath : null);
+        // only an https callback on this site's own path (http is allowed for localhost development only)
+        if (redirect != null && (!Uri.TryCreate(redirect, UriKind.Absolute, out var u)
+            || !(u.Scheme == Uri.UriSchemeHttps || (u.Scheme == Uri.UriSchemeHttp && u.IsLoopback))
+            || u.AbsolutePath != CallbackPath)) redirect = null;
+        return new GoogleMailOptions
         {
-            Host = Clean(c["SMTP_HOST"]),
-            Port = int.TryParse(c["SMTP_PORT"], out var p) && p > 0 ? p : 587,
-            Username = Clean(c["SMTP_USERNAME"]),
-            Password = c["SMTP_APP_PASSWORD"],
-            FromEmail = Clean(c["SMTP_FROM_EMAIL"]) ?? site.ContactEmail,
-            FromName = Clean(c["SMTP_FROM_NAME"]) ?? "PORTAL X",
-            ReplyTo = Clean(c["SMTP_REPLY_TO"]) ?? site.ContactEmail,
-            UseTls = !string.Equals(Clean(c["SMTP_USE_TLS"]), "false", StringComparison.OrdinalIgnoreCase),
+            ClientId = Clean(c["GOOGLE_CLIENT_ID"]),
+            ClientSecret = Clean(c["GOOGLE_CLIENT_SECRET"]),
+            RedirectUri = redirect,
+            EncryptionKey = Clean(c["GOOGLE_TOKEN_ENCRYPTION_KEY"]),
+            SenderEmail = (Clean(c["PORTALX_CONTACT_EMAIL"]) ?? site.ContactEmail).ToLowerInvariant(),
         };
     }
 }

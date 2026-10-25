@@ -15,21 +15,16 @@ services:
         sync: false
       - key: ASPNETCORE_ENVIRONMENT
         value: Production
-      # Email (see docs/email-setup.md). Values are entered in the Render dashboard; secrets never go into Git.
-      - key: SMTP_HOST
+      # Email through Gmail API over HTTPS with OAuth (see docs/email-setup.md). No SMTP: Render Free blocks SMTP ports.
+      # Secret values are entered in the Render dashboard only; they never go into Git.
+      - key: GOOGLE_CLIENT_ID
         sync: false
-      - key: SMTP_PORT
-        value: "587"
-      - key: SMTP_USERNAME
+      - key: GOOGLE_CLIENT_SECRET
         sync: false
-      - key: SMTP_APP_PASSWORD
+      - key: GOOGLE_REDIRECT_URI
+        value: https://portal-x-scfm.onrender.com/api/admin/email/google/callback
+      - key: GOOGLE_TOKEN_ENCRYPTION_KEY
         sync: false
-      - key: SMTP_FROM_EMAIL
-        value: info.portalx@gmail.com
-      - key: SMTP_FROM_NAME
-        value: PORTAL X
-      - key: SMTP_REPLY_TO
-        value: info.portalx@gmail.com
       - key: PORTALX_CONTACT_EMAIL
         value: info.portalx@gmail.com
       - key: PORTALX_SITE_URL

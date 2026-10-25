@@ -48,22 +48,19 @@ builder.Services.Configure<AdminOptions>(builder.Configuration.GetSection("Admin
 builder.Services.AddScoped<AdminService>();
 // email: the contact address, SMTP settings (environment only), results emails, consents and unsubscribe links
 builder.Services.AddSingleton(sp => PortalX.Server.Mail.SiteOptions.FromConfig(sp.GetRequiredService<IConfiguration>()));
-builder.Services.AddSingleton(sp => PortalX.Server.Mail.SmtpOptions.FromConfig(sp.GetRequiredService<IConfiguration>(), sp.GetRequiredService<PortalX.Server.Mail.SiteOptions>()));
+// sending: Gmail API over HTTPS with OAuth (no SMTP); the refresh token is kept encrypted in the database
+builder.Services.AddSingleton(sp => PortalX.Server.Mail.GoogleMailOptions.FromConfig(sp.GetRequiredService<IConfiguration>(), sp.GetRequiredService<PortalX.Server.Mail.SiteOptions>()));
+builder.Services.AddSingleton<PortalX.Server.Mail.GoogleHttp>();
+builder.Services.AddSingleton<PortalX.Server.Mail.TokenProtector>();
+builder.Services.AddSingleton<PortalX.Server.Mail.GmailAccount>();
 builder.Services.AddSingleton<PortalX.Server.Mail.IEmailSender>(sp =>
 {
-    var smtp = sp.GetRequiredService<PortalX.Server.Mail.SmtpOptions>();
-    var log = sp.GetRequiredService<ILoggerFactory>().CreateLogger("Mail");
-    if (!smtp.Configured)
-    {
-        log.LogWarning("Email is not configured; results emails are not offered. Missing: {Missing}", string.Join(", ", smtp.Missing()));
-        return new PortalX.Server.Mail.UnconfiguredEmailSender();
-    }
-    return new PortalX.Server.Mail.SmtpEmailSender(smtp, sp.GetRequiredService<PortalX.Server.Mail.MailReachability>(),
-        sp.GetRequiredService<ILogger<PortalX.Server.Mail.SmtpEmailSender>>());
+    var google = sp.GetRequiredService<PortalX.Server.Mail.GoogleMailOptions>();
+    if (!google.Configured)
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger("Mail")
+            .LogWarning("Gmail sending is not configured; results emails are not offered. Missing: {Missing}", string.Join(", ", google.Missing()));
+    return new PortalX.Server.Mail.GmailEmailSender(sp.GetRequiredService<PortalX.Server.Mail.GmailAccount>());
 });
-// a short TCP check of the SMTP server at startup and every 10 minutes: blocked SMTP means the option is not offered
-builder.Services.AddSingleton<PortalX.Server.Mail.MailReachability>();
-builder.Services.AddHostedService<PortalX.Server.Mail.MailReachabilityProbe>();
 builder.Services.AddScoped<PortalX.Server.Mail.UnsubscribeLinks>();
 builder.Services.AddScoped<PortalX.Server.Mail.ResultsEmailService>();
 builder.Services.AddScoped<PortalX.Server.Mail.MailingAdmin>();
@@ -115,6 +112,8 @@ builder.Services.AddRateLimiter(o =>
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:ResultsEmailPer10Minutes", 10), Window = TimeSpan.FromMinutes(10) }));
     o.AddPolicy("unsubscribe", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:UnsubscribePerMinute", 20), Window = TimeSpan.FromMinutes(1) }));
+    o.AddPolicy("email-admin", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:EmailAdminPer10Minutes", 15), Window = TimeSpan.FromMinutes(10) }));
     o.AddPolicy("admin-login", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:AdminLoginPerMinute", 10), Window = TimeSpan.FromMinutes(1) }));
 });

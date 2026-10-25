@@ -28,6 +28,8 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
     public DbSet<MarketingConsent> MarketingConsents => Set<MarketingConsent>();
     public DbSet<CommunityLinkRequest> CommunityLinkRequests => Set<CommunityLinkRequest>();
     public DbSet<AppSecret> AppSecrets => Set<AppSecret>();
+    public DbSet<MailAccount> MailAccounts => Set<MailAccount>();
+    public DbSet<OAuthState> OAuthStates => Set<OAuthState>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -179,6 +181,7 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.Property(x => x.ScenarioId).HasMaxLength(64);
             e.Property(x => x.ProductId).HasMaxLength(64);
             e.Property(x => x.LastError).HasMaxLength(64);
+            e.Property(x => x.ProviderMessageId).HasMaxLength(128);
         });
 
         b.Entity<MarketingConsent>(e =>
@@ -203,6 +206,28 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.Property(x => x.Source).HasMaxLength(64);
             e.Property(x => x.Email).HasMaxLength(254);
             e.HasIndex(x => x.RequestedAt);
+        });
+
+        b.Entity<MailAccount>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(32);
+            e.Property(x => x.Email).HasMaxLength(254);
+            e.Property(x => x.EncryptedRefreshToken).HasMaxLength(2048);
+            e.Property(x => x.KeyFingerprint).HasMaxLength(32);
+            e.Property(x => x.Scopes).HasMaxLength(500);
+            e.Property(x => x.ConnectedBy).HasMaxLength(64);
+            e.Property(x => x.LastError).HasMaxLength(64);
+        });
+
+        b.Entity<OAuthState>(e =>
+        {
+            e.HasKey(x => x.StateHash);
+            e.Property(x => x.StateHash).HasMaxLength(64);
+            e.Property(x => x.CodeVerifier).HasMaxLength(128);
+            e.Property(x => x.BindingHash).HasMaxLength(64);
+            e.Property(x => x.AdminName).HasMaxLength(64);
+            e.HasIndex(x => x.ExpiresAt);
         });
 
         b.Entity<AppSecret>(e =>

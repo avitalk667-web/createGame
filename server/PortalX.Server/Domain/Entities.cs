@@ -391,7 +391,8 @@ public class CouponRedemption
     public DateTime ReservedUntil { get; set; }
 }
 
-public enum ResultEmailStatus { Pending = 0, Sending = 1, Sent = 2, Failed = 3 }
+/// <summary>Uncertain: the connection broke after the request went out — it may have been sent, so it is not retried automatically.</summary>
+public enum ResultEmailStatus { Pending = 0, Sending = 1, Sent = 2, Failed = 3, Uncertain = 4 }
 
 /// <summary>
 /// A player's request to get the results of a finished game by email — a service email, never marketing consent.
@@ -417,6 +418,8 @@ public class ResultEmailRequest
     public int Attempts { get; set; }
     public DateTime? LastAttemptAt { get; set; }
     public DateTime? SentAt { get; set; }
+    /// <summary>The id Gmail returned for the sent message (proof the provider accepted it).</summary>
+    public string? ProviderMessageId { get; set; }
     /// <summary>A short error code only (never the address or the server's message text).</summary>
     public string? LastError { get; set; }
 }
@@ -467,4 +470,44 @@ public class AppSecret
     public string Name { get; set; } = "";
     public string Value { get; set; } = "";
     public DateTime CreatedAt { get; set; }
+}
+
+public enum MailAccountStatus { NotConnected = 0, Connected = 1, NeedsReconnect = 2 }
+
+/// <summary>
+/// The connected sending mailbox (one row, Id "gmail"). The refresh token is stored only encrypted (AES-GCM, key from
+/// GOOGLE_TOKEN_ENCRYPTION_KEY, bound to the mailbox address); access tokens are never stored.
+/// </summary>
+public class MailAccount
+{
+    public string Id { get; set; } = "gmail";
+    public string Email { get; set; } = "";
+    public MailAccountStatus Status { get; set; }
+    public string? EncryptedRefreshToken { get; set; }
+    /// <summary>A fingerprint of the encryption key the token was sealed with (not the key): a changed key means reconnect.</summary>
+    public string? KeyFingerprint { get; set; }
+    public string Scopes { get; set; } = "";
+    public DateTime? ConnectedAt { get; set; }
+    public string? ConnectedBy { get; set; }
+    /// <summary>A short error code only (e.g. "invalid_grant"), never a token or Google's full reply.</summary>
+    public string? LastError { get; set; }
+    public DateTime? LastErrorAt { get; set; }
+    public DateTime? LastSendAt { get; set; }
+    public DateTime? LastTestSentAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+/// <summary>
+/// One OAuth authorization attempt: the state (stored as a hash), the PKCE verifier, the browser binding (hash) and
+/// a short expiry. Single use — a used or expired state is refused.
+/// </summary>
+public class OAuthState
+{
+    public string StateHash { get; set; } = "";
+    public string CodeVerifier { get; set; } = "";
+    public string BindingHash { get; set; } = "";
+    public string AdminName { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+    public DateTime ExpiresAt { get; set; }
+    public DateTime? UsedAt { get; set; }
 }
