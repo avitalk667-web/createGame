@@ -120,6 +120,14 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
         <p class="muted">עובד בדפדפן במחשב ובטלפון. לא צריך מצלמה, מיקרופון או הרשמה. רוצים לנסות קודם? „שער הסודות” חינמי לגמרי.</p>
       </section>
 
+      <section class="share card" aria-labelledby="share-title">
+        <div>
+          <h2 id="share-title">אהבתם? שתפו את PORTAL X</h2>
+          <p>צרו קישור אישי ושתפו אותו עם חברים ומכרים. רכישות שיתבצעו דרכו יירשמו בנתוני הקישור שלכם.</p>
+        </div>
+        <a class="btn primary" routerLink="/share">יצירת קישור אישי</a>
+      </section>
+
       <section id="faq" class="faq" aria-labelledby="faq-title">
         <h2 id="faq-title">שאלות ותשובות נפוצות</h2>
         <div class="faq-list">
@@ -147,6 +155,7 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
         <a routerLink="/info/refunds">ביטולים והחזרים</a>
         <a routerLink="/info/contact">יצירת קשר</a>
         <a routerLink="/info/about">על PORTAL X</a>
+        <a routerLink="/share">יצירת קישור אישי</a>
       </nav>
       <p class="contact">יצירת קשר: <a [href]="'mailto:' + site.info().contactEmail" dir="ltr">{{ site.info().contactEmail }}</a></p>
       <p class="muted small">פרטי העסק יעודכנו כאן לפני פתיחת המכירות.</p>
@@ -278,6 +287,12 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
     .price b { font-size:1.8rem; color:var(--gold-2); line-height:1.1; }
     .price span { font-size:.9rem; color:var(--muted); }
     .how { padding-block:2rem; scroll-margin-top:84px; }
+    .share { display:flex; align-items:center; justify-content:space-between; gap:1.2rem; margin-block:1rem 2rem; padding:1.2rem 1.4rem;
+      border:1px solid rgba(224,185,92,.45); background:linear-gradient(135deg, rgba(20,32,74,.95), rgba(10,18,48,.95)); }
+    .share h2 { margin:0 0 .3rem; color:var(--gold-2); }
+    .share p { margin:0; color:var(--muted); line-height:1.6; }
+    .share .btn { white-space:nowrap; }
+    @media (max-width: 640px) { .share { flex-direction:column; align-items:stretch; text-align:start; } }
     .how ol { list-style:none; padding:0; margin:0; display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:1rem; counter-reset:s; }
     .how li { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:1rem; counter-increment:s; display:flex; flex-direction:column; gap:.3rem; }
     .how li::before { content:counter(s); font-family:var(--font-title); font-size:2rem; color:var(--gold); font-weight:900; }
@@ -354,7 +369,7 @@ export class HomePage {
   }
 
   cta(p: Product) {
-    return p.isFree ? 'לשחק בחינם' : p.id === 'hanukkah-oil' ? 'לרכישת משחק החנוכה' : 'לפרטים ולרכישה';
+    return p.isFree ? 'לשחק בחינם' : p.id === 'hanukkah-oil' ? 'לפרטים ולרכישה' : 'לפרטים ולרכישה';
   }
 
   toggleFaq(id: string) {

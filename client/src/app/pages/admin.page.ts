@@ -3,9 +3,10 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { Router, RouterLink } from '@angular/router';
 import { sessionStore } from '../core/api.service';
 import {
-  AdminApiService, AdminFilters, AdminGame, AdminOrder, AdminProduct, AuditEntry, CouponRow, CouponUse, Dashboard, FaqRow, EmailSetup, MailingFilters, MailingList } from '../core/admin-api.service';
+  AdminApiService, AdminFilters, AdminGame, AdminOrder, AdminProduct, AuditEntry, CouponRow, CouponUse, Dashboard, FaqRow, EmailSetup, MailingFilters, MailingList,
+  MoneyTotals, ReferralDetails, ReferralFilters, ReferralList } from '../core/admin-api.service';
 
-type Tab = 'dashboard' | 'orders' | 'games' | 'products' | 'faq' | 'coupons' | 'mailing' | 'email-setup' | 'audit';
+type Tab = 'dashboard' | 'orders' | 'games' | 'products' | 'faq' | 'coupons' | 'mailing' | 'referrals' | 'email-setup' | 'audit';
 
 /** The coupon form as typed (spec 4.3). Dates are local date-time strings from the inputs. */
 interface CouponForm {
@@ -32,6 +33,8 @@ const ACTIONS: Record<string, string> = {
   'product-updated': 'עדכון מוצר', 'product-price-changed': 'שינוי מחיר', 'sales-exported': 'ייצוא מכירות',
   'faq-added': 'הוספת שאלה', 'faq-updated': 'עדכון שאלה', 'faq-deleted': 'מחיקת שאלה',
   'coupon-created': 'יצירת קופון', 'coupon-updated': 'עדכון קופון', 'coupon-enabled': 'הפעלת קופון', 'coupon-disabled': 'השבתת קופון',
+  'referral-enabled': 'הפעלת קישור אישי', 'referral-disabled': 'השבתת קישור אישי', 'referrals-exported': 'ייצוא קישורים שיווקיים',
+  'mailing-exported': 'ייצוא רשימת מיילים',
 };
 
 /**
@@ -337,6 +340,11 @@ const ACTIONS: Record<string, string> = {
                   <option value="">הכול</option><option value="active">פעילה</option><option value="revoked">בוטלה</option><option value="none">אין הסכמה</option>
                 </select>
               </label>
+              <label>מקור הרשמה
+                <select [value]="mf().source ?? ''" (change)="setM('source', $any($event.target).value)">
+                  <option value="">הכול</option><option value="results">בקשת תוצאות משחק</option><option value="referral">יצירת קישור אישי</option><option value="group">קישור לקבוצה</option>
+                </select>
+              </label>
               <label>שליחת תוצאות
                 <select [value]="mf().status ?? ''" (change)="setM('status', $any($event.target).value)">
                   <option value="">הכול</option><option value="sent">נשלח</option><option value="pending">ממתין</option><option value="failed">נכשל</option><option value="uncertain">לא ודאי</option>
@@ -357,15 +365,19 @@ const ACTIONS: Record<string, string> = {
                 <div class="stat card"><span>כתובות שביקשו תוצאות</span><b>{{ m.totals.resultsAddresses }}</b><small>{{ m.totals.resultsSent }} מיילי תוצאות נשלחו · אינם מנויים שיווקיים</small></div>
                 <div class="stat card"><span>מנויים שיווקיים פעילים</span><b>{{ m.totals.activeSubscribers }}</b><small>{{ m.totals.revokedSubscribers }} ביטלו הסכמה · רק הפעילים ברשימת הדיוור</small></div>
                 <div class="stat card"><span>בקשות קישור לקבוצה</span><b>{{ m.totals.groupLinkRequests }}</b><small>בקשת קישור בלבד — לא אישור הצטרפות</small></div>
+                <div class="stat card"><span>יוצרי קישור אישי</span><b>{{ m.totals.referralCreators }}</b><small>כל אחד אישר דיוור בטופס; ביטול נשמר</small></div>
               </div>
               <div class="bar"><span class="muted">{{ m.rows.length }} כתובות</span><a class="btn small" [href]="mailingCsvUrl()" download>ייצוא CSV</a></div>
               <div class="table-wrap">
                 <table>
-                  <thead><tr><th>כתובת מייל</th><th>בקשת תוצאות</th><th>שליחה אחרונה</th><th>משחק אחרון</th><th>שליחת תוצאות</th><th>הסכמה שיווקית</th><th>תאריך הסכמה</th><th>תאריך ביטול</th><th>קישור לקבוצה</th><th>מקור</th></tr></thead>
+                  <thead><tr><th>כתובת מייל</th><th>שם</th><th>מקור הרשמה</th><th>קישור אישי</th><th>בקשת תוצאות</th><th>שליחה אחרונה</th><th>משחק אחרון</th><th>שליחת תוצאות</th><th>הסכמה שיווקית</th><th>תאריך הסכמה</th><th>תאריך ביטול</th><th>קישור לקבוצה</th><th>מקור</th></tr></thead>
                   <tbody>
                     @for (r of m.rows; track r.email) {
                       <tr>
                         <td dir="ltr">{{ r.email }}</td>
+                        <td>{{ r.firstName ? r.firstName + ' ' + r.lastName : '—' }}</td>
+                        <td>{{ sourcesLabel(r.sources) }}</td>
+                        <td>@if (r.referralUrl) { <a dir="ltr" [href]="r.referralUrl" target="_blank" rel="noopener">{{ shortUrl(r.referralUrl) }}</a> } @else { — }</td>
                         <td>{{ r.lastResultsRequestAt ? (r.lastResultsRequestAt | date: 'd.M.yy HH:mm') : '—' }}</td>
                         <td>{{ r.lastSentAt ? (r.lastSentAt | date: 'd.M.yy HH:mm') : '—' }}</td>
                         <td>{{ r.lastGameName ?? '—' }}</td>
@@ -376,11 +388,104 @@ const ACTIONS: Record<string, string> = {
                         <td>{{ r.groupLinkRequested ? 'ביקש קישור' : '—' }}</td>
                         <td>{{ gameName(r.source) }}</td>
                       </tr>
-                    } @empty { <tr><td colspan="10" class="muted">אין כתובות בסינון הזה.</td></tr> }
+                    } @empty { <tr><td colspan="13" class="muted">אין כתובות בסינון הזה.</td></tr> }
                   </tbody>
                 </table>
               </div>
               <p class="muted small">רשימת הדיוור השיווקי היא רק הכתובות שהסכמתן „פעילה”. כתובת שביקשה תוצאות בלבד אינה מנויה. הייצוא כולל קישור הסרה אישי לכל מנוי פעיל.</p>
+            }
+          }
+          @case ('referrals') {
+            <form class="filters card" (submit)="$event.preventDefault(); reload()">
+              <label>חיפוש שם או מייל <input [value]="rf().search ?? ''" (input)="setR('search', $any($event.target).value)" /></label>
+              <label>סטטוס
+                <select [value]="rf().status ?? ''" (change)="setR('status', $any($event.target).value)">
+                  <option value="">הכול</option><option value="active">פעיל</option><option value="disabled">מושבת</option>
+                </select>
+              </label>
+              <label>משחק שנרכש
+                <select [value]="rf().game ?? ''" (change)="setR('game', $any($event.target).value)">
+                  <option value="">כל המשחקים</option>
+                  @for (p of paidProducts(); track p.id) { <option [value]="p.id">{{ p.name }}</option> }
+                </select>
+              </label>
+              <label>קישור נוצר מ־ <input type="date" [value]="rf().createdFrom ?? ''" (change)="setR('createdFrom', $any($event.target).value)" /></label>
+              <label>עד <input type="date" [value]="rf().createdTo ?? ''" (change)="setR('createdTo', $any($event.target).value)" /></label>
+              <label>רכישות שולמו מ־ <input type="date" [value]="rf().paidFrom ?? ''" (change)="setR('paidFrom', $any($event.target).value)" /></label>
+              <label>עד <input type="date" [value]="rf().paidTo ?? ''" (change)="setR('paidTo', $any($event.target).value)" /></label>
+              <label>מינימום רכישות <input type="number" min="0" step="1" dir="ltr" [value]="rf().minPurchases ?? ''" (input)="setR('minPurchases', $any($event.target).value)" /></label>
+              <label>מינימום הכנסה נטו <input type="number" min="0" step="1" dir="ltr" [value]="rf().minNet ?? ''" (input)="setR('minNet', $any($event.target).value)" /></label>
+              <button class="btn small" type="submit">סינון</button>
+              <button class="btn small ghost" type="button" (click)="rf.set({}); refDetail.set(null); reload()">איפוס</button>
+            </form>
+            @if (referrals(); as rl) {
+              <div class="cards">
+                <div class="stat card"><span>קישורים אישיים</span><b>{{ rl.summary.links }}</b><small>{{ rl.summary.activeLinks }} פעילים</small></div>
+                <div class="stat card"><span>סך רכישות ששולמו</span><b>{{ rl.summary.purchases }}</b><small>{{ rl.summary.refunded }} מהן הוחזרו · ללא רכישות בדיקה ורכישה עצמית</small></div>
+                <div class="stat card"><span>סך מכירות ברוטו</span><b>{{ money(rl.summary.money, 'gross') }}</b><small>סך החזרים: {{ money(rl.summary.money, 'refunds') }}</small></div>
+                <div class="stat card"><span>הכנסה נטו מיוחסת</span><b>{{ money(rl.summary.money, 'net') }}</b><small>ברוטו פחות החזרים בפועל</small></div>
+              </div>
+              <div class="bar"><span class="muted">{{ rl.rows.length }} קישורים · תאריכי „קישור נוצר” מסננים קישורים; תאריכי „רכישות שולמו” מסננים את הרכישות שנספרות</span>
+                <a class="btn small" [href]="referralsCsvUrl()" download>ייצוא CSV</a></div>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>שם פרטי</th><th>שם משפחה</th><th>מייל</th><th>קישור אישי</th><th>תאריך יצירה</th><th>מספר רכישות</th><th>מכירות ברוטו</th><th>החזרים</th><th>הכנסה נטו</th><th>משחקים שנרכשו</th><th>סטטוס</th><th></th></tr></thead>
+                  <tbody>
+                    @for (r of rl.rows; track r.id) {
+                      <tr class="click" (click)="showReferral(r.id)">
+                        <td>{{ r.firstName }}</td><td>{{ r.lastName }}</td><td dir="ltr">{{ r.email }}</td>
+                        <td><span dir="ltr">{{ shortUrl(r.url) }}</span> <button type="button" class="btn small ghost" (click)="$event.stopPropagation(); copyUrl(r.url)">{{ copied() === r.url ? 'הועתק ✓' : 'העתקה' }}</button></td>
+                        <td>{{ r.createdAt | date: 'd.M.yy HH:mm' }}</td>
+                        <td>{{ r.purchases }}</td>
+                        <td>{{ money(r.money, 'gross') }}</td><td>{{ money(r.money, 'refunds') }}</td><td><b>{{ money(r.money, 'net') }}</b></td>
+                        <td class="wrap">@for (g of r.games; track g.productId) { <span>{{ g.name }} ({{ g.purchases }})</span>@if (!$last) {<span> · </span>} } @empty { — }</td>
+                        <td><span class="st" [attr.data-s]="r.status === 'active' ? 'paid' : 'failed'">{{ r.status === 'active' ? 'פעיל' : 'מושבת' }}</span></td>
+                        <td><button type="button" class="btn small" (click)="$event.stopPropagation(); showReferral(r.id)">פרטים</button></td>
+                      </tr>
+                    } @empty { <tr><td colspan="12" class="muted">אין קישורים בסינון הזה.</td></tr> }
+                  </tbody>
+                </table>
+              </div>
+              @if (refDetail(); as d) {
+                <section class="card details" aria-label="פרטי קישור">
+                  <div class="bar">
+                    <h2>{{ d.firstName }} {{ d.lastName }}</h2>
+                    <div class="row">
+                      <button class="btn small" (click)="toggleReferral(d)" [disabled]="busy()">{{ d.status === 'active' ? 'השבתת הקישור' : 'הפעלת הקישור' }}</button>
+                      <button class="btn small ghost" (click)="refDetail.set(null)">סגירה</button>
+                    </div>
+                  </div>
+                  <ul>
+                    <li>מייל: <span dir="ltr">{{ d.email }}</span></li>
+                    <li>קישור: <a dir="ltr" [href]="d.url" target="_blank" rel="noopener">{{ d.url }}</a></li>
+                    <li>נוצר: {{ d.createdAt | date: 'd.M.yy HH:mm' }} · סטטוס: {{ d.status === 'active' ? 'פעיל' : 'מושבת' }}@if (d.disabledAt) { (מ־{{ d.disabledAt | date: 'd.M.yy HH:mm' }}) }</li>
+                    <li>מייל הקישור: {{ emailStatusLabel(d.lastEmailStatus) }}@if (d.lastEmailAt) { · אחרון {{ d.lastEmailAt | date: 'd.M.yy HH:mm' }} } · נשלח {{ d.emailsSent }} פעמים</li>
+                    <li>הסכמה שיווקית: {{ consentLabel(d.consent) }}@if (d.consentAt) { · {{ d.consentAt | date: 'd.M.yy HH:mm' }} }@if (d.consentRevokedAt) { · בוטלה {{ d.consentRevokedAt | date: 'd.M.yy HH:mm' }} }</li>
+                    <li>רכישות שנספרו: <b>{{ d.purchases }}</b> · הכנסה נטו: <b>{{ money(d.money, 'net') }}</b></li>
+                    <li class="muted">עמלות: לא פעילות (אין חישוב ואין תשלום).</li>
+                  </ul>
+                  <div class="table-wrap">
+                    <table>
+                      <thead><tr><th>הזמנה</th><th>תאריך</th><th>משחק</th><th>סכום ששולם</th><th>סטטוס תשלום</th><th>החזר</th><th>נספרת לקישור</th><th>סיבת החרגה</th></tr></thead>
+                      <tbody>
+                        @for (o of d.orders; track o.id) {
+                          <tr [class.test]="o.isTest">
+                            <td>#{{ o.number }}</td>
+                            <td>{{ (o.paidAt ?? o.createdAt) | date: 'd.M.yy HH:mm' }}</td>
+                            <td>{{ o.productName }}</td>
+                            <td>{{ o.amount | number: '1.0-2' }} {{ cur(o.currency) }}</td>
+                            <td><span class="st" [attr.data-s]="o.status">{{ label(o.status) }}</span>@if (o.isTest) { <small> · בדיקה</small> }</td>
+                            <td>@if (o.refunded) { {{ o.refunded | number: '1.0-2' }} {{ cur(o.currency) }}@if (o.refundedAt) { · {{ o.refundedAt | date: 'd.M.yy' }} } } @else { — }</td>
+                            <td>{{ o.counted ? 'כן' : 'לא' }}</td>
+                            <td>{{ exclusionLabel(o.excluded) }}</td>
+                          </tr>
+                        } @empty { <tr><td colspan="8" class="muted">עדיין אין הזמנות דרך הקישור הזה.</td></tr> }
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              }
+              <p class="muted small">רכישה נספרת לקישור רק אם התחילה באותו ביקור שבו נפתח הקישור, אושרה בתשלום אמיתי, אינה רכישת בדיקה ואינה רכישה של בעל הקישור עצמו. אין תגמול כספי ואין הנחה לרוכשים.</p>
             }
           }
           @case ('coupons') {
@@ -540,7 +645,7 @@ export class AdminPage {
   private router = inject(Router);
   tabs: { id: Tab; label: string }[] = [
     { id: 'dashboard', label: 'לוח בקרה' }, { id: 'orders', label: 'רכישות' }, { id: 'games', label: 'משחקים' },
-    { id: 'products', label: 'מוצרים ומחירים' }, { id: 'faq', label: 'שאלות ותשובות' }, { id: 'coupons', label: 'קופונים והנחות' }, { id: 'mailing', label: 'מיילים ותוצאות' }, { id: 'email-setup', label: 'הגדרת שליחת מיילים' },
+    { id: 'products', label: 'מוצרים ומחירים' }, { id: 'faq', label: 'שאלות ותשובות' }, { id: 'coupons', label: 'קופונים והנחות' }, { id: 'mailing', label: 'מיילים ותוצאות' }, { id: 'referrals', label: 'קישורים שיווקיים' }, { id: 'email-setup', label: 'הגדרת שליחת מיילים' },
     { id: 'audit', label: 'יומן פעולות' },
   ];
   state = signal<'loading' | 'denied' | 'ok'>('loading');
@@ -612,9 +717,46 @@ export class AdminPage {
     }
   }
   mailingCsvUrl = computed(() => this.api.mailingCsvUrl(this.mf()));
+  // personal links (affiliate spec 10)
+  rf = signal<ReferralFilters>({});
+  referrals = signal<ReferralList | null>(null);
+  refDetail = signal<ReferralDetails | null>(null);
+  copied = signal<string | null>(null);
+  referralsCsvUrl = computed(() => this.api.referralsCsvUrl(this.rf()));
+  setR(key: keyof ReferralFilters, value: string) {
+    this.rf.update((f) => ({ ...f, [key]: value || undefined }));
+  }
+  cur = (c: string) => (c === 'ILS' ? '₪' : c);
+  /** Amounts of each currency side by side — never added across currencies. */
+  money(list: MoneyTotals[], key: 'gross' | 'refunds' | 'net') {
+    if (!list.length) return '0 ₪';
+    return list.map((m) => `${m[key].toLocaleString('he-IL', { maximumFractionDigits: 2 })} ${this.cur(m.currency)}`).join(' · ');
+  }
+  shortUrl = (u: string) => u.replace(/^https?:\/\//, '');
+  sourcesLabel = (s: string[]) => s.map((x) => ({ results: 'בקשת תוצאות', referral: 'יצירת קישור אישי', group: 'קישור לקבוצה' } as Record<string, string>)[x] ?? x).join(' · ') || '—';
+  emailStatusLabel = (s?: string | null) => ({ sent: 'נשלח (אושר ב־Gmail)', failed: 'השליחה נכשלה', uncertain: 'לא ודאי', 'not-configured': 'שליחת מיילים לא הוגדרה', sending: 'בשליחה' } as Record<string, string>)[s ?? ''] ?? 'לא נשלח';
+  exclusionLabel = (s?: string | null) => ({ 'self-purchase': 'רכישה עצמית', test: 'רכישת בדיקה', 'not-paid': 'לא שולמה' } as Record<string, string>)[s ?? ''] ?? '—';
+  async copyUrl(url: string) {
+    try { await navigator.clipboard.writeText(url); this.copied.set(url); setTimeout(() => this.copied.set(null), 2000); } catch { /* the link is shown, it can be copied by hand */ }
+  }
+  async showReferral(id: string) {
+    try { this.refDetail.set(await this.api.referral(id)); } catch (e: any) { this.fail(e); }
+  }
+  async toggleReferral(d: ReferralDetails) {
+    this.busy.set(true);
+    try {
+      await this.api.setReferralActive(d.id, d.status !== 'active');
+      this.refDetail.set(await this.api.referral(d.id));
+      this.referrals.set(await this.api.referrals(this.rf()));
+    } catch (e: any) {
+      this.fail(e);
+    } finally {
+      this.busy.set(false);
+    }
+  }
   mailLabel = (s: string) => ({ sent: 'נשלח', pending: 'ממתין', failed: 'נכשל', uncertain: 'לא ודאי' } as Record<string, string>)[s] ?? s;
   consentLabel = (s: string) => ({ active: 'פעילה', revoked: 'בוטלה', pending: 'ממתינה לאימות', none: 'אין' } as Record<string, string>)[s] ?? s;
-  gameName = (id?: string | null) => (id ? this.products().find((p) => (p.scenarioId ?? p.id) === id)?.name ?? id : '—');
+  gameName = (id?: string | null) => (id === 'personal-link' ? 'יצירת קישור אישי' : id ? this.products().find((p) => (p.scenarioId ?? p.id) === id)?.name ?? id : '—');
   setM(key: keyof MailingFilters, value: string) {
     this.mf.update((f) => ({ ...f, [key]: value || undefined }));
   }
@@ -698,6 +840,10 @@ export class AdminPage {
         }
         case 'coupons': this.coupons.set(await this.api.coupons()); break;
         case 'email-setup': this.emailSetup.set(await this.api.emailSetup()); break;
+        case 'referrals':
+          if (!this.products().length) this.products.set(await this.api.products());
+          this.referrals.set(await this.api.referrals(this.rf()));
+          break;
         case 'mailing':
           if (!this.products().length) this.products.set(await this.api.products());
           this.mailing.set(await this.api.mailing(this.mf()));

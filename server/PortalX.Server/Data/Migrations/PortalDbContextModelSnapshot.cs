@@ -630,6 +630,43 @@ namespace PortalX.Server.Data.Migrations
                     b.ToTable("MarketingConsents");
                 });
 
+            modelBuilder.Entity("PortalX.Server.Domain.MarketingConsentEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTime>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ConsentVersion")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Email");
+
+                    b.ToTable("MarketingConsentEvents");
+                });
+
             modelBuilder.Entity("PortalX.Server.Domain.OAuthState", b =>
                 {
                     b.Property<string>("StateHash")
@@ -741,6 +778,16 @@ namespace PortalX.Server.Data.Migrations
                     b.Property<string>("ProviderTransactionId")
                         .HasColumnType("text");
 
+                    b.Property<DateTime?>("ReferralAttributedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReferralExclusion")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid?>("ReferralLinkId")
+                        .HasColumnType("uuid");
+
                     b.Property<decimal?>("RefundedAmount")
                         .HasPrecision(10, 2)
                         .HasColumnType("numeric(10,2)");
@@ -768,6 +815,8 @@ namespace PortalX.Server.Data.Migrations
 
                     b.HasIndex("Number")
                         .IsUnique();
+
+                    b.HasIndex("ReferralLinkId");
 
                     b.HasIndex("Provider", "ProviderSessionId")
                         .IsUnique()
@@ -1111,6 +1160,143 @@ namespace PortalX.Server.Data.Migrations
                     b.ToTable("PuzzleStates");
                 });
 
+            modelBuilder.Entity("PortalX.Server.Domain.ReferralLink", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("CommissionEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("CommissionMode")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal?>("CommissionRate")
+                        .HasPrecision(6, 4)
+                        .HasColumnType("numeric(6,4)");
+
+                    b.Property<DateTime?>("ConsentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ConsentText")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("ConsentVersion")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DisabledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)");
+
+                    b.Property<int>("EmailsSent")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("FirstName")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<decimal?>("FixedCommissionAmount")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
+                    b.Property<DateTime?>("LastEmailAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastEmailError")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("LastEmailMessageId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("LastEmailStatus")
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<string>("LastName")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<bool>("MarketingConsent")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("TermsAcceptedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("Email")
+                        .IsUnique();
+
+                    b.HasIndex("Token")
+                        .IsUnique();
+
+                    b.ToTable("ReferralLinks");
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.ReferralVisit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("LastClickAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ReferralLinkId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LastClickAt");
+
+                    b.HasIndex("ReferralLinkId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("ReferralVisits");
+                });
+
             modelBuilder.Entity("PortalX.Server.Domain.ResultEmailRequest", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1206,6 +1392,14 @@ namespace PortalX.Server.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("PortalX.Server.Domain.Order", b =>
+                {
+                    b.HasOne("PortalX.Server.Domain.ReferralLink", null)
+                        .WithMany()
+                        .HasForeignKey("ReferralLinkId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
             modelBuilder.Entity("PortalX.Server.Domain.PlayerSession", b =>
                 {
                     b.HasOne("PortalX.Server.Domain.GameRoom", null)
@@ -1220,6 +1414,15 @@ namespace PortalX.Server.Data.Migrations
                     b.HasOne("PortalX.Server.Domain.GameRoom", null)
                         .WithMany("Puzzles")
                         .HasForeignKey("RoomId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.ReferralVisit", b =>
+                {
+                    b.HasOne("PortalX.Server.Domain.ReferralLink", null)
+                        .WithMany()
+                        .HasForeignKey("ReferralLinkId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

@@ -57,12 +57,37 @@ export interface AdminProduct {
   isFree: boolean; maxPlayersLimit: number;
 }
 
-export interface MailingFilters { search?: string; consent?: string; status?: string; game?: string; from?: string; to?: string }
+export interface MailingFilters { search?: string; consent?: string; status?: string; game?: string; from?: string; to?: string; source?: string }
 
 export interface MailingRow {
   email: string; lastResultsRequestAt?: string | null; lastSentAt?: string | null; lastGame?: string | null; lastGameName?: string | null; resultsStatus?: string | null;
   resultsRequests: number; consent: 'active' | 'revoked' | 'pending' | 'none'; consentedAt?: string | null; revokedAt?: string | null;
   consentSource?: string | null; groupLinkRequested: boolean; source?: string | null;
+  sources: string[]; firstName?: string | null; lastName?: string | null; referralUrl?: string | null; referralCreatedAt?: string | null; registeredAt?: string | null;
+}
+
+/** Personal links (affiliate). Money is per currency and never added across currencies. */
+export interface MoneyTotals { currency: string; gross: number; refunds: number; net: number }
+export interface ReferralFilters {
+  search?: string; status?: string; game?: string; createdFrom?: string; createdTo?: string; paidFrom?: string; paidTo?: string; minPurchases?: string; minNet?: string;
+}
+export interface ReferralRow {
+  id: string; firstName: string; lastName: string; email: string; url: string; createdAt: string; status: 'active' | 'disabled';
+  purchases: number; refunded: number; money: MoneyTotals[]; games: { productId: string; name: string; purchases: number }[];
+  lastEmailStatus?: string | null; lastEmailAt?: string | null; consent: string;
+}
+export interface ReferralList {
+  summary: { links: number; activeLinks: number; purchases: number; refunded: number; money: MoneyTotals[] };
+  rows: ReferralRow[];
+}
+export interface ReferralDetails {
+  id: string; firstName: string; lastName: string; email: string; url: string; createdAt: string; status: 'active' | 'disabled'; disabledAt?: string | null;
+  lastEmailStatus?: string | null; lastEmailAt?: string | null; emailsSent: number; consent: string; consentAt?: string | null; consentRevokedAt?: string | null;
+  purchases: number; money: MoneyTotals[]; commission: { mode: string; enabled: boolean };
+  orders: {
+    id: string; number: number; createdAt: string; paidAt?: string | null; productId: string; productName: string; amount: number; currency: string;
+    status: string; isTest: boolean; refundedAt?: string | null; refunded: number; referralAttributedAt?: string | null; counted: boolean; excluded?: string | null;
+  }[];
 }
 
 /** Email setup (Gmail API with OAuth). Never contains a token or a secret. */
@@ -75,7 +100,7 @@ export interface EmailSetup {
 }
 
 export interface MailingList {
-  totals: { resultsAddresses: number; resultsSent: number; activeSubscribers: number; revokedSubscribers: number; groupLinkRequests: number };
+  totals: { resultsAddresses: number; resultsSent: number; activeSubscribers: number; revokedSubscribers: number; groupLinkRequests: number; referralCreators: number };
   rows: MailingRow[];
 }
 
@@ -152,6 +177,10 @@ export class AdminApiService {
   testEmail() { return this.request<{ ok: boolean; message: string }>('POST', '/api/admin/email/test'); }
   mailing(f: MailingFilters) { return this.request<MailingList>('GET', '/api/admin/mailing' + mailingQuery(f)); }
   mailingCsvUrl(f: MailingFilters) { return '/api/admin/mailing.csv' + mailingQuery(f); }
+  referrals(f: ReferralFilters) { return this.request<ReferralList>('GET', '/api/admin/referrals' + mailingQuery(f)); }
+  referralsCsvUrl(f: ReferralFilters) { return '/api/admin/referrals.csv' + mailingQuery(f); }
+  referral(id: string) { return this.request<ReferralDetails>('GET', `/api/admin/referrals/${id}`); }
+  setReferralActive(id: string, active: boolean) { return this.request<void>('POST', `/api/admin/referrals/${id}/status`, { active }); }
   faq() { return this.request<{ builtIn: { question: string; answer: string }[]; custom: FaqRow[] }>('GET', '/api/admin/faq'); }
   addFaq(body: object) { return this.request<FaqRow>('POST', '/api/admin/faq', body); }
   updateFaq(id: string, body: object) { return this.request<FaqRow>('PUT', `/api/admin/faq/${id}`, body); }

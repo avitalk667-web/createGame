@@ -35,7 +35,8 @@ public sealed class PurchaseService(
 
     // ------------------------------------------------------------------ orders
 
-    public async Task<(CreatedOrder? Created, ServiceError? Error)> CreateOrderAsync(string? productId, string? email, string? couponCode = null)
+    public async Task<(CreatedOrder? Created, ServiceError? Error)> CreateOrderAsync(string? productId, string? email, string? couponCode = null,
+        Guid? referralLinkId = null)
     {
         var product = await db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == (productId ?? ""));
         if (product == null || product.Status != ProductStatus.Published)
@@ -82,6 +83,9 @@ public sealed class PurchaseService(
             AccessKeyHash = RoomService.Hash(key),
             CreatedAt = now,
             UpdatedAt = now,
+            // the visit's personal link, fixed now: the provider's return can never change it
+            ReferralLinkId = referralLinkId,
+            ReferralAttributedAt = referralLinkId == null ? null : now,
         };
         var checkout = provider.CreateCheckout(order);
         order.ProviderSessionId = checkout.SessionId;
@@ -234,6 +238,12 @@ public sealed class PurchaseService(
                         Id = Guid.NewGuid(), ProductId = order.ProductId, OrderId = order.Id, Source = EntitlementSource.Purchase,
                         SessionsAllowed = 1, IsTest = order.IsTest, CreatedAt = now,
                     });
+                // a purchase by the link's own owner stays a sale, but never counts for the link
+                if (order.ReferralLinkId is { } linkId && order.ReferralExclusion == null)
+                {
+                    var linkEmail = await db.ReferralLinks.Where(l => l.Id == linkId).Select(l => l.Email).FirstOrDefaultAsync();
+                    if (linkEmail != null) order.ReferralExclusion = PortalX.Server.Referrals.ReferralService.ExclusionFor(order.Email, linkEmail);
+                }
                 result = "applied:paid";
                 break;
             case PaymentEventType.Failed when order.Status == OrderStatus.Pending:

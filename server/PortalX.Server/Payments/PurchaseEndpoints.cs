@@ -19,9 +19,11 @@ public static class PurchaseEndpoints
 
     public static void MapPurchaseEndpoints(this RouteGroupBuilder api, PaymentGateway gateway)
     {
-        api.MapPost("/orders", async (CreateOrderRequest req, PurchaseService purchases) =>
+        api.MapPost("/orders", async (CreateOrderRequest req, HttpRequest http, PurchaseService purchases, PortalX.Server.Referrals.ReferralService referrals) =>
         {
-            var (created, error) = await purchases.CreateOrderAsync(req.ProductId, req.Email, req.CouponCode);
+            // the personal link of this visit, if any: read from the server-side visit record, never from the request body
+            var referral = await referrals.ResolveVisitAsync(http.Cookies[PortalX.Server.Referrals.ReferralService.VisitCookie]);
+            var (created, error) = await purchases.CreateOrderAsync(req.ProductId, req.Email, req.CouponCode, referral);
             if (error != null) return Error(error);
             return Results.Ok(new
             {

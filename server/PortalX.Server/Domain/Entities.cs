@@ -271,6 +271,14 @@ public class Order
     public decimal DiscountAmount { get; set; }
     public string? CouponCode { get; set; }
     public Guid? CouponId { get; set; }
+    /// <summary>
+    /// The personal link this purchase came through: copied on the server from the visit's referral session when the
+    /// checkout started (never from the browser or the payment provider's return). At most one per order.
+    /// </summary>
+    public Guid? ReferralLinkId { get; set; }
+    public DateTime? ReferralAttributedAt { get; set; }
+    /// <summary>Why the order does not count for its link although it came through it (e.g. "self-purchase"); null = counts.</summary>
+    public string? ReferralExclusion { get; set; }
     /// <summary>Optimistic concurrency (PostgreSQL xmin).</summary>
     public uint Version { get; set; }
 }
@@ -512,4 +520,70 @@ public class OAuthState
     public DateTime CreatedAt { get; set; }
     public DateTime ExpiresAt { get; set; }
     public DateTime? UsedAt { get; set; }
+}
+
+public enum ReferralLinkStatus { Active = 0, Disabled = 1 }
+
+/// <summary>Kept for a later commission plan. Nothing is paid today: the mode is always None.</summary>
+public enum CommissionMode { None = 0, Percent = 1, Fixed = 2 }
+
+/// <summary>
+/// A personal marketing link ("/r/{Token}"). One per normalized email address. The token is random (128 bits) and says
+/// nothing about its owner; it never changes, also when the link is sent again.
+/// </summary>
+public class ReferralLink
+{
+    public Guid Id { get; set; }
+    public string Token { get; set; } = "";
+    public string FirstName { get; set; } = "";
+    public string LastName { get; set; } = "";
+    /// <summary>Lower-cased and trimmed; unique.</summary>
+    public string Email { get; set; } = "";
+    public ReferralLinkStatus Status { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public DateTime? DisabledAt { get; set; }
+    /// <summary>Where the link was made (the site's form).</summary>
+    public string Source { get; set; } = "";
+    public bool MarketingConsent { get; set; }
+    public DateTime? ConsentAt { get; set; }
+    public string ConsentVersion { get; set; } = "";
+    public string ConsentText { get; set; } = "";
+    public DateTime? TermsAcceptedAt { get; set; }
+    public DateTime? LastEmailAt { get; set; }
+    /// <summary>"sent" (Gmail confirmed), "failed", "uncertain" or "not-configured"; null = never tried.</summary>
+    public string? LastEmailStatus { get; set; }
+    public string? LastEmailError { get; set; }
+    public string? LastEmailMessageId { get; set; }
+    public int EmailsSent { get; set; }
+    // a later commission plan — not active: nothing is calculated or paid
+    public CommissionMode CommissionMode { get; set; }
+    public decimal? CommissionRate { get; set; }
+    public decimal? FixedCommissionAmount { get; set; }
+    public bool CommissionEnabled { get; set; }
+}
+
+/// <summary>
+/// One visit that opened a personal link. The browser holds only a random visit token in a session cookie; which link
+/// it points to stays here. A later link in the same visit replaces it (last click).
+/// </summary>
+public class ReferralVisit
+{
+    public Guid Id { get; set; }
+    public string TokenHash { get; set; } = "";
+    public Guid ReferralLinkId { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime LastClickAt { get; set; }
+}
+
+/// <summary>Append-only history of marketing consent: every grant and every revocation, kept for audit.</summary>
+public class MarketingConsentEvent
+{
+    public long Id { get; set; }
+    public string Email { get; set; } = "";
+    /// <summary>"granted" or "revoked".</summary>
+    public string Action { get; set; } = "";
+    public string Source { get; set; } = "";
+    public string? ConsentVersion { get; set; }
+    public DateTime At { get; set; }
 }

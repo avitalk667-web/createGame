@@ -26,6 +26,9 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
     public DbSet<CouponRedemption> CouponRedemptions => Set<CouponRedemption>();
     public DbSet<ResultEmailRequest> ResultEmailRequests => Set<ResultEmailRequest>();
     public DbSet<MarketingConsent> MarketingConsents => Set<MarketingConsent>();
+    public DbSet<MarketingConsentEvent> MarketingConsentEvents => Set<MarketingConsentEvent>();
+    public DbSet<ReferralLink> ReferralLinks => Set<ReferralLink>();
+    public DbSet<ReferralVisit> ReferralVisits => Set<ReferralVisit>();
     public DbSet<CommunityLinkRequest> CommunityLinkRequests => Set<CommunityLinkRequest>();
     public DbSet<AppSecret> AppSecrets => Set<AppSecret>();
     public DbSet<MailAccount> MailAccounts => Set<MailAccount>();
@@ -113,6 +116,51 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.HasIndex(x => x.CreatedAt);
             e.Property(x => x.Version).IsRowVersion();
             e.ToTable(t => t.HasCheckConstraint("CK_Orders_Price", "\"PriceSnapshot\" > 0"));
+            e.HasIndex(x => x.ReferralLinkId);
+            e.Property(x => x.ReferralExclusion).HasMaxLength(32);
+            e.HasOne<ReferralLink>().WithMany().HasForeignKey(x => x.ReferralLinkId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<ReferralLink>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Token).HasMaxLength(32);
+            e.HasIndex(x => x.Token).IsUnique();
+            e.Property(x => x.Email).HasMaxLength(254);
+            // one personal link per (normalized) address
+            e.HasIndex(x => x.Email).IsUnique();
+            e.Property(x => x.FirstName).HasMaxLength(40);
+            e.Property(x => x.LastName).HasMaxLength(40);
+            e.Property(x => x.Source).HasMaxLength(32);
+            e.Property(x => x.ConsentVersion).HasMaxLength(32);
+            e.Property(x => x.ConsentText).HasMaxLength(500);
+            e.Property(x => x.LastEmailStatus).HasMaxLength(24);
+            e.Property(x => x.LastEmailError).HasMaxLength(64);
+            e.Property(x => x.LastEmailMessageId).HasMaxLength(128);
+            e.Property(x => x.CommissionRate).HasPrecision(6, 4);
+            e.Property(x => x.FixedCommissionAmount).HasPrecision(10, 2);
+            e.HasIndex(x => x.CreatedAt);
+        });
+
+        b.Entity<ReferralVisit>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.TokenHash).HasMaxLength(64);
+            e.HasIndex(x => x.TokenHash).IsUnique();
+            e.HasIndex(x => x.LastClickAt);
+            e.HasOne<ReferralLink>().WithMany().HasForeignKey(x => x.ReferralLinkId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<MarketingConsentEvent>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Email).HasMaxLength(254);
+            e.HasIndex(x => x.Email);
+            e.Property(x => x.Action).HasMaxLength(16);
+            e.Property(x => x.Source).HasMaxLength(64);
+            e.Property(x => x.ConsentVersion).HasMaxLength(32);
         });
 
         b.Entity<PaymentEvent>(e =>

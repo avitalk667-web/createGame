@@ -7,6 +7,19 @@ export class ApiError extends Error {
   }
 }
 
+/** The personal-link form's answer: the visitor's own link and whether the email went out (never purchase data). */
+export interface ReferralReply {
+  ok: boolean;
+  code: string;
+  message: string;
+  token?: string;
+  url?: string;
+  firstName?: string;
+  existing?: boolean;
+  emailStatus?: 'sent' | 'failed' | 'uncertain' | 'not-configured' | null;
+  emailMessage?: string | null;
+}
+
 export interface RoomInfo {
   code: string;
   scenarioId: string;
@@ -32,14 +45,22 @@ export class ApiService {
     } catch {
       throw new ApiError('network', 'אין חיבור לשרת. בדקו את החיבור לאינטרנט ונסו שוב.');
     }
-    if (res.status === 429) throw new ApiError('rate', 'יותר מדי ניסיונות. המתינו דקה ונסו שוב.');
     const data = await res.json().catch(() => null);
+    if (res.status === 429) throw new ApiError('rate', data?.message ?? 'יותר מדי ניסיונות. המתינו דקה ונסו שוב.');
     if (!res.ok) throw new ApiError(data?.code ?? 'error', data?.message ?? 'אירעה שגיאה. נסו שוב.');
     return data as T;
   }
 
   products() {
     return this.request<Product[]>('GET', '/api/products');
+  }
+
+  createReferral(body: { firstName: string; lastName: string; email: string; marketingConsent: boolean; acceptTerms: boolean }) {
+    return this.request<ReferralReply>('POST', '/api/referrals', body);
+  }
+
+  resendReferral(token: string) {
+    return this.request<ReferralReply>('POST', '/api/referrals/resend', { token });
   }
 
   product(id: string) {

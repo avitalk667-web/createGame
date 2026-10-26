@@ -21,7 +21,7 @@ public sealed record EndOfGameReply(bool Ok, string Code, string Message, string
 /// </summary>
 public sealed partial class ResultsEmailService(
     PortalDbContext db, RoomService rooms, ScenarioCatalog scenarios, IEmailSender sender, SiteOptions site, ResultsEmailPolicy policy,
-    UnsubscribeLinks links, ILogger<ResultsEmailService> logger)
+    UnsubscribeLinks links, ConsentRecorder consents, ILogger<ResultsEmailService> logger)
 {
     public const string ConsentVersion = "2026-10-v2";
     public const string ConsentText = "אני מסכים/ה לקבל מיילים שיווקיים ועדכונים מ-PORTAL X על משחקים חדשים, הטבות, קופונים ותכנים נוספים. ניתן לבטל את ההסכמה בכל עת.";
@@ -79,7 +79,7 @@ public sealed partial class ResultsEmailService(
         var now = DateTime.UtcNow;
         var source = room.ScenarioId;
         var consentRecorded = false;
-        if (c.MarketingConsent) consentRecorded = await RecordConsentAsync(email!, source, room.Id, now);
+        if (c.MarketingConsent) consentRecorded = await consents.GrantAsync(email!, source, room.Id, ConsentVersion, ConsentText, now);
         string? groupUrl = null;
         if (c.CommunityLink)
         {
@@ -92,38 +92,6 @@ public sealed partial class ResultsEmailService(
         var reply = await SendResultsAsync(room, player, email!, site.SiteUrl ?? requestSiteUrl, now);
         // a failed or pending send is still an answer: the consent and group choices above were saved, and the page offers a retry
         return (reply with { ConsentRecorded = consentRecorded, CommunityGroupUrl = groupUrl }, 200);
-    }
-
-    private async Task<bool> RecordConsentAsync(string email, string source, Guid roomId, DateTime now)
-    {
-        var consent = await db.MarketingConsents.FirstOrDefaultAsync(x => x.Email == email);
-        if (consent is { Status: ConsentStatus.Active }) return true;
-        if (consent == null)
-        {
-            consent = new MarketingConsent { Id = Guid.NewGuid(), Email = email };
-            db.MarketingConsents.Add(consent);
-        }
-        // a new, explicit tick: active again from now, with a fresh unsubscribe link (old links stop working)
-        consent.Status = ConsentStatus.Active;
-        consent.ConsentedAt = now;
-        consent.Source = source;
-        consent.SourceRoomId = roomId;
-        consent.ConsentVersion = ConsentVersion;
-        consent.ConsentText = ConsentText;
-        consent.RevokedAt = null;
-        consent.TokenStamp = UnsubscribeLinks.NewStamp();
-        consent.UpdatedAt = now;
-        try
-        {
-            await db.SaveChangesAsync();
-        }
-        catch (DbUpdateException)
-        {
-            // the same address consented at the same moment elsewhere: that record stands
-            db.ChangeTracker.Clear();
-        }
-        logger.LogInformation("Marketing consent recorded (source {Source})", source);
-        return true;
     }
 
     private async Task RecordGroupRequestAsync(GameRoom room, PlayerSession player, string? email, DateTime now)

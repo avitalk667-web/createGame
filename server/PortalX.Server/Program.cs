@@ -65,6 +65,9 @@ builder.Services.AddSingleton<PortalX.Server.Mail.IEmailSender>(sp =>
 builder.Services.AddScoped<PortalX.Server.Mail.UnsubscribeLinks>();
 builder.Services.AddScoped<PortalX.Server.Mail.ResultsEmailService>();
 builder.Services.AddScoped<PortalX.Server.Mail.MailingAdmin>();
+builder.Services.AddScoped<PortalX.Server.Mail.ConsentRecorder>();
+builder.Services.AddScoped<PortalX.Server.Referrals.ReferralService>();
+builder.Services.AddScoped<PortalX.Server.Referrals.ReferralAdmin>();
 builder.Services.AddHostedService<PortalX.Server.Mail.MailRetentionService>();
 builder.Services.AddAdminAuth();
 
@@ -115,6 +118,13 @@ builder.Services.AddRateLimiter(o =>
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:UnsubscribePerMinute", 20), Window = TimeSpan.FromMinutes(1) }));
     o.AddPolicy("email-admin", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:EmailAdminPer10Minutes", 15), Window = TimeSpan.FromMinutes(10) }));
+    // personal links: creating, mailing again and opening (spec 9, 12)
+    o.AddPolicy("referral", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:ReferralPer10Minutes", 10), Window = TimeSpan.FromMinutes(10) }));
+    o.AddPolicy("referral-resend", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:ReferralResendPer10Minutes", 5), Window = TimeSpan.FromMinutes(10) }));
+    o.AddPolicy("referral-visit", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:ReferralVisitsPerMinute", 30), Window = TimeSpan.FromMinutes(1) }));
     o.AddPolicy("admin-login", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:AdminLoginPerMinute", 10), Window = TimeSpan.FromMinutes(1) }));
 });
@@ -188,6 +198,7 @@ api.MapPurchaseEndpoints(app.Services.GetRequiredService<PaymentGateway>());
 api.MapSiteEndpoints();
 api.MapTestCheckout();
 PortalX.Server.Mail.MailEndpoints.MapMailEndpoints(api);
+PortalX.Server.Referrals.ReferralEndpoints.MapReferralEndpoints(api);
 api.MapAdminEndpoints();
 
 api.MapGet("/rooms/{code}", async (string code, RoomService rooms, ScenarioCatalog catalog) =>
@@ -252,6 +263,8 @@ api.MapPost("/rooms/{code}/players", async (string code, JoinRequest req, HttpCo
 }).RequireRateLimiting("join");
 
 app.MapHub<GameHub>("/hubs/game");
+// personal links: "/r/{token}" starts this visit's referral session and opens the home page
+PortalX.Server.Referrals.ReferralEndpoints.MapReferralRedirect(app);
 // unknown API paths answer 404 instead of falling through to the Angular page
 app.Map("/api/{**rest}", () => Results.NotFound(new ApiError("not-found", "הכתובת לא נמצאה.")));
 app.MapFallbackToFile("index.html", StaticCaching.Options);
