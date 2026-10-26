@@ -46,6 +46,15 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
     </header>
 
     <main>
+      <!-- the personal-link invitation: first thing under the menu, in the page flow (never a popup) -->
+      <section class="share card" aria-labelledby="share-title">
+        <div>
+          <h2 id="share-title">אהבתם? שתפו את PORTAL X</h2>
+          <p>צרו קישור אישי ושתפו אותו עם חברים ומכרים. רכישות שיתבצעו דרכו יירשמו בנתוני הקישור שלכם.</p>
+        </div>
+        <a class="btn primary" routerLink="/share">יצירת קישור אישי</a>
+      </section>
+
       <section class="hero" aria-labelledby="hero-title">
         <div class="hero-text">
           <span class="kicker">חדרי בריחה תלת־ממדיים · חוויה קבוצתית</span>
@@ -120,13 +129,6 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
         <p class="muted">עובד בדפדפן במחשב ובטלפון. לא צריך מצלמה, מיקרופון או הרשמה. רוצים לנסות קודם? „שער הסודות” חינמי לגמרי.</p>
       </section>
 
-      <section class="share card" aria-labelledby="share-title">
-        <div>
-          <h2 id="share-title">אהבתם? שתפו את PORTAL X</h2>
-          <p>צרו קישור אישי ושתפו אותו עם חברים ומכרים. רכישות שיתבצעו דרכו יירשמו בנתוני הקישור שלכם.</p>
-        </div>
-        <a class="btn primary" routerLink="/share">יצירת קישור אישי</a>
-      </section>
 
       <section id="faq" class="faq" aria-labelledby="faq-title">
         <h2 id="faq-title">שאלות ותשובות נפוצות</h2>
@@ -287,12 +289,17 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
     .price b { font-size:1.8rem; color:var(--gold-2); line-height:1.1; }
     .price span { font-size:.9rem; color:var(--muted); }
     .how { padding-block:2rem; scroll-margin-top:84px; }
-    .share { display:flex; align-items:center; justify-content:space-between; gap:1.2rem; margin-block:1rem 2rem; padding:1.2rem 1.4rem;
-      border:1px solid rgba(224,185,92,.45); background:linear-gradient(135deg, rgba(20,32,74,.95), rgba(10,18,48,.95)); }
-    .share h2 { margin:0 0 .3rem; color:var(--gold-2); }
-    .share p { margin:0; color:var(--muted); line-height:1.6; }
-    .share .btn { white-space:nowrap; }
-    @media (max-width: 640px) { .share { flex-direction:column; align-items:stretch; text-align:start; } }
+    .share { display:flex; align-items:center; justify-content:space-between; gap:1.5rem; margin-block:1.1rem 0; padding:1.25rem 1.6rem;
+      border:1px solid rgba(224,185,92,.45); border-radius:16px; background:linear-gradient(135deg, rgba(20,32,74,.96), rgba(10,18,48,.96)); }
+    .share h2 { margin:0 0 .3rem; color:var(--gold-2); font-size:clamp(1.25rem, 2.4vw, 1.9rem); line-height:1.25; }
+    .share p { margin:0; color:#d6dcef; line-height:1.6; }
+    .share .btn { white-space:nowrap; min-height:48px; padding-inline:1.6rem; flex-shrink:0; transition:transform .2s, box-shadow .2s, filter .2s; }
+    .share .btn:hover { transform:translateY(-1px); filter:brightness(1.06); box-shadow:0 6px 22px rgba(224,185,92,.35); }
+    @media (max-width: 640px) {
+      .share { flex-direction:column; align-items:stretch; gap:.7rem; margin-top:.75rem; padding:.85rem 1rem; }
+      .share p { font-size:.9rem; line-height:1.5; }
+      .share .btn { justify-content:center; text-align:center; }
+    }
     .how ol { list-style:none; padding:0; margin:0; display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:1rem; counter-reset:s; }
     .how li { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:1rem; counter-increment:s; display:flex; flex-direction:column; gap:.3rem; }
     .how li::before { content:counter(s); font-family:var(--font-title); font-size:2rem; color:var(--gold); font-weight:900; }
