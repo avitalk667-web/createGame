@@ -78,7 +78,11 @@ public static class ProductView
             PaymentsAvailable = gateway.Available,
             TestPayments = gateway.Provider?.IsTest ?? false,
             // the demo button appears only when the server turned demo mode on
-            TestCheckout = test?.Offers(p, scenarios) ?? false,
+            TestCheckout = (test?.Offers(p, scenarios) ?? false) && Payments.SaleWindow.State(p, DateTime.UtcNow) == Payments.SaleWindow.Open,
+            // "open", "scheduled" or "paused"; a scheduled game shows its opening time (Israel time)
+            SaleState = Payments.SaleWindow.State(p, DateTime.UtcNow),
+            SaleOpensAt = p.SaleOpensAt,
+            SaleOpensLabel = p.SaleOpensAt is { } at ? Payments.SaleWindow.Label(at) : null,
         };
     }
 }

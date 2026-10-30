@@ -1163,8 +1163,17 @@ namespace PortalX.Server.Data.Migrations
                         .HasPrecision(10, 2)
                         .HasColumnType("numeric(10,2)");
 
+                    b.Property<DateTime?>("SaleOpensAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("SalePaused")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("ScenarioId")
                         .HasColumnType("text");
+
+                    b.Property<bool>("ShowBeforeSale")
+                        .HasColumnType("boolean");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("integer");

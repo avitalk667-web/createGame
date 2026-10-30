@@ -22,9 +22,9 @@ public static class AdminContentEndpoints
     {
         // ------------------------------------------------------------------ FAQ (spec 2.4)
 
+        // all the questions the home page can show — the ones the site shipped with included — each editable and deletable
         secured.MapGet("/faq", async (PortalDbContext db) => Results.Ok(new
         {
-            builtIn = Content.SiteEndpoints.LoadFixedFaq(),
             custom = await db.Faq.AsNoTracking().OrderBy(f => f.SortOrder).ThenBy(f => f.CreatedAt).ToListAsync(),
         }));
 

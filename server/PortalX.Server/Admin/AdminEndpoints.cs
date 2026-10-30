@@ -101,7 +101,6 @@ public static class AdminEndpoints
         secured.MapGet("/audit", async (AdminService s) => Results.Ok(await s.AuditListAsync()));
 
         secured.MapAdminContentEndpoints();
-        secured.MapGameQuestionEndpoints();
         PortalX.Server.Mail.MailEndpoints.MapAdminMailing(secured);
         PortalX.Server.Referrals.ReferralEndpoints.MapAdminReferrals(secured);
         PortalX.Server.Mail.GmailAdminEndpoints.MapGmailAdmin(secured);

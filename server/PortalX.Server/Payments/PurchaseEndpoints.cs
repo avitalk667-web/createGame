@@ -99,6 +99,11 @@ public static class PurchaseEndpoints
         {
             var order = await BySession(db, session);
             if (order == null) return Results.NotFound(new ApiError("no-session", "דף התשלום לא נמצא."));
+            // no payment starts before the game opens for purchase (or while its sale is paused)
+            if (req.Outcome == "approve" && order.Status == OrderStatus.Pending
+                && await db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == order.ProductId) is { } product
+                && SaleWindow.Refusal(product, DateTime.UtcNow) is { } closed)
+                return Results.Json(new ApiError(closed.Code, closed.Message), statusCode: closed.Status);
             PaymentEventType? type = req.Outcome switch
             {
                 "approve" => PaymentEventType.Succeeded,

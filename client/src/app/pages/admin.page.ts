@@ -4,14 +4,9 @@ import { Router, RouterLink } from '@angular/router';
 import { sessionStore } from '../core/api.service';
 import {
   AdminApiService, AdminFilters, AdminGame, AdminOrder, AdminProduct, AuditEntry, CouponRow, CouponUse, Dashboard, FaqRow, EmailSetup, MailingFilters, MailingList,
-  GameQuestionRevision, GameQuestionRow, GameQuestionSlot, MoneyTotals, ReferralDetails, ReferralFilters, ReferralList } from '../core/admin-api.service';
+  MoneyTotals, ReferralDetails, ReferralFilters, ReferralList } from '../core/admin-api.service';
 
-/** The question form of "game questions and answers": a slot is "scenarioId|puzzleId". */
-interface QuestionForm {
-  id?: string; slot: string; question: string; answer: string; accept: string; category: string; difficulty: string; points: string; sortOrder: string; active: boolean;
-}
-
-type Tab = 'dashboard' | 'orders' | 'games' | 'products' | 'faq' | 'questions' | 'coupons' | 'mailing' | 'referrals' | 'email-setup' | 'audit';
+type Tab = 'dashboard' | 'orders' | 'games' | 'products' | 'faq' | 'coupons' | 'mailing' | 'referrals' | 'email-setup' | 'audit';
 
 /** The coupon form as typed (spec 4.3). Dates are local date-time strings from the inputs. */
 interface CouponForm {
@@ -21,7 +16,12 @@ interface CouponForm {
 const EMPTY_COUPON: CouponForm = { code: '', name: '', note: '', kind: 'percent', value: '', productIds: [], startsAt: '', endsAt: '', maxRedemptions: '', active: true };
 
 /** Unsaved edits of one product, as typed in the form. */
-interface ProductEdit { name?: string; tagline?: string; description?: string; coverImage?: string; priceIls?: string; maxPlayers?: string; status?: string }
+interface ProductEdit {
+  name?: string; tagline?: string; description?: string; coverImage?: string; priceIls?: string; maxPlayers?: string; status?: string;
+  saleDate?: string; saleTime?: string; showBeforeSale?: string; salePaused?: string;
+}
+
+const SALE_STATE: Record<string, string> = { open: 'פתוח לרכישה', scheduled: 'מתוכנן לפתיחה', paused: 'מכירה מושהית' };
 
 const STATUS: Record<string, string> = {
   pending: 'ממתין', paid: 'שולם', failed: 'נכשל', cancelled: 'בוטל', refunded: 'הוחזר',
@@ -35,7 +35,7 @@ const STATUS: Record<string, string> = {
 
 const ACTIONS: Record<string, string> = {
   login: 'כניסה', 'login-failed': 'כניסה שנכשלה', 'free-game-opened': 'פתיחת משחק חינמי',
-  'product-updated': 'עדכון מוצר', 'product-price-changed': 'שינוי מחיר', 'sales-exported': 'ייצוא מכירות',
+  'product-updated': 'עדכון מוצר', 'product-price-changed': 'שינוי מחיר', 'product-sale-changed': 'שינוי זמינות לרכישה', 'sales-exported': 'ייצוא מכירות',
   'faq-added': 'הוספת שאלה', 'faq-updated': 'עדכון שאלה', 'faq-deleted': 'מחיקת שאלה',
   'coupon-created': 'יצירת קופון', 'coupon-updated': 'עדכון קופון', 'coupon-enabled': 'הפעלת קופון', 'coupon-disabled': 'השבתת קופון',
   'referral-enabled': 'הפעלת קישור אישי', 'referral-disabled': 'השבתת קישור אישי', 'referrals-exported': 'ייצוא קישורים שיווקיים',
@@ -259,6 +259,23 @@ const ACTIONS: Record<string, string> = {
                       </select>
                     </label>
                   </div>
+                  <fieldset class="sale">
+                    <legend>הגדרות זמינות לרכישה <span class="st" [attr.data-s]="p.saleState === 'open' ? 'paid' : 'pending'">{{ saleLabel(p.saleState) }}</span></legend>
+                    <div class="row3">
+                      <label>תאריך פתיחת רכישה <input type="date" dir="ltr" [value]="edit(p.id).saleDate ?? p.saleDate ?? ''" (input)="patch(p.id, 'saleDate', $any($event.target).value)" /></label>
+                      <label>שעת פתיחת רכישה <input type="time" dir="ltr" [value]="edit(p.id).saleTime ?? p.saleTime ?? ''" (input)="patch(p.id, 'saleTime', $any($event.target).value)" /></label>
+                      <label>סטטוס זמינות לרכישה
+                        <select [value]="(edit(p.id).salePaused ?? (p.salePaused ? 'true' : 'false'))" (change)="patch(p.id, 'salePaused', $any($event.target).value)">
+                          <option value="false">פעיל (לפי מועד הפתיחה)</option><option value="true">מכירה מושהית</option>
+                        </select>
+                      </label>
+                    </div>
+                    <label class="check"><input type="checkbox" [checked]="(edit(p.id).showBeforeSale ?? (p.showBeforeSale ? 'true' : 'false')) === 'true'"
+                      (change)="patch(p.id, 'showBeforeSale', $any($event.target).checked ? 'true' : 'false')" /> להציג את המשחק באתר לפני פתיחת הרכישה</label>
+                    <p class="muted small">שעון ישראל. @if (p.saleOpensLabel) { הרכישה נפתחת ב־{{ p.saleOpensLabel }}, אוטומטית. } @else { לא נקבע מועד — המוצר זמין כרגיל. }
+                      השינוי אינו משפיע על הזמנות ששולמו.
+                      @if (p.saleDate) { <button type="button" class="btn small ghost" (click)="clearSale(p.id)" [disabled]="busy()">ביטול מועד הפתיחה</button> }</p>
+                  </fieldset>
                   <button class="btn primary small" type="submit" [disabled]="busy()">שמירה</button>
                   @if (saved() === p.id) { <span class="ok">נשמר</span> }
                 </form>
@@ -277,7 +294,7 @@ const ACTIONS: Record<string, string> = {
               </div>
               <p class="muted small">הטקסט מוצג כטקסט רגיל בלבד — תגיות HTML או קוד לא יופעלו.</p>
             </section>
-            <h2>שאלות שהוספתם</h2>
+            <h2>השאלות שבדף הבית</h2>
             <div class="table-wrap">
               <table>
                 <thead><tr><th>סדר</th><th>שאלה</th><th>תשובה</th><th>מצב</th><th>פעולות</th></tr></thead>
@@ -291,92 +308,21 @@ const ACTIONS: Record<string, string> = {
                         <button class="btn small" (click)="moveFaq(i, 1)" [disabled]="i === faqRows().length - 1" aria-label="העברה למטה">↓</button>
                         <button class="btn small" (click)="faqEdit.set({ id: q.id, question: q.question, answer: q.answer, published: q.published })">עריכה</button>
                         <button class="btn small" (click)="toggleFaq(q)">{{ q.published ? 'הסתרה' : 'הצגה' }}</button>
-                        <button class="btn small ghost" (click)="deleteFaq(q)">מחיקה</button>
+                        <button class="btn small ghost" (click)="faqDelete.set(q)">מחיקה</button>
                       </td>
                     </tr>
-                  } @empty { <tr><td colspan="5" class="muted">עדיין לא הוספתם שאלות. השאלות הקבועות מוצגות תמיד.</td></tr> }
+                  } @empty { <tr><td colspan="5" class="muted">אין שאלות. אפשר להוסיף שאלה בטופס שלמעלה.</td></tr> }
                 </tbody>
               </table>
             </div>
-            <h2>שאלות קבועות (מגיעות עם האתר)</h2>
-            <ol class="fixed-faq">@for (q of faqBuiltIn(); track q.question) { <li><b>{{ q.question }}</b> {{ q.answer }}</li> }</ol>
-          }
-          @case ('questions') {
-            <section class="card faq-form" aria-labelledby="q-title">
-              <h2 id="q-title">{{ qForm().id ? 'עריכת שאלת משחק' : 'הוספת שאלת משחק' }}</h2>
-              <p class="muted small">שאלות שמופיעות בתוך המשחקים עצמם — לא השאלות הנפוצות של האתר. בכל חידה משמשת השאלה הפעילה הראשונה לפי הסדר; בלי שאלה פעילה המשחק משתמש בשאלה המקורית.
-                שינוי נכנס למשחקים שמתחילים מעכשיו: משחק שכבר התחיל (או הסתיים) נשאר עם הגרסה שלו. התשובה נבדקת בשרת בלבד ואינה נשלחת לשחקנים.</p>
-              <label>משחק, חדר וחידה
-                <select [value]="qForm().slot" (change)="qf('slot', $any($event.target).value)">
-                  <option value="">בחרו חידה...</option>
-                  @for (s of qSlots(); track s.scenarioId + s.puzzleId) { <option [value]="s.scenarioId + '|' + s.puzzleId">{{ s.game }} · {{ s.zoneName }} · {{ s.title }}</option> }
-                </select>
-              </label>
-              @if (qSlot(); as s) {
-                <p class="muted small">השאלה המקורית: „{{ s.builtInQuestion }}” · תשובה: <b>{{ s.builtInAnswer }}</b>@if (s.builtInAccept.length) { (וגם: {{ s.builtInAccept.join(', ') }}) }
-                  @if (s.hasOptions) { · שאלה עם כפתורי בחירה: התשובה הנכונה תופיע במקום התשובה המקורית, ושאר האפשרויות יישארו. }
-                  <button type="button" class="btn small ghost" (click)="fromBuiltIn()">העתקת המקור לטופס</button></p>
-              }
-              <label>נוסח השאלה <textarea rows="3" maxlength="500" [value]="qForm().question" (input)="qf('question', $any($event.target).value)"></textarea></label>
-              <div class="row3">
-                <label>תשובה נכונה <input maxlength="100" [value]="qForm().answer" (input)="qf('answer', $any($event.target).value)" /></label>
-                <label>קטגוריה <input maxlength="60" [value]="qForm().category" (input)="qf('category', $any($event.target).value)" /></label>
-                <label>רמת קושי
-                  <select [value]="qForm().difficulty" (change)="qf('difficulty', $any($event.target).value)">
-                    @for (d of qDifficulties(); track d) { <option [value]="d" [selected]="d === qForm().difficulty">{{ d }}</option> }
-                  </select>
-                </label>
-              </div>
-              <label>תשובות חלופיות שמתקבלות (שורה או פסיק בין תשובה לתשובה) <textarea rows="2" [value]="qForm().accept" (input)="qf('accept', $any($event.target).value)"></textarea></label>
-              <div class="row3">
-                <label>ניקוד אישי לתשובה נכונה <input type="number" min="0" max="500" [placeholder]="qSlot()?.builtInPoints ?? ''" [value]="qForm().points" (input)="qf('points', $any($event.target).value)" /></label>
-                <label>סדר הופעה <input type="number" min="0" max="10000" placeholder="אוטומטי" [value]="qForm().sortOrder" (input)="qf('sortOrder', $any($event.target).value)" /></label>
-                <label class="check"><input type="checkbox" [checked]="qForm().active" (change)="qf('active', $any($event.target).checked)" /> פעילה</label>
-              </div>
-              <p class="muted small">ניקוד ריק = הניקוד הרגיל של המשחק. השוואת התשובה מתעלמת מניקוד עברי, מרווחים ומפיסוק. הרמזים של החידה נשארים כפי שהם.</p>
-              <div class="row">
-                <button class="btn primary small" (click)="saveQuestion()" [disabled]="busy() || !qForm().slot">{{ qForm().id ? 'שמירה' : 'הוספה' }}</button>
-                @if (qForm().id) { <button class="btn small ghost" (click)="qForm.set(emptyQuestion())">ביטול</button> }
-              </div>
-              @if (qMsg(); as m) { <p class="msg-box ok" role="status">{{ m }}</p> }
-            </section>
-            <h2>שאלות המשחקים</h2>
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>משחק · חדר · חידה</th><th>שאלה</th><th>תשובה</th><th>חלופות</th><th>קטגוריה</th><th>קושי</th><th>ניקוד</th><th>סדר</th><th>מצב</th><th>גרסה</th><th>עודכן</th><th>פעולות</th></tr></thead>
-                <tbody>
-                  @for (r of qRows(); track r.id) {
-                    <tr>
-                      <td class="wrap small">{{ slotLabel(r) }}</td><td class="wrap">{{ r.question }}</td><td><b>{{ r.answer }}</b></td>
-                      <td class="wrap small">{{ r.accept.join(', ') || '—' }}</td><td>{{ r.category || '—' }}</td><td>{{ r.difficulty }}</td>
-                      <td>{{ r.points ?? 'רגיל' }}</td><td>{{ r.sortOrder }}</td>
-                      <td>{{ r.active ? (inUse(r) ? 'פעילה — בשימוש' : 'פעילה') : 'מושבתת' }}</td><td>{{ r.version }}</td>
-                      <td class="small">{{ r.updatedAt | date: 'd.M.yy HH:mm' }} · {{ r.updatedBy }}</td>
-                      <td class="row">
-                        <button class="btn small" (click)="moveQuestion(r, -1)" aria-label="העברה למעלה">↑</button>
-                        <button class="btn small" (click)="moveQuestion(r, 1)" aria-label="העברה למטה">↓</button>
-                        <button class="btn small" (click)="editQuestion(r)">עריכה</button>
-                        <button class="btn small" (click)="toggleQuestion(r)">{{ r.active ? 'השבתה' : 'הפעלה' }}</button>
-                        <button class="btn small ghost" (click)="showHistory(r)">היסטוריה</button>
-                      </td>
-                    </tr>
-                  } @empty { <tr><td colspan="12" class="muted">עדיין אין שאלות. המשחקים משתמשים בשאלות המקוריות שלהם.</td></tr> }
-                </tbody>
-              </table>
-            </div>
-            @if (qHistory(); as h) {
-              <section class="card details" aria-label="היסטוריית שינויים">
-                <div class="row"><h2>היסטוריית שינויים — {{ slotLabel(h.row) }}</h2><button class="btn small ghost" (click)="qHistory.set(null)">סגירה</button></div>
-                <div class="table-wrap">
-                  <table>
-                    <thead><tr><th>מועד</th><th>מנהל</th><th>פעולה</th><th>גרסה</th><th>לפני</th><th>אחרי</th></tr></thead>
-                    <tbody>
-                      @for (v of h.list; track v.id) {
-                        <tr><td>{{ v.at | date: 'd.M.yy HH:mm' }}</td><td>{{ v.admin }}</td><td>{{ v.action === 'created' ? 'נוצרה' : 'עודכנה' }}</td><td>{{ v.version }}</td>
-                          <td class="wrap small">@if (v.before) { <code>{{ v.before | json }}</code> } @else { — }</td><td class="wrap small"><code>{{ v.after | json }}</code></td></tr>
-                      }
-                    </tbody>
-                  </table>
+            @if (faqDelete(); as d) {
+              <div class="confirm-veil" (click)="faqDelete.set(null)"></div>
+              <section class="card confirm" role="alertdialog" aria-modal="true" aria-labelledby="faq-del-title" aria-describedby="faq-del-q">
+                <h2 id="faq-del-title">האם את בטוחה שברצונך למחוק את השאלה?</h2>
+                <p id="faq-del-q" class="muted">„{{ d.question }}”</p>
+                <div class="row">
+                  <button class="btn small danger" (click)="deleteFaq(d)" [disabled]="busy()">מחיקה</button>
+                  <button class="btn small ghost" (click)="faqDelete.set(null)">ביטול</button>
                 </div>
               </section>
             }
@@ -710,6 +656,10 @@ const ACTIONS: Record<string, string> = {
     .product input, .product textarea, .product select { width:100%; }
     .product textarea { background:rgba(255,255,255,.06); color:var(--text); border:1px solid var(--line); border-radius:10px; padding:.5rem; font:inherit; }
     .row3 { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:.5rem; }
+    .sale { border:1px solid var(--line); border-radius:12px; padding:.5rem .8rem .6rem; margin:0; display:flex; flex-direction:column; gap:.4rem; }
+    .sale legend { color:var(--gold-2); font-weight:700; padding:0 .3rem; display:flex; gap:.4rem; align-items:center; }
+    .sale label.check { flex-direction:row; align-items:center; gap:.4rem; }
+    .sale p { margin:0; }
     .warn { margin:0; color:#ffd59a; font-size:.9rem; }
     .faq-form, .coupon-form { display:flex; flex-direction:column; gap:.5rem; margin-bottom:1rem; }
     .faq-form label, .coupon-form label { display:flex; flex-direction:column; gap:.2rem; font-size:.85rem; color:var(--muted); }
@@ -719,7 +669,9 @@ const ACTIONS: Record<string, string> = {
     fieldset { border:1px solid var(--line); border-radius:10px; padding:.5rem .8rem; display:flex; flex-wrap:wrap; gap:.4rem 1.2rem; }
     legend { color:var(--gold-2); font-size:.85rem; padding:0 .3rem; }
     td.wrap { white-space:normal; min-width:180px; max-width:420px; }
-    .fixed-faq { line-height:1.7; color:var(--muted); } .fixed-faq b { color:var(--text); margin-inline-end:.4em; }
+    .confirm-veil { position:fixed; inset:0; z-index:50; background:rgba(3,5,12,.6); }
+    .confirm { position:fixed; z-index:51; left:50%; top:50%; transform:translate(-50%, -50%); width:min(440px, calc(100% - 32px)); box-sizing:border-box; }
+    .confirm h2 { margin-top:0; font-size:1.15rem; }
     @media (max-width: 900px) { .grid3 { grid-template-columns:repeat(2, minmax(0,1fr)); } }
     @media (max-width: 560px) { .grid3 { grid-template-columns:1fr; } }
     .ok { color:#9be3b4; } .small { font-size:.8rem; }
@@ -733,7 +685,7 @@ export class AdminPage {
   private router = inject(Router);
   tabs: { id: Tab; label: string }[] = [
     { id: 'dashboard', label: 'לוח בקרה' }, { id: 'orders', label: 'רכישות' }, { id: 'games', label: 'משחקים' },
-    { id: 'products', label: 'מוצרים ומחירים' }, { id: 'faq', label: 'שאלות ותשובות' }, { id: 'questions', label: 'ניהול שאלות ותשובות במשחקים' }, { id: 'coupons', label: 'קופונים והנחות' }, { id: 'mailing', label: 'מיילים ותוצאות' }, { id: 'referrals', label: 'קישורים שיווקיים' }, { id: 'email-setup', label: 'הגדרת שליחת מיילים' },
+    { id: 'products', label: 'מוצרים ומחירים' }, { id: 'faq', label: 'שאלות ותשובות' }, { id: 'coupons', label: 'קופונים והנחות' }, { id: 'mailing', label: 'מיילים ותוצאות' }, { id: 'referrals', label: 'קישורים שיווקיים' }, { id: 'email-setup', label: 'הגדרת שליחת מיילים' },
     { id: 'audit', label: 'יומן פעולות' },
   ];
   state = signal<'loading' | 'denied' | 'ok'>('loading');
@@ -850,7 +802,8 @@ export class AdminPage {
   }
   // FAQ management (spec 2.4)
   faqRows = signal<FaqRow[]>([]);
-  faqBuiltIn = signal<{ question: string; answer: string }[]>([]);
+  /** The question waiting for "delete" to be confirmed. */
+  faqDelete = signal<FaqRow | null>(null);
   emptyFaq = () => ({ id: '' as string, question: '', answer: '', published: true });
   faqEdit = signal(this.emptyFaq());
   // coupons (spec 4.2–4.9)
@@ -923,14 +876,6 @@ export class AdminPage {
         case 'faq': {
           const f = await this.api.faq();
           this.faqRows.set(f.custom);
-          this.faqBuiltIn.set(f.builtIn);
-          break;
-        }
-        case 'questions': {
-          const q = await this.api.gameQuestions();
-          this.qSlots.set(q.slots);
-          this.qDifficulties.set(q.difficulties);
-          this.qRows.set(q.questions);
           break;
         }
         case 'coupons': this.coupons.set(await this.api.coupons()); break;
@@ -964,6 +909,22 @@ export class AdminPage {
     this.saved.set(null);
   }
 
+  saleLabel = (s: string) => SALE_STATE[s] ?? s;
+
+  async clearSale(id: string) {
+    this.busy.set(true);
+    this.error.set(null);
+    try {
+      const updated = await this.api.updateProduct(id, { clearSaleOpening: true });
+      this.products.update((list) => list.map((p) => (p.id === id ? updated : p)));
+      this.edits.update((x) => ({ ...x, [id]: { ...(x[id] ?? {}), saleDate: undefined, saleTime: undefined } }));
+    } catch (err: any) {
+      this.fail(err);
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
   async save(id: string) {
     const e = this.edit(id);
     const body: Record<string, unknown> = {};
@@ -973,6 +934,14 @@ export class AdminPage {
       else body['priceIls'] = Number(e.priceIls);
     }
     if (e.maxPlayers !== undefined) body['maxPlayers'] = Number(e.maxPlayers);
+    // the opening date and time go together (Israel time); the server checks them and stores UTC
+    if (e.saleDate !== undefined || e.saleTime !== undefined) {
+      const p = this.products().find((x) => x.id === id);
+      body['saleDate'] = e.saleDate ?? p?.saleDate ?? '';
+      body['saleTime'] = e.saleTime ?? p?.saleTime ?? '';
+    }
+    if (e.showBeforeSale !== undefined) body['showBeforeSale'] = e.showBeforeSale === 'true';
+    if (e.salePaused !== undefined) body['salePaused'] = e.salePaused === 'true';
     this.busy.set(true);
     this.error.set(null);
     try {
@@ -1014,103 +983,6 @@ export class AdminPage {
     }
   }
 
-  // ------------------------------------------------------------------ game questions (not the site's FAQ)
-
-  qSlots = signal<GameQuestionSlot[]>([]);
-  qDifficulties = signal<string[]>([]);
-  qRows = signal<GameQuestionRow[]>([]);
-  qForm = signal<QuestionForm>(this.emptyQuestion());
-  qMsg = signal<string | null>(null);
-  qHistory = signal<{ row: GameQuestionRow; list: GameQuestionRevision[] } | null>(null);
-  qSlot = computed(() => this.slotOf(this.qForm().slot));
-
-  emptyQuestion(): QuestionForm {
-    return { slot: '', question: '', answer: '', accept: '', category: '', difficulty: 'בינונית', points: '', sortOrder: '', active: true };
-  }
-
-  slotOf(key: string) {
-    return this.qSlots().find((s) => `${s.scenarioId}|${s.puzzleId}` === key);
-  }
-
-  slotLabel(r: { scenarioId: string; puzzleId: string }) {
-    const s = this.slotOf(`${r.scenarioId}|${r.puzzleId}`);
-    return s ? `${s.game} · ${s.zoneName} · ${s.title}` : `${r.scenarioId} · ${r.puzzleId}`;
-  }
-
-  qf<K extends keyof QuestionForm>(key: K, value: QuestionForm[K]) {
-    this.qForm.update((f) => ({ ...f, [key]: value }));
-  }
-
-  editQuestion(r: GameQuestionRow) {
-    this.qMsg.set(null);
-    this.qForm.set({
-      id: r.id, slot: `${r.scenarioId}|${r.puzzleId}`, question: r.question, answer: r.answer, accept: r.accept.join('\n'), category: r.category,
-      difficulty: r.difficulty, points: r.points == null ? '' : String(r.points), sortOrder: String(r.sortOrder), active: r.active,
-    });
-  }
-
-  /** Starts a new question from the built-in one of the chosen puzzle, so the admin edits rather than retypes. */
-  fromBuiltIn() {
-    const s = this.qSlot();
-    if (!s) return;
-    this.qForm.update((f) => ({ ...f, question: s.builtInQuestion, answer: s.builtInAnswer, accept: s.builtInAccept.join('\n') }));
-  }
-
-  async saveQuestion() {
-    const f = this.qForm();
-    const [scenarioId, puzzleId] = f.slot.split('|');
-    const points = f.points.trim();
-    const body = {
-      scenarioId, puzzleId, question: f.question, answer: f.answer, accept: f.accept.split(/[\n,]/).map((a) => a.trim()).filter(Boolean),
-      category: f.category, difficulty: f.difficulty, points: points ? Number(points) : null, clearPoints: !points,
-      sortOrder: f.sortOrder.trim() ? Number(f.sortOrder) : undefined, active: f.active,
-    };
-    this.busy.set(true);
-    this.error.set(null);
-    try {
-      if (f.id) await this.api.updateGameQuestion(f.id, body);
-      else await this.api.addGameQuestion(body);
-      this.qForm.set(this.emptyQuestion());
-      this.qMsg.set('נשמר. השינוי ייכנס למשחקים שיתחילו מעכשיו — משחק שכבר התחיל ממשיך עם הגרסה שלו.');
-      await this.reload();
-    } catch (err: any) {
-      this.fail(err);
-    } finally {
-      this.busy.set(false);
-    }
-  }
-
-  async toggleQuestion(r: GameQuestionRow) {
-    try { await this.api.updateGameQuestion(r.id, { active: !r.active }); await this.reload(); } catch (e: any) { this.fail(e); }
-  }
-
-  /** Moves a question up or down among the questions of the same puzzle. */
-  async moveQuestion(r: GameQuestionRow, dir: number) {
-    const same = this.qRows().filter((x) => x.scenarioId === r.scenarioId && x.puzzleId === r.puzzleId);
-    const i = same.findIndex((x) => x.id === r.id);
-    if (!same[i + dir]) return;
-    try {
-      const order = same.map((x) => x.id);
-      [order[i], order[i + dir]] = [order[i + dir], order[i]];
-      for (const [k, id] of order.entries()) {
-        const row = same.find((x) => x.id === id)!;
-        if (row.sortOrder !== k + 1) await this.api.updateGameQuestion(id, { sortOrder: k + 1 });
-      }
-      await this.reload();
-    } catch (e: any) {
-      this.fail(e);
-    }
-  }
-
-  /** Among the questions of one puzzle, whether this one is the one new games use (the first active one). */
-  inUse(r: GameQuestionRow) {
-    return r.active && this.qRows().find((x) => x.scenarioId === r.scenarioId && x.puzzleId === r.puzzleId && x.active)?.id === r.id;
-  }
-
-  async showHistory(r: GameQuestionRow) {
-    try { this.qHistory.set({ row: r, list: await this.api.gameQuestionRevisions(r.id) }); } catch (e: any) { this.fail(e); }
-  }
-
   // ------------------------------------------------------------------ FAQ
 
   fe(key: 'question' | 'answer' | 'published', value: string | boolean) {
@@ -1139,8 +1011,16 @@ export class AdminPage {
   }
 
   async deleteFaq(q: FaqRow) {
-    if (!confirm(`למחוק את השאלה „${q.question}”? השאלות הקבועות לא יושפעו.`)) return;
-    try { await this.api.deleteFaq(q.id); await this.reload(); } catch (e: any) { this.fail(e); }
+    this.busy.set(true);
+    try {
+      await this.api.deleteFaq(q.id);
+      this.faqDelete.set(null);
+      await this.reload();
+    } catch (e: any) {
+      this.fail(e);
+    } finally {
+      this.busy.set(false);
+    }
   }
 
   /** Swaps the order of two added questions. */

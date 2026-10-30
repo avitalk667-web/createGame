@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, effect, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, input, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { ApiService, StoredOrder, orderStore, sessionStore } from '../core/api.service';
 import { AudioService } from '../core/audio.service';
@@ -71,7 +71,13 @@ import { CouponQuote, Product, formatPrice, playersLabel } from '../core/models'
             } @else {
               <b class="price soon">המחיר יפורסם בקרוב</b>
             }
-            @if (p.isFree) {
+            @if (p.saleState === 'scheduled') {
+              <button class="btn primary big" disabled>הרכישה תיפתח ב־{{ p.saleOpensLabel }}</button>
+              <p class="muted note sale-soon" role="status"><b>המכירה תיפתח בקרוב</b> — {{ p.saleOpensLabel }}.</p>
+            } @else if (p.saleState === 'paused') {
+              <button class="btn primary big" disabled>{{ p.isFree ? 'התחילו לשחק בחינם' : 'רכישת המשחק' }}</button>
+              <p class="muted note" role="status">המכירה של המשחק הזה מושהית כרגע. נסו שוב מאוחר יותר.</p>
+            } @else if (p.isFree) {
               <button class="btn primary big" (click)="playFree(p)" [disabled]="busy() || !p.playable">{{ busy() ? 'פותחים משחק...' : 'התחילו לשחק בחינם' }}</button>
               <p class="muted note">בלי תשלום ובלי חשבון. תקבלו קוד משחק להזמנת חברים.</p>
             } @else if (p.purchasable) {
@@ -221,15 +227,28 @@ export class GamePage {
   price = formatPrice;
   players = playersLabel;
 
+  private opensTimer?: ReturnType<typeof setTimeout>;
+
   constructor() {
     effect(() => this.load(this.id()));
+    inject(DestroyRef).onDestroy(() => clearTimeout(this.opensTimer));
+  }
+
+  /** A game waiting for its opening time is loaded again at that moment, so the purchase opens without a refresh. */
+  private watchOpening(p: Product) {
+    clearTimeout(this.opensTimer);
+    if (p.saleState !== 'scheduled' || !p.saleOpensAt) return;
+    const wait = Date.parse(p.saleOpensAt) - Date.now() + 1500;
+    if (wait > 0 && wait < 2 ** 31 - 1) this.opensTimer = setTimeout(() => this.load(p.id), wait);
   }
 
   private async load(id: string) {
     this.loading.set(true);
     this.error.set(null);
     try {
-      this.product.set(await this.api.product(id));
+      const p = await this.api.product(id);
+      this.product.set(p);
+      this.watchOpening(p);
       this.myOrders.set(orderStore.all().filter((o) => o.productId === id).slice(0, 3));
     } catch (e: any) {
       this.product.set(null);

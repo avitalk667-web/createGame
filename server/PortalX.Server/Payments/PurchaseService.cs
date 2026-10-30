@@ -31,7 +31,8 @@ public sealed class PurchaseService(
     public static bool IsPlayable(Product p, ScenarioCatalog scenarios) => p.ScenarioId != null && scenarios.Find(p.ScenarioId) != null;
 
     public static bool IsPurchasable(Product p, ScenarioCatalog scenarios, PaymentGateway gateway) =>
-        p.Status == ProductStatus.Published && !p.IsFree && p.PriceIls is > 0 && IsPlayable(p, scenarios) && gateway.Available;
+        p.Status == ProductStatus.Published && !p.IsFree && p.PriceIls is > 0 && IsPlayable(p, scenarios) && gateway.Available
+        && SaleWindow.State(p, DateTime.UtcNow) == SaleWindow.Open;
 
     // ------------------------------------------------------------------ orders
 
@@ -43,6 +44,8 @@ public sealed class PurchaseService(
             return (null, new ServiceError(404, "no-product", "המשחק לא נמצא."));
         if (product.IsFree)
             return (null, new ServiceError(409, "free-product", "המשחק הזה חינמי — אין צורך ברכישה."));
+        // the opening time (Israel time) and a manual pause are checked here, whatever the page showed
+        if (SaleWindow.Refusal(product, DateTime.UtcNow) is { } closed) return (null, closed);
         if (product.PriceIls is not > 0)
             return (null, new ServiceError(409, "no-price", "המחיר של המשחק הזה טרם נקבע, ולכן אי אפשר לרכוש אותו עדיין."));
         if (!IsPlayable(product, scenarios))

@@ -187,10 +187,13 @@ api.MapGet("/scenarios/{id}", (string id, ScenarioCatalog catalog) =>
 // Shared catalog of purchasable games (spec §1): only published products, price from the server.
 api.MapGet("/products", async (PortalDbContext db, ScenarioCatalog scenarios, PaymentGateway gateway, TestCheckout testCheckout) =>
     (await db.Products.AsNoTracking().Where(p => p.Status == PortalX.Server.Domain.ProductStatus.Published)
-        .OrderBy(p => p.SortOrder).ToListAsync()).Select(p => ProductView.Build(p, scenarios, gateway, testCheckout)));
+        .OrderBy(p => p.SortOrder).ToListAsync())
+        // a game scheduled to open later appears before then only when the admin chose so
+        .Where(p => SaleWindow.Visible(p, DateTime.UtcNow)).Select(p => ProductView.Build(p, scenarios, gateway, testCheckout)));
 
 api.MapGet("/products/{id}", async (string id, PortalDbContext db, ScenarioCatalog scenarios, PaymentGateway gateway, TestCheckout testCheckout) =>
     await db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id && p.Status == PortalX.Server.Domain.ProductStatus.Published) is { } p
+        && SaleWindow.Visible(p, DateTime.UtcNow)
         ? Results.Ok(ProductView.Build(p, scenarios, gateway, testCheckout))
         : Results.NotFound(new ApiError("no-product", "המשחק לא נמצא.")));
 

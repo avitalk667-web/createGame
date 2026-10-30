@@ -55,6 +55,9 @@ export interface AdminProduct {
   id: string; name: string; tagline: string; description: string; coverImage: string; price?: number | null; currency: string;
   status: string; minPlayers: number; maxPlayers: number; scenarioId?: string | null; updatedAt: string; playable: boolean; warnings: string[];
   isFree: boolean; maxPlayersLimit: number;
+  /** Purchase availability: the opening date and time in Israel time ("yyyy-MM-dd", "HH:mm"), shown before it, paused. */
+  saleDate?: string | null; saleTime?: string | null; saleOpensLabel?: string | null; showBeforeSale: boolean; salePaused: boolean;
+  saleState: 'open' | 'scheduled' | 'paused';
 }
 
 export interface MailingFilters { search?: string; consent?: string; status?: string; game?: string; from?: string; to?: string; source?: string }
@@ -68,17 +71,6 @@ export interface MailingRow {
 
 /** Personal links (affiliate). Money is per currency and never added across currencies. */
 export interface MoneyTotals { currency: string; gross: number; refunds: number; net: number }
-/** A question puzzle of a game whose question and answer the admin may replace (with its built-in version). */
-export interface GameQuestionSlot {
-  scenarioId: string; game: string; puzzleId: string; zone: string; zoneName: string; title: string; field: string;
-  builtInQuestion: string; builtInAnswer: string; builtInAccept: string[]; builtInPoints?: number | null; hasOptions: boolean;
-}
-export interface GameQuestionRow {
-  id: string; scenarioId: string; puzzleId: string; zone: string; question: string; answer: string; accept: string[]; category: string; difficulty: string;
-  points?: number | null; sortOrder: number; active: boolean; version: number; createdBy: string; createdAt: string; updatedBy: string; updatedAt: string;
-}
-export interface GameQuestionRevision { id: number; version: number; action: string; before?: Record<string, unknown> | null; after: Record<string, unknown>; admin: string; at: string }
-
 export interface ReferralFilters {
   search?: string; status?: string; game?: string; createdFrom?: string; createdTo?: string; paidFrom?: string; paidTo?: string; minPurchases?: string; minNet?: string;
 }
@@ -194,11 +186,8 @@ export class AdminApiService {
   referralsCsvUrl(f: ReferralFilters) { return '/api/admin/referrals.csv' + mailingQuery(f); }
   referral(id: string) { return this.request<ReferralDetails>('GET', `/api/admin/referrals/${id}`); }
   setReferralActive(id: string, active: boolean) { return this.request<void>('POST', `/api/admin/referrals/${id}/status`, { active }); }
-  gameQuestions() { return this.request<{ slots: GameQuestionSlot[]; difficulties: string[]; questions: GameQuestionRow[] }>('GET', '/api/admin/game-questions'); }
-  addGameQuestion(body: object) { return this.request<GameQuestionRow>('POST', '/api/admin/game-questions', body); }
-  updateGameQuestion(id: string, body: object) { return this.request<GameQuestionRow>('PUT', `/api/admin/game-questions/${id}`, body); }
-  gameQuestionRevisions(id: string) { return this.request<GameQuestionRevision[]>('GET', `/api/admin/game-questions/${id}/revisions`); }
-  faq() { return this.request<{ builtIn: { question: string; answer: string }[]; custom: FaqRow[] }>('GET', '/api/admin/faq'); }
+  /** Every question of the home page, the ones the site shipped with included. */
+  faq() { return this.request<{ custom: FaqRow[] }>('GET', '/api/admin/faq'); }
   addFaq(body: object) { return this.request<FaqRow>('POST', '/api/admin/faq', body); }
   updateFaq(id: string, body: object) { return this.request<FaqRow>('PUT', `/api/admin/faq/${id}`, body); }
   deleteFaq(id: string) { return this.request<void>('DELETE', `/api/admin/faq/${id}`); }

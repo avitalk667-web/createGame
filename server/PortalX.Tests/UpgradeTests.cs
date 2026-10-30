@@ -190,7 +190,10 @@ public class UpgradeTests
     }
 }
 
-/// <summary>The admin edits a game question; the next game really checks the new answer, a game already running keeps its own.</summary>
+/// <summary>
+/// A game question stored in the database is fixed when a game starts and checked on the server; the admin screen for
+/// these questions was removed, so its URLs no longer exist.
+/// </summary>
 [Collection(DatabaseCollection.Name)]
 public class GameQuestionAdminTests(HubIntegrationTests.Factory factory)
 {
@@ -205,7 +208,7 @@ public class GameQuestionAdminTests(HubIntegrationTests.Factory factory)
     }
 
     /// <summary>A Hanukkah game with one player, started and playing (over the real hub, so the server reads the questions).</summary>
-    private async Task<(HubConnection Conn, string Code)> PlayingGameAsync()
+    private async Task<HubConnection> PlayingGameAsync()
     {
         var http = factory.CreateClient();
         var (code, claim) = await TestPurchase.PaidRoomAsync(http, factory.Services, "hanukkah-oil");
@@ -221,63 +224,144 @@ public class GameQuestionAdminTests(HubIntegrationTests.Factory factory)
         Assert.True((await conn.InvokeAsync<JsonElement>("Connect", join.GetProperty("token").GetString())).GetProperty("ok").GetBoolean());
         Assert.True((await conn.InvokeAsync<JsonElement>("StartGame")).GetProperty("ok").GetBoolean());
         Assert.True((await conn.InvokeAsync<JsonElement>("FinishIntro", true)).GetProperty("ok").GetBoolean());
-        return (conn, code);
+        return conn;
     }
 
     private static async Task<string> Answer(HubConnection conn, string text) =>
         (await conn.InvokeAsync<JsonElement>("SubmitAnswer", "h1-riddle", JsonSerializer.SerializeToElement(text), Guid.NewGuid().ToString("N"))).GetProperty("code").GetString()!;
 
     [Fact]
-    public async Task Editing_a_question_reaches_new_games_only_and_keeps_its_history()
+    public async Task A_stored_question_reaches_new_games_only_and_the_admin_screen_is_gone()
     {
         var admin = await AdminAsync();
-        Assert.Equal(HttpStatusCode.Unauthorized, (await factory.CreateClient().GetAsync("/api/admin/game-questions")).StatusCode);
-        var (before, _) = await PlayingGameAsync(); // started before the question exists
+        Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync("/api/admin/game-questions")).StatusCode);
+        var before = await PlayingGameAsync(); // started before the question exists
 
-        var created = await (await admin.PostAsJsonAsync("/api/admin/game-questions", new
+        var id = Guid.NewGuid();
+        using (var scope = factory.Services.CreateScope())
         {
-            scenarioId = "hanukkah-oil", puzzleId = "h1-riddle", question = "מה מסובבים בחנוכה?", answer = "סביבון", accept = new[] { "סביבונים" },
-            category = "חנוכה", difficulty = "קלה", points = 30, active = true,
-        })).Content.ReadFromJsonAsync<JsonElement>(Json);
-        var id = created.GetProperty("id").GetString()!;
+            var db = scope.ServiceProvider.GetRequiredService<PortalDbContext>();
+            db.GameQuestions.Add(new GameQuestion
+            {
+                Id = id, ScenarioId = "hanukkah-oil", PuzzleId = "h1-riddle", Zone = "library", Question = "מה מסובבים בחנוכה?", Answer = "סביבון קטן",
+                AcceptJson = "[]", Difficulty = "קלה", Active = true, Version = 1, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+            });
+            await db.SaveChangesAsync();
+        }
         try
         {
-            // a bad edit is refused and changes nothing
-            Assert.Equal(HttpStatusCode.BadRequest, (await admin.PutAsJsonAsync($"/api/admin/game-questions/{id}", new { answer = "" })).StatusCode);
-            // change the answer and save
-            Assert.True((await admin.PutAsJsonAsync($"/api/admin/game-questions/{id}", new { answer = "סביבון קטן" })).IsSuccessStatusCode);
-
-            // saved in the database: a fresh read (as after a refresh) shows it
-            var list = await (await admin.GetAsync("/api/admin/game-questions")).Content.ReadFromJsonAsync<JsonElement>(Json);
-            var row = list.GetProperty("questions").EnumerateArray().First(q => q.GetProperty("id").GetString() == id);
-            Assert.Equal("סביבון קטן", row.GetProperty("answer").GetString());
-            Assert.Equal(2, row.GetProperty("version").GetInt32());
-            Assert.Equal(AdminTests.Username, row.GetProperty("updatedBy").GetString());
-            var history = await (await admin.GetAsync($"/api/admin/game-questions/{id}/revisions")).Content.ReadFromJsonAsync<JsonElement>(Json);
-            var updated = history.EnumerateArray().First();
-            Assert.Equal("updated", updated.GetProperty("action").GetString());
-            Assert.Equal("סביבון", updated.GetProperty("before").GetProperty("answer").GetString());
-            Assert.Equal("סביבון קטן", updated.GetProperty("after").GetProperty("answer").GetString());
-
-            // a new game checks the new answer — and the old one no longer opens the drawer
-            var (fresh, _) = await PlayingGameAsync();
+            var fresh = await PlayingGameAsync();
             Assert.Equal("wrong", await Answer(fresh, "פך השמן"));
-            Assert.Equal("wrong", await Answer(fresh, "סביבון"));
             Assert.Equal("solved", await Answer(fresh, "סביבון קטן"));
             await fresh.DisposeAsync();
-
             // the game that was already running keeps the question it started with
             Assert.Equal("solved", await Answer(before, "פך השמן"));
         }
         finally
         {
-            // other tests play the built-in riddle
-            await admin.PutAsJsonAsync($"/api/admin/game-questions/{id}", new { active = false });
+            // other tests play the built-in riddle; the row stays, only switched off
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<PortalDbContext>();
+            var q = await db.GameQuestions.SingleAsync(x => x.Id == id);
+            q.Active = false;
+            await db.SaveChangesAsync();
             await before.DisposeAsync();
         }
-        using var scope = factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<PortalDbContext>();
-        Assert.False((await db.GameQuestions.AsNoTracking().SingleAsync(q => q.Id == Guid.Parse(id))).Active);
-        Assert.Equal(3, await db.GameQuestionRevisions.CountAsync(r => r.QuestionId == Guid.Parse(id)));
+    }
+}
+
+/// <summary>The purchase opening time of a game: set by the admin in Israel time, enforced on the server for every purchase path.</summary>
+[Collection(DatabaseCollection.Name)]
+public class SaleWindowTests(HubIntegrationTests.Factory factory)
+{
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    [Fact]
+    public void Opening_times_are_read_in_Israel_time_and_decide_the_state()
+    {
+        // winter (UTC+2) and summer (UTC+3) in Israel
+        Assert.Equal(new DateTime(2026, 12, 13, 18, 0, 0, DateTimeKind.Utc), PortalX.Server.Payments.SaleWindow.FromIsrael("2026-12-13", "20:00"));
+        Assert.Equal(new DateTime(2026, 7, 1, 6, 30, 0, DateTimeKind.Utc), PortalX.Server.Payments.SaleWindow.FromIsrael("2026-07-01", "09:30"));
+        Assert.Null(PortalX.Server.Payments.SaleWindow.FromIsrael("2026-12-13", null));
+        Assert.Null(PortalX.Server.Payments.SaleWindow.FromIsrael("13/12/2026", "20:00"));
+        var p = new Product { SaleOpensAt = new DateTime(2026, 12, 13, 18, 0, 0, DateTimeKind.Utc) };
+        Assert.Equal("scheduled", PortalX.Server.Payments.SaleWindow.State(p, p.SaleOpensAt.Value.AddSeconds(-1)));
+        Assert.Equal("open", PortalX.Server.Payments.SaleWindow.State(p, p.SaleOpensAt.Value)); // opens by itself on time
+        Assert.Equal("13.12.2026 בשעה 20:00", PortalX.Server.Payments.SaleWindow.Label(p.SaleOpensAt.Value));
+        p.SalePaused = true;
+        Assert.Equal("paused", PortalX.Server.Payments.SaleWindow.State(p, p.SaleOpensAt.Value.AddDays(1)));
+        Assert.Equal("open", PortalX.Server.Payments.SaleWindow.State(new Product(), DateTime.UtcNow)); // nothing set: as before
+    }
+
+    private async Task<HttpClient> AdminAsync()
+    {
+        var http = factory.CreateClient();
+        (await http.PostAsJsonAsync("/api/admin/login", new { username = AdminTests.Username, password = AdminTests.Password })).EnsureSuccessStatusCode();
+        http.DefaultRequestHeaders.Add(AdminAuth.CsrfHeader, "1");
+        return http;
+    }
+
+    private static async Task<JsonElement> Read(HttpResponseMessage r) => await r.Content.ReadFromJsonAsync<JsonElement>(Json);
+
+    [Fact]
+    public async Task Before_its_opening_time_a_game_cannot_be_bought_by_any_path()
+    {
+        await TestPurchase.EnsureProductAsync(factory.Services);
+        var id = TestPurchase.ProductId;
+        var admin = await AdminAsync();
+        var http = factory.CreateClient();
+        // an order started while the game was open (its payment page is still around)
+        var early = await TestPurchase.CreateOrderAsync(http, factory.Services);
+        var future = PortalX.Server.Payments.SaleWindow.ToIsrael(DateTime.UtcNow.AddDays(3));
+        try
+        {
+            Assert.Equal(HttpStatusCode.Unauthorized, (await http.PutAsJsonAsync($"/api/admin/products/{id}", new { saleDate = "2030-01-01", saleTime = "10:00" })).StatusCode);
+            Assert.Equal(HttpStatusCode.BadRequest, (await admin.PutAsJsonAsync($"/api/admin/products/{id}", new { saleDate = "2030-01-01" })).StatusCode);
+            var saved = await Read(await admin.PutAsJsonAsync($"/api/admin/products/{id}",
+                new { saleDate = future.ToString("yyyy-MM-dd"), saleTime = future.ToString("HH:mm"), showBeforeSale = true }));
+            Assert.Equal(future.ToString("yyyy-MM-dd"), saved.GetProperty("saleDate").GetString());
+            Assert.Equal(future.ToString("HH:mm"), saved.GetProperty("saleTime").GetString());
+            Assert.Equal("scheduled", saved.GetProperty("saleState").GetString());
+
+            // shown, priced, without a working purchase, with the opening time
+            var view = await Read(await http.GetAsync($"/api/products/{id}"));
+            Assert.Equal("scheduled", view.GetProperty("saleState").GetString());
+            Assert.False(view.GetProperty("purchasable").GetBoolean());
+            Assert.Equal(TestPurchase.Price, view.GetProperty("price").GetDecimal());
+            Assert.Contains("בשעה", view.GetProperty("saleOpensLabel").GetString());
+
+            // the server refuses a new order and the start of a payment, whatever the page shows
+            var order = await http.PostAsJsonAsync("/api/orders", new { productId = id });
+            Assert.Equal(HttpStatusCode.Conflict, order.StatusCode);
+            Assert.Equal("sale-not-open", (await Read(order)).GetProperty("code").GetString());
+            var pay = await TestPurchase.PayAsync(http, early);
+            Assert.Equal(HttpStatusCode.Conflict, pay.StatusCode);
+
+            // hidden before the opening when the admin chose so
+            await admin.PutAsJsonAsync($"/api/admin/products/{id}", new { showBeforeSale = false });
+            Assert.Equal(HttpStatusCode.NotFound, (await http.GetAsync($"/api/products/{id}")).StatusCode);
+
+            // paused by hand: no new order even after the opening time
+            await admin.PutAsJsonAsync($"/api/admin/products/{id}", new { saleDate = "2020-01-01", saleTime = "00:00", salePaused = true });
+            var paused = await http.PostAsJsonAsync("/api/orders", new { productId = id });
+            Assert.Equal("sale-paused", (await Read(paused)).GetProperty("code").GetString());
+
+            // the opening time has passed and the pause is off: open by itself
+            await admin.PutAsJsonAsync($"/api/admin/products/{id}", new { salePaused = false });
+            Assert.True((await Read(await http.GetAsync($"/api/products/{id}"))).GetProperty("purchasable").GetBoolean());
+            Assert.Equal(HttpStatusCode.OK, (await http.PostAsJsonAsync("/api/orders", new { productId = id })).StatusCode);
+            (await TestPurchase.PayAsync(http, early)).EnsureSuccessStatusCode();
+
+            var audit = await Read(await admin.GetAsync("/api/admin/audit"));
+            Assert.Contains(audit.EnumerateArray(), e => e.GetProperty("action").GetString() == "product-sale-changed");
+        }
+        finally
+        {
+            // back to no opening time: exactly as before
+            await admin.PutAsJsonAsync($"/api/admin/products/{id}", new { clearSaleOpening = true, showBeforeSale = true, salePaused = false });
+        }
+        var plain = await Read(await http.GetAsync($"/api/products/{id}"));
+        Assert.Equal("open", plain.GetProperty("saleState").GetString());
+        Assert.True(plain.GetProperty("purchasable").GetBoolean());
     }
 }

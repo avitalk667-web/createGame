@@ -259,6 +259,12 @@ public class Product
     public int SortOrder { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    /// <summary>When the game opens for purchase (UTC; entered by the admin in Israel time). Null = no opening time, as before.</summary>
+    public DateTime? SaleOpensAt { get; set; }
+    /// <summary>Whether the game is shown on the site before its opening time (without a working purchase button).</summary>
+    public bool ShowBeforeSale { get; set; } = true;
+    /// <summary>Sales paused by the admin: no new order can be created while it is on.</summary>
+    public bool SalePaused { get; set; }
 }
 
 public enum OrderStatus { Pending = 0, Paid = 1, Failed = 2, Cancelled = 3, Refunded = 4 }

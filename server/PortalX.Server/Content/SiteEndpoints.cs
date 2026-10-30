@@ -12,21 +12,22 @@ public sealed record FaqItem(string Question, string Answer);
 /// <summary>Public site endpoints: the FAQ of the home page and starting the free trial game.</summary>
 public static class SiteEndpoints
 {
-    /// <summary>The built-in questions that ship with the site (spec 2.3); admin questions are added after them.</summary>
+    /// <summary>
+    /// The questions the site shipped with. They were copied once into the FAQ table (migration SaleOpeningAndFaqImport),
+    /// where the admin edits and deletes them like any other question; the site no longer reads them from here.
+    /// </summary>
     public static List<FaqItem> LoadFixedFaq() =>
         JsonSerializer.Deserialize<List<FaqItem>>(
             File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Content", "faq.he.json")), ScenarioCatalog.JsonOptions)!;
 
     public static void MapSiteEndpoints(this RouteGroupBuilder api)
     {
-        var fixedFaq = LoadFixedFaq();
-
+        // Every question comes from the database, so the admin's edits and deletions are what the home page shows.
         // Plain text only: the page shows these with text interpolation, so HTML or scripts typed by mistake never run.
         api.MapGet("/faq", async (PortalDbContext db) =>
         {
-            var extra = await db.Faq.AsNoTracking().Where(f => f.Published).OrderBy(f => f.SortOrder).ThenBy(f => f.CreatedAt).ToListAsync();
-            return Results.Ok(fixedFaq.Select((f, i) => new { id = $"fixed-{i + 1}", question = f.Question, answer = f.Answer, isFixed = true })
-                .Concat(extra.Select(f => new { id = f.Id.ToString(), question = f.Question, answer = f.Answer, isFixed = false })));
+            var list = await db.Faq.AsNoTracking().Where(f => f.Published).OrderBy(f => f.SortOrder).ThenBy(f => f.CreatedAt).ToListAsync();
+            return Results.Ok(list.Select(f => new { id = f.Id.ToString(), question = f.Question, answer = f.Answer }));
         });
 
         // The free trial game (spec 1.5): no payment, no account, no entitlement — and never revenue.
@@ -37,6 +38,7 @@ public static class SiteEndpoints
             // only a product marked free can be opened this way; paid games still need a paid order
             if (!product.IsFree) return Results.Json(new ApiError("not-free", "המשחק הזה אינו חינמי. אפשר לרכוש אותו בעמוד המשחק."), statusCode: 403);
             if (!PurchaseService.IsPlayable(product, scenarios)) return Results.Json(new ApiError("not-available", "המשחק עדיין לא זמין."), statusCode: 409);
+            if (SaleWindow.Refusal(product, DateTime.UtcNow) is { } closed) return Results.Json(new ApiError(closed.Code, closed.Message), statusCode: closed.Status);
             var (room, claim) = await rooms.CreateRoomAsync(product.ScenarioId!, r =>
             {
                 r.ProductId = product.Id;

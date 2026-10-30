@@ -297,9 +297,14 @@ export interface Product {
   testCheckout?: boolean;
   /** A free trial game: started without payment (spec 1). */
   isFree?: boolean;
+  /** Purchase availability set by the admin: open, scheduled to open later (Israel time) or paused. */
+  saleState?: 'open' | 'scheduled' | 'paused';
+  saleOpensAt?: string | null;
+  /** "13.12.2026 בשעה 20:00" (Israel time). */
+  saleOpensLabel?: string | null;
 }
 
-export interface FaqEntryView { id: string; question: string; answer: string; isFixed: boolean }
+export interface FaqEntryView { id: string; question: string; answer: string }
 
 /** The price the server will charge with a coupon (computed on the server, shown before paying). */
 export interface CouponQuote { code: string; kind: 'percent' | 'fixed'; value: number; originalPrice: number; discount: number; finalPrice: number; currency: string }

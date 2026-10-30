@@ -50,7 +50,12 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
       <section class="share card" aria-labelledby="share-title">
         <div>
           <h2 id="share-title">אהבתם? שתפו את PORTAL X</h2>
-          <p>צרו קישור אישי ושתפו אותו עם חברים ומכרים. רכישות שיתבצעו דרכו יירשמו בנתוני הקישור שלכם.</p>
+          <p>צרו קישור אישי ושתפו אותו עם חברים ומכרים.</p>
+          @if (campaignOn()) {
+            <!-- the "friend brings a friend" draw (same terms as the campaign: different, really paid buyers) -->
+            <p class="promo">4 רוכשים שונים דרך הקישור האישי = כניסה להגרלה על <b>888 ₪</b>!</p>
+            <p class="draw">ההגרלה תיערך ביום ראשון, ג׳ בטבת תשפ״ז, 13.12.2026.</p>
+          }
         </div>
         <a class="btn primary" routerLink="/share">יצירת קישור אישי</a>
       </section>
@@ -105,6 +110,8 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
                       } @else {
                         <span class="muted">המחיר יפורסם בקרוב</span>
                       }
+                      @if (p.saleState === 'scheduled') { <span class="sale-soon">הרכישה תיפתח ב־{{ p.saleOpensLabel }}</span> }
+                      @else if (p.saleState === 'paused') { <span class="sale-soon">המכירה מושהית כרגע</span> }
                     </div>
                     <a class="btn primary" [routerLink]="['/games', p.id]">{{ cta(p) }}</a>
                   </div>
@@ -288,11 +295,14 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
     .price { display:flex; flex-direction:column; }
     .price b { font-size:1.8rem; color:var(--gold-2); line-height:1.1; }
     .price span { font-size:.9rem; color:var(--muted); }
+    .price .sale-soon { display:block; color:var(--gold-2); font-weight:700; }
     .how { padding-block:2rem; scroll-margin-top:84px; }
     .share { display:flex; align-items:center; justify-content:space-between; gap:1.5rem; margin-block:1.1rem 0; padding:1.25rem 1.6rem;
       border:1px solid rgba(224,185,92,.45); border-radius:16px; background:linear-gradient(135deg, rgba(20,32,74,.96), rgba(10,18,48,.96)); }
     .share h2 { margin:0 0 .3rem; color:var(--gold-2); font-size:clamp(1.25rem, 2.4vw, 1.9rem); line-height:1.25; }
     .share p { margin:0; color:#d6dcef; line-height:1.6; }
+    .share .promo { margin-top:.35rem; color:#fff; font-weight:700; } .share .promo b { color:var(--gold-2); font-size:1.15em; white-space:nowrap; }
+    .share .draw { font-size:.9rem; color:#c9d2ee; }
     .share .btn { white-space:nowrap; min-height:48px; padding-inline:1.6rem; flex-shrink:0; transition:transform .2s, box-shadow .2s, filter .2s; }
     .share .btn:hover { transform:translateY(-1px); filter:brightness(1.06); box-shadow:0 6px 22px rgba(224,185,92,.35); }
     @media (max-width: 640px) {
@@ -351,6 +361,8 @@ export class HomePage {
   showSettings = signal(false);
   menuOpen = signal(false);
   faq = signal<FaqEntryView[]>([]);
+  /** The friend-brings-a-friend draw is summed up in the personal-link banner while the campaign is on. */
+  campaignOn = signal(false);
   openFaq = signal<string | null>(null);
   price = formatPrice;
   players = playersLabel;
@@ -360,6 +372,7 @@ export class HomePage {
     this.load();
     this.site.load();
     this.api.faq().then((f) => this.faq.set(f)).catch(() => {});
+    this.api.campaign().then((c) => this.campaignOn.set(c.enabled)).catch(() => {});
     this.adminApi.session().then((s) => this.isAdmin.set(s.admin)).catch(() => {});
   }
 

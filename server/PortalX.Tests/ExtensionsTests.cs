@@ -189,31 +189,50 @@ public class ExtensionsTests
     // ------------------------------------------------------------------ FAQ
 
     [Fact]
-    public async Task The_home_page_FAQ_keeps_the_built_in_questions_and_shows_published_admin_questions()
+    public async Task Every_home_page_question_is_stored_and_managed_by_the_admin_including_the_built_in_ones()
     {
         var http = _factory.CreateClient();
         var list = (await Body(await http.GetAsync("/api/faq"))).EnumerateArray().ToList();
         Assert.True(list.Count >= 10);
         Assert.Equal("מהו PORTAL X?", list[0].GetProperty("question").GetString());
         Assert.Equal("בכל משחק יכולים להשתתף עד ארבעה שחקנים, כולל המארח. ב„הפורטל האחרון” צריך לפחות שני משתתפים; ב„סוד פך השמן” וב„שער הסודות” אפשר לשחק גם לבד.", list[1].GetProperty("answer").GetString());
-        Assert.All(list.Take(10), q => Assert.True(q.GetProperty("isFixed").GetBoolean()));
 
-        // a visitor cannot add questions
+        // a visitor cannot add, edit or delete questions
         Assert.Equal(HttpStatusCode.Unauthorized, (await http.PostAsJsonAsync("/api/admin/faq", new { question = "שאלה?", answer = "תשובה" })).StatusCode);
+        var firstId = list[0].GetProperty("id").GetString();
+        Assert.Equal(HttpStatusCode.Unauthorized, (await http.PutAsJsonAsync($"/api/admin/faq/{firstId}", new { question = "x" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await http.DeleteAsync($"/api/admin/faq/{firstId}")).StatusCode);
 
         var admin = await AdminAsync();
+        // the built-in questions are ordinary rows in the admin list, so their question and answer can be edited
+        var rows = (await Body(await admin.GetAsync("/api/admin/faq"))).GetProperty("custom").EnumerateArray().ToList();
+        Assert.Contains(rows, r => r.GetProperty("id").GetString() == firstId);
+        var builtIn = rows.First(r => r.GetProperty("id").GetString() == firstId);
+        var (oldQ, oldA) = (builtIn.GetProperty("question").GetString()!, builtIn.GetProperty("answer").GetString()!);
+        try
+        {
+            (await admin.PutAsJsonAsync($"/api/admin/faq/{firstId}", new { question = "מה זה PORTAL X בעצם?", answer = "תשובה מעודכנת" })).EnsureSuccessStatusCode();
+            var after = (await Body(await http.GetAsync("/api/faq"))).EnumerateArray().First(x => x.GetProperty("id").GetString() == firstId);
+            Assert.Equal("מה זה PORTAL X בעצם?", after.GetProperty("question").GetString());
+            Assert.Equal("תשובה מעודכנת", after.GetProperty("answer").GetString());
+            // hidden: no longer on the home page
+            (await admin.PutAsJsonAsync($"/api/admin/faq/{firstId}", new { published = false })).EnsureSuccessStatusCode();
+            Assert.DoesNotContain((await Body(await http.GetAsync("/api/faq"))).EnumerateArray(), x => x.GetProperty("id").GetString() == firstId);
+        }
+        finally
+        {
+            await admin.PutAsJsonAsync($"/api/admin/faq/{firstId}", new { question = oldQ, answer = oldA, published = true });
+        }
+
         var q = Unique("האם יש הנחה לקבוצות? ");
         var created = await Body(await admin.PostAsJsonAsync("/api/admin/faq", new { question = q, answer = "<b>כן</b> <script>alert(1)</script>", published = true }));
         var id = created.GetProperty("id").GetString();
         var shown = (await Body(await http.GetAsync("/api/faq"))).EnumerateArray().First(x => x.GetProperty("id").GetString() == id);
-        Assert.False(shown.GetProperty("isFixed").GetBoolean());
         // stored and served as plain text; the page shows it as text, never as markup
         Assert.Equal("<b>כן</b> <script>alert(1)</script>", shown.GetProperty("answer").GetString());
-
-        (await admin.PutAsJsonAsync($"/api/admin/faq/{id}", new { published = false })).EnsureSuccessStatusCode();
-        Assert.DoesNotContain((await Body(await http.GetAsync("/api/faq"))).EnumerateArray(), x => x.GetProperty("id").GetString() == id);
         (await admin.DeleteAsync($"/api/admin/faq/{id}")).EnsureSuccessStatusCode();
-        Assert.Equal(10, (await Body(await http.GetAsync("/api/faq"))).EnumerateArray().Count(x => x.GetProperty("isFixed").GetBoolean()));
+        Assert.DoesNotContain((await Body(await http.GetAsync("/api/faq"))).EnumerateArray(), x => x.GetProperty("id").GetString() == id);
+        Assert.Equal("מהו PORTAL X?", (await Body(await http.GetAsync("/api/faq"))).EnumerateArray().First().GetProperty("question").GetString());
     }
 
     // ------------------------------------------------------------------ coupons

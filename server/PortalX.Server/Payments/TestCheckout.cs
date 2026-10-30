@@ -50,6 +50,7 @@ public static class TestCheckoutEndpoints
                 return Results.NotFound(new ApiError("no-product", "המשחק לא נמצא."));
             if (product.IsFree) return Results.Json(new ApiError("free-game", "המשחק הזה חינמי — אפשר לפתוח אותו בלי מצב הדגמה."), statusCode: 409);
             if (!test.Offers(product, scenarios)) return Results.Json(new ApiError("not-available", "המשחק עדיין לא זמין."), statusCode: 409);
+            if (SaleWindow.Refusal(product, DateTime.UtcNow) is { } closed) return Results.Json(new ApiError(closed.Code, closed.Message), statusCode: closed.Status);
 
             var ent = new Entitlement
             {
