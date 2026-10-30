@@ -161,7 +161,7 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
       <nav aria-label="מידע">
         <a routerLink="/info/terms">תנאי שימוש</a>
         <a routerLink="/info/privacy">מדיניות פרטיות</a>
-        <a routerLink="/info/refunds">ביטולים והחזרים</a>
+        <a routerLink="/info/terms">ביטולים והחזרים</a>
         <a routerLink="/info/contact">יצירת קשר</a>
         <a routerLink="/info/about">על PORTAL X</a>
         <a routerLink="/share">יצירת קישור אישי</a>

@@ -117,7 +117,7 @@ import { CouponQuote, Product, formatPrice, playersLabel } from '../core/models'
                   @if (p.testPayments) {
                     <p class="test" role="note">מצב בדיקה: התשלום מדומה, לא יתבצע חיוב, והרכישה לא נספרת כהכנסה.</p>
                   }
-                  <p class="muted small">בלחיצה על „מעבר לתשלום” אתם מאשרים את <a routerLink="/info/terms">תנאי השימוש</a> ואת <a routerLink="/info/refunds">מדיניות הביטולים</a>.</p>
+                  <p class="muted small">בלחיצה על „מעבר לתשלום” אתם מאשרים את <a routerLink="/info/terms">תנאי השימוש</a> ואת <a routerLink="/info/terms">מדיניות הביטולים</a>.</p>
                   <button class="btn primary big" type="submit" [disabled]="busy()">{{ busy() ? 'מכינים את התשלום...' : 'מעבר לתשלום — ' + (quote() ? money(quote()!.finalPrice) : price(p)) }}</button>
                   <button class="btn ghost small" type="button" (click)="checkout.set(false)">חזרה</button>
                 </form>
