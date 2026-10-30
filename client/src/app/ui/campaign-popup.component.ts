@@ -6,12 +6,12 @@ import { ApiService, Campaign, myLinkStore } from '../core/api.service';
 
 /** Pages where the popup never appears: a game in progress, joining one, paying, the admin and the personal-link page itself. */
 const QUIET = [/^\/room\//, /^\/join/, /^\/checkout\//, /^\/sandbox-pay\//, /^\/admin/, /^\/share/, /^\/unsubscribe/];
+/** Set once the popup has been shown in this browser: it never comes back (closing, "not now" and "create" alike). */
 const SEEN_KEY = 'px_campaign_seen';
-/** After "not now" the popup rests for this long in this browser. */
-const REST_MS = 7 * 24 * 3600 * 1000;
 
 /**
- * The "friend brings a friend" popup: shown once, a few seconds into a visit to the site's own pages, never during a game.
+ * The "friend brings a friend" popup: shown only once in a browser, a few seconds into a visit to the site's own pages,
+ * never during a game.
  * A visitor who already created a link in this browser sees it with a copy button instead of the invitation.
  */
 @Component({
@@ -77,7 +77,7 @@ export class CampaignPopupComponent {
     return QUIET.some((r) => r.test(url));
   }
 
-  /** At most once per visit, and not again for a while after "not now". */
+  /** Once in this browser, ever. */
   private consider() {
     clearTimeout(this.timer);
     if (this.quiet()) {
@@ -93,36 +93,34 @@ export class CampaignPopupComponent {
         this.c.set(c);
         this.myLink.set(myLinkStore.get());
         this.open.set(true);
-        this.remember(false);
+        this.remember();
       } catch { /* no campaign today */ }
     }, 6000);
   }
 
   private wasSeen() {
     try {
-      if (sessionStorage.getItem(SEEN_KEY)) return true;
-      const until = Number(localStorage.getItem(SEEN_KEY) ?? 0);
-      return until > Date.now();
+      return !!sessionStorage.getItem(SEEN_KEY) || !!localStorage.getItem(SEEN_KEY);
     } catch {
       return false;
     }
   }
 
-  private remember(rest: boolean) {
+  private remember() {
     try {
       sessionStorage.setItem(SEEN_KEY, '1');
-      if (rest) localStorage.setItem(SEEN_KEY, String(Date.now() + REST_MS));
-    } catch { /* storage blocked: it simply may show again next visit */ }
+      localStorage.setItem(SEEN_KEY, String(Date.now()));
+    } catch { /* storage blocked: it may show again on a later visit */ }
   }
 
   later() {
     this.open.set(false);
-    this.remember(true);
+    this.remember();
   }
 
   create() {
     this.open.set(false);
-    this.remember(false);
+    this.remember();
     this.router.navigate(['/share']);
   }
 
