@@ -171,19 +171,92 @@ public class HanukkahEngineTests
             ["p5"] = "flame-symbol", ["p6"] = "golden-jug", ["p7"] = "blue-crystal",
         };
         Assert.Equal(PuzzleStatus.Locked, Status(r, "h8-final"));
-        // swapped key and golden key: the hall does not react
+        // swapped key and golden key: nothing is judged while placing
         Op(e, r, ps[0], "h8-pedestals", new { op = "place", slot = "p1", item = "golden-key" });
         Op(e, r, ps[0], "h8-pedestals", new { op = "place", slot = "p3", item = "antique-key" });
+        Assert.Equal("הניחו את כל שבעת הפריטים על הכנים לפני בדיקת הסידור.", Op(e, r, ps[1], "h8-pedestals", new { op = "activate" }).Message);
         foreach (var slot in new[] { "p2", "p4", "p5", "p6", "p7" }) Op(e, r, ps[1], "h8-pedestals", new { op = "place", slot, item = map[slot] });
+        Assert.Equal(PuzzleStatus.Active, Status(r, "h8-pedestals"));
+        Assert.Empty(W(r).Mechanisms["h8-pedestals"].Verdict); // the right places are never shown before a check
+        // "check the arrangement": every pedestal is judged on the server — green stays, red can be moved
+        var check = Op(e, r, ps[1], "h8-pedestals", new { op = "activate" });
+        Assert.Equal("checked", check.Code);
+        Assert.StartsWith("5 מתוך 7", check.Message);
+        var verdict = W(r).Mechanisms["h8-pedestals"].Verdict;
+        Assert.False(verdict["p1"]);
+        Assert.False(verdict["p3"]);
+        Assert.All(new[] { "p2", "p4", "p5", "p6", "p7" }, s => Assert.True(verdict[s]));
+        Assert.Equal("verified", Op(e, r, ps[0], "h8-pedestals", new { op = "remove", slot = "p2" }).Code);
         Assert.Equal(PuzzleStatus.Active, Status(r, "h8-pedestals"));
         Op(e, r, ps[0], "h8-pedestals", new { op = "remove", slot = "p1" });
         Op(e, r, ps[0], "h8-pedestals", new { op = "remove", slot = "p3" });
+        Assert.False(W(r).Mechanisms["h8-pedestals"].Verdict.ContainsKey("p1"));
         Op(e, r, ps[0], "h8-pedestals", new { op = "place", slot = "p1", item = "antique-key" });
-        Assert.Equal("solved", Op(e, r, ps[0], "h8-pedestals", new { op = "place", slot = "p3", item = "golden-key" }).Code);
+        Assert.Equal("placed", Op(e, r, ps[0], "h8-pedestals", new { op = "place", slot = "p3", item = "golden-key" }).Code);
+        Assert.Equal(PuzzleStatus.Active, Status(r, "h8-pedestals"));
+        // as many checks as needed; once all seven are right the hall moves on to the last riddle
+        Assert.Equal("solved", Op(e, r, ps[0], "h8-pedestals", new { op = "activate" }).Code);
+        Assert.Equal(PuzzleStatus.Active, Status(r, "h8-final"));
         Assert.Equal("wrong", e.SubmitAnswer(r, ps[1].Id, "h8-final", J("7"), T0).Code);
         var end = e.SubmitAnswer(r, ps[1].Id, "h8-final", J("8"), T0);
         Assert.Equal("solved", end.Code);
         Assert.Contains(end.Notices, n => n.Message == "כל הכבוד! גיליתם את סוד פך השמן והשלמתם את מסע החנוכה.");
+    }
+
+    [Fact]
+    public void The_scales_are_a_bonus_puzzle_in_room_7_that_never_blocks_the_mosaic()
+    {
+        var (e, r, ps) = Start();
+        Room1(e, r, ps); Room2(e, r, ps); Room3(e, r, ps); Room4(e, r, ps); Room5(e, r, ps); Room6(e, r, ps);
+        var scales = Content.Puzzle("h7-scales");
+        Assert.True(scales.Bonus);
+        Assert.Equal("mosaic", scales.Zone);
+        Assert.Equal(PuzzleStatus.Active, Status(r, "h7-scales"));
+        Assert.Equal(PuzzleStatus.Active, Status(r, "h7-mosaic"));
+        // its own state, apart from the free game's (which has no scales any more)
+        Assert.DoesNotContain(Catalog.Get("gate-of-secrets").Puzzles, p => p.Id == "h7-scales" || p.Type == "balance");
+
+        // the same rules as before: the beam leans to the heavier pan, items move between the pans, the check says whether it balances
+        foreach (var it in new[] { "sc-feather", "sc-key", "sc-crystal", "sc-hourglass" }) Assert.True(e.PickUp(r, ps[0].Id, it, T0).Ok, it);
+        Assert.Equal("הניחו את כל ארבעת החפצים על המאזניים לפני הבדיקה.", Op(e, r, ps[0], "h7-scales", new { op = "activate" }).Message);
+        Assert.True(Op(e, r, ps[0], "h7-scales", new { op = "place", slot = "l1", item = "sc-crystal" }).Ok);
+        Assert.Equal(-1, W(r).Mechanisms["h7-scales"].Tilt);
+        Assert.True(Op(e, r, ps[1], "h7-scales", new { op = "place", slot = "r1", item = "sc-key" }).Ok);
+        Assert.True(Op(e, r, ps[1], "h7-scales", new { op = "place", slot = "r2", item = "sc-feather" }).Ok);
+        Assert.True(Op(e, r, ps[0], "h7-scales", new { op = "place", slot = "l2", item = "sc-hourglass" }).Ok);
+        Assert.Equal(-1, W(r).Mechanisms["h7-scales"].Tilt);
+        Assert.Equal("wrong-answer", Op(e, r, ps[0], "h7-scales", new { op = "activate" }).Code);
+        Assert.True(Op(e, r, ps[1], "h7-scales", new { op = "remove", slot = "l2" }).Ok);
+        Assert.True(Op(e, r, ps[1], "h7-scales", new { op = "place", slot = "l2", item = "sc-feather" }).Ok);
+        Assert.True(Op(e, r, ps[1], "h7-scales", new { op = "place", slot = "r2", item = "sc-hourglass" }).Ok);
+        Assert.Equal(0, W(r).Mechanisms["h7-scales"].Tilt);
+
+        // the mosaic opens the gate without the scales; the scales then still give personal points, once
+        Room7(e, r, ps);
+        Assert.Contains("hall", e.UnlockedZones(r, Content));
+        Assert.Contains(W(r).Score!.Log, l => l.Key == "room:mosaic");
+        var before = Personal(r, ps[1]);
+        Assert.Equal("solved", Op(e, r, ps[1], "h7-scales", new { op = "activate" }).Code);
+        Assert.Equal(before + Content.Scoring!.Mechanism, Personal(r, ps[1]));
+        Assert.Equal("already-solved", Op(e, r, ps[0], "h7-scales", new { op = "activate" }).Code);
+        Assert.Equal(1, W(r).Score!.Log.Count(l => l.Key == "mechanism:h7-scales"));
+        Assert.Equal(1, W(r).Score!.Log.Count(l => l.Key == "room:mosaic"));
+        Assert.Equal(RoomPhase.Playing, r.Phase);
+    }
+
+    [Fact]
+    public void Leaving_the_scales_unsolved_still_ends_the_game_and_their_items_stay_in_room_7()
+    {
+        var (e, r, ps) = Start();
+        Room1(e, r, ps); Room2(e, r, ps); Room3(e, r, ps); Room4(e, r, ps);
+        Room5(e, r, ps); Room6(e, r, ps); Room7(e, r, ps);
+        Assert.DoesNotContain("sc-key", W(r).Inventory);
+        Assert.Contains("sc-key", W(r).WorldItems);
+        Room8(e, r, ps);
+        Assert.Equal(RoomPhase.Completed, r.Phase);
+        Assert.Equal(PuzzleStatus.Active, Status(r, "h7-scales"));
+        var result = e.BuildResult(r);
+        Assert.Equal(result.PuzzlesTotal, result.PuzzlesSolved); // the bonus is not part of "solved X of Y"
     }
 
     [Fact]

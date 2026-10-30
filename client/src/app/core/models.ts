@@ -83,6 +83,8 @@ export interface RoomSnapshot {
   activeZone: string;
   /** Shared state of mechanism puzzles (Hanukkah game), by puzzle id. */
   mechanisms?: Record<string, MechanismState> | null;
+  /** Texts the admin changed for this game (fixed when it started), by puzzle — merged over its public data. Never answers. */
+  questions?: Record<string, Record<string, unknown>> | null;
   /** Discovered clue id → player who found it first. */
   clues?: Record<string, string> | null;
   /** Personal and group score (only games with scoring). */
@@ -131,6 +133,8 @@ export interface MechanismState {
   revealed?: string | null;
   lit?: number[][];
   reached?: boolean;
+  /** "Check the arrangement": for each checked place, whether its item is right (kept until the place changes). */
+  verdict?: Record<string, boolean>;
 }
 
 export interface PlayerScore {
@@ -212,6 +216,8 @@ export interface PuzzleContent {
   requiresPuzzle?: string;
   /** Number of official hints (their texts come from the server one by one). */
   hintCount?: number;
+  /** An extra puzzle: personal points only — it never blocks a door or the end of the game. */
+  bonus?: boolean;
 }
 
 export interface ScenarioContent {

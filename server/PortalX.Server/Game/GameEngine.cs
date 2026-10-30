@@ -225,7 +225,7 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
         if (MechanismTypes.Contains(puzzle.Type)) return ActionOutcome.Fail("wrong-action", "את החידה הזאת פותרים בעזרת המנגנון שבחדר.");
 
         bool correct;
-        try { correct = IsCorrect(puzzle, answer); }
+        try { correct = IsCorrect(puzzle, answer, World(room).Questions.GetValueOrDefault(puzzle.Id)); }
         catch (Exception) { return ActionOutcome.Fail("bad-answer", "התשובה לא נשלחה בצורה תקינה. נסו שוב."); }
 
         state!.Attempts++;
@@ -261,7 +261,7 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
             var hint = puzzle.Hints[state.HintsRevealed - 1];
             return ActionOutcome.Done(hint, new GameNotice("hint",
                 $"{player!.Nickname} ביקש רמז (−{rules.HintPenalty} לניקוד הקבוצתי של החדר): {hint}",
-                player.Id.ToString(), puzzle.Id, Zone: puzzle.Zone, Points: -rules.HintPenalty));
+                player.Id.ToString(), puzzle.Id, VoiceLine: $"{puzzle.Id}_hint{state.HintsRevealed}", Zone: puzzle.Zone, Points: -rules.HintPenalty));
         }
         state.HintsRevealed++;
         room.UpdatedAt = now;
@@ -369,9 +369,15 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
         world.Inventory.Remove(b);
         world.Inventory.Add(recipe.Output);
         Contribute(world, playerId);
+        var notices = new List<GameNotice>
+        {
+            new("item-combined", $"{p.Nickname}: {recipe.Message}", p.Id.ToString(), ItemId: recipe.Output, VoiceLine: "item_combined"),
+        };
+        // putting the parts together is a step of a puzzle: once, for the player who did it
+        Award(world, scenario, $"combine:{recipe.Output}", p, scenario.Scoring?.Placement ?? 0, "placement",
+            $"הרכבת {scenario.Item(recipe.Output)?.Name ?? recipe.Output}", scenario.Item(recipe.Output)?.Zone, null, now, notices);
         SaveWorld(room, world, now);
-        return ActionOutcome.Done(recipe.Message,
-            new GameNotice("item-combined", $"{p.Nickname}: {recipe.Message}", p.Id.ToString(), ItemId: recipe.Output, VoiceLine: "item_combined"));
+        return ActionOutcome.Done(recipe.Message, notices.ToArray());
     }
 
     public ActionOutcome PlaceItem(GameRoom room, Guid playerId, string puzzleId, string itemId, DateTime now)
@@ -392,15 +398,19 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
         world.Inventory.Remove(itemId);
         world.PlacedItems.Add(itemId);
         Contribute(world, playerId);
-        SaveWorld(room, world, now);
         var item = scenario!.Item(itemId)!;
+        var placed = new List<GameNotice>();
+        // each right item laid on the pedestal counts once, for the player who laid it
+        Award(world, scenario, $"placement:{puzzle.Id}:{itemId}", player, scenario.Scoring?.Placement ?? 0, "placement",
+            $"{item.Name} הונח על הכן", puzzle.Zone, puzzle.Id, now, placed);
+        SaveWorld(room, world, now);
         if (required.All(world.PlacedItems.Contains))
         {
             state!.Attempts++;
-            return Solve(room, scenario, puzzle, state, player!, now);
+            return Solve(room, scenario, puzzle, state, player!, now, placed);
         }
-        return ActionOutcome.Done($"{item.Name} הונח על הכן",
-            new GameNotice("item-placed", $"{player!.Nickname} הניח {item.Name} על הכן. חסר עוד חפץ אחד.", player.Id.ToString(), puzzle.Id, ItemId: itemId));
+        placed.Insert(0, new GameNotice("item-placed", $"{player!.Nickname} הניח {item.Name} על הכן. חסר עוד חפץ אחד.", player.Id.ToString(), puzzle.Id, ItemId: itemId));
+        return ActionOutcome.Done($"{item.Name} הונח על הכן", placed.ToArray());
     }
 
     // ---------------------------------------------------------------- state helpers
@@ -436,8 +446,11 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
         var world = World(room);
         var duration = (int)Math.Max(0, ((room.EndedAt ?? DateTime.UtcNow) - (room.StartedAt ?? room.EndedAt ?? DateTime.UtcNow)).TotalSeconds);
         var hints = room.Puzzles.Sum(p => p.HintsRevealed);
-        var solved = room.Puzzles.Count(p => p.Status == PuzzleStatus.Solved);
-        var wrong = room.Puzzles.Sum(p => p.Attempts) - solved;
+        var solvedAll = room.Puzzles.Count(p => p.Status == PuzzleStatus.Solved);
+        var wrong = room.Puzzles.Sum(p => p.Attempts) - solvedAll;
+        // the game's own puzzles; a bonus puzzle is extra and is not part of "solved X of Y"
+        var main = scenario.Puzzles.Where(p => !p.Bonus).Select(p => p.Id).ToHashSet();
+        var solved = room.Puzzles.Count(p => p.Status == PuzzleStatus.Solved && main.Contains(p.PuzzleId));
         var players = ActivePlayers(room).ToList();
 
         var earned = new List<string> { "team" };
@@ -458,11 +471,56 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
             HintsUsed = hints,
             WrongAttempts = Math.Max(0, wrong),
             PuzzlesSolved = solved,
-            PuzzlesTotal = scenario.Puzzles.Count,
+            PuzzlesTotal = main.Count,
             AchievementsJson = JsonSerializer.Serialize(achievements, ScenarioCatalog.JsonOptions),
             CompletionType = "success",
             CreatedAt = room.EndedAt ?? DateTime.UtcNow,
         };
+    }
+
+    // ---------------------------------------------------------------- admin questions
+
+    /// <summary>
+    /// The public text field an admin question may replace in this puzzle ("question" or "riddle"), or null when the
+    /// puzzle is not a question with a typed or chosen answer (a code lock or a mechanism depends on clues in the room).
+    /// </summary>
+    public static string? QuestionField(PuzzleContent p) =>
+        p.Type is not ("cipher" or "final" or "split") ? null
+        : p.PublicData["question"] is JsonValue ? "question"
+        : p.PublicData["riddle"] is JsonValue ? "riddle" : null;
+
+    /// <summary>
+    /// Fixes the admin's questions for the round that is starting: for each question puzzle, the first active question
+    /// by order (or none — the built-in one). Called once when a game starts; a game in progress never changes.
+    /// </summary>
+    public void UseQuestions(GameRoom room, IEnumerable<GameQuestion> questions, DateTime now)
+    {
+        var scenario = catalog.Get(room.ScenarioId);
+        var world = World(room);
+        world.Questions.Clear();
+        foreach (var p in scenario.Puzzles)
+        {
+            var field = QuestionField(p);
+            if (field == null) continue;
+            var q = questions.Where(x => x.Active && x.ScenarioId == scenario.Id && x.PuzzleId == p.Id)
+                .OrderBy(x => x.SortOrder).ThenBy(x => x.CreatedAt).FirstOrDefault();
+            if (q == null) continue;
+            var accept = JsonSerializer.Deserialize<List<string>>(q.AcceptJson, ScenarioCatalog.JsonOptions) ?? [];
+            List<string>? options = null;
+            if (p.PublicData["options"] is JsonArray opts)
+            {
+                // the right option becomes the new answer; the other choices stay as they were
+                var builtIn = p.Solution["text"]!.GetValue<string>();
+                options = opts.Select(n => n!.GetValue<string>()).Select(o => o == builtIn ? q.Answer : o).ToList();
+                if (!options.Contains(q.Answer)) options.Add(q.Answer);
+            }
+            world.Questions[p.Id] = new QuestionUse
+            {
+                QuestionId = q.Id, Version = q.Version, Field = field, Question = q.Question, Answer = q.Answer, Accept = accept,
+                Points = q.Points, Options = options,
+            };
+        }
+        SaveWorld(room, world, now);
     }
 
     // ---------------------------------------------------------------- internals
@@ -490,7 +548,10 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
         }
         if (puzzle.UnlocksZone != null)
         {
-            foreach (var left in scenario.Items.Where(i => i.Zone == puzzle.Zone && world.WorldItems.Contains(i.Id)).ToList())
+            // what belongs only to a bonus puzzle of this room stays in the room
+            var bonusItems = scenario.Puzzles.Where(p => p.Bonus && p.Zone == puzzle.Zone)
+                .SelectMany(p => p.PublicData["accepts"]?.AsArray().Select(n => n!.GetValue<string>()) ?? []).ToHashSet();
+            foreach (var left in scenario.Items.Where(i => i.Zone == puzzle.Zone && world.WorldItems.Contains(i.Id) && !bonusItems.Contains(i.Id)).ToList())
             {
                 world.WorldItems.Remove(left.Id);
                 world.Inventory.Add(left.Id);
@@ -529,7 +590,8 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
         }
         SaveWorld(room, world, now);
 
-        if (scenario.Puzzles.All(p => room.Puzzles.First(x => x.PuzzleId == p.Id).Status == PuzzleStatus.Solved))
+        // a bonus puzzle never holds back (or brings about) the end of the game
+        if (!puzzle.Bonus && scenario.Puzzles.Where(p => !p.Bonus).All(p => room.Puzzles.First(x => x.PuzzleId == p.Id).Status == PuzzleStatus.Solved))
         {
             room.Phase = RoomPhase.Completed;
             room.EndedAt = now;
@@ -590,7 +652,7 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
 
     private static ActionOutcome NotInRoom() => ActionOutcome.Fail("not-in-room", "אינכם רשומים בחדר הזה. הצטרפו מחדש בעזרת קוד החדר.");
 
-    private static bool IsCorrect(PuzzleContent puzzle, JsonElement answer)
+    private static bool IsCorrect(PuzzleContent puzzle, JsonElement answer, QuestionUse? question)
     {
         switch (puzzle.Type)
         {
@@ -598,8 +660,9 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
             case "final":
             case "split":
             {
-                var accepted = new List<string> { puzzle.Solution["text"]!.GetValue<string>() };
-                if (puzzle.Solution["accept"] is JsonArray alternatives) accepted.AddRange(alternatives.Select(n => n!.GetValue<string>()));
+                // the admin's question of this game, when it has one; otherwise the built-in answer
+                List<string> accepted = question != null ? [question.Answer, .. question.Accept] : [puzzle.Solution["text"]!.GetValue<string>()];
+                if (question == null && puzzle.Solution["accept"] is JsonArray alternatives) accepted.AddRange(alternatives.Select(n => n!.GetValue<string>()));
                 string given = answer.ValueKind switch
                 {
                     JsonValueKind.String => answer.GetString() ?? "",

@@ -20,7 +20,8 @@ public sealed record LinkReply(bool Ok, string Code, string Message, string? Tok
 /// sender; and the "same visit" attribution of purchases. No reward is paid and buyers get no discount.
 /// </summary>
 public sealed partial class ReferralService(
-    PortalDbContext db, IEmailSender sender, SiteOptions site, ConsentRecorder consents, UnsubscribeLinks links, ILogger<ReferralService> logger)
+    PortalDbContext db, IEmailSender sender, SiteOptions site, ConsentRecorder consents, UnsubscribeLinks links, CampaignContent campaign,
+    ILogger<ReferralService> logger)
 {
     public const string ConsentVersion = "2026-10-ref-v1";
     public const string ConsentText = "אני מסכים/ה לקבל מיילים שיווקיים ועדכונים מ-PORTAL X בנוגע למשחקים חדשים, מבצעים, הטבות, קופונים ותכנים נוספים. ידוע לי שניתן לבטל את ההסכמה בכל עת.";
@@ -150,7 +151,7 @@ public sealed partial class ReferralService(
 
         var consent = await db.MarketingConsents.AsNoTracking().FirstOrDefaultAsync(c => c.Email == link.Email && c.Status == ConsentStatus.Active);
         var model = new ReferralEmailModel(greetingName, LinkUrl(link, siteUrl), siteUrl.TrimEnd('/'), site.ContactEmail,
-            consent == null ? null : await links.UrlAsync(consent, siteUrl));
+            consent == null ? null : await links.UrlAsync(consent, siteUrl), campaign);
         var message = new EmailMessage(link.Email, ReferralEmailTemplate.Subject, ReferralEmailTemplate.Html(model), ReferralEmailTemplate.Text(model), model.UnsubscribeUrl);
         string? error = null, messageId = null;
         var uncertain = false;

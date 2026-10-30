@@ -2,7 +2,7 @@ import {
   AfterViewInit, ChangeDetectionStrategy, Component, DestroyRef, ElementRef, NgZone, OnDestroy, computed, effect, inject, output, signal, untracked, viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { AudioService } from '../core/audio.service';
+import { AudioService, ThemeId } from '../core/audio.service';
 import { GameService } from '../core/game.service';
 import { ChatMessage, GameNotice, RoomSnapshot } from '../core/models';
 import { SettingsService } from '../core/settings.service';
@@ -23,6 +23,11 @@ interface Toast { id: number; text: string; kind: string }
 const INTRO_LINES: [number, string][] = [
   [2, 'intro_01'], [11, 'intro_02'], [21, 'intro_03'], [32, 'intro_04'], [41.5, 'intro_05'],
 ];
+
+/** The mood of each room of the manor: the library, two decoding rooms, the echo room kept quiet for the bells, the machine room and the portal. */
+const ROOM_MUSIC: Record<ZoneId, ThemeId> = {
+  library: 'mystery', symbols: 'riddle', echo: 'mystery', mirrors: 'riddle', items: 'mechanism', portal: 'ascent',
+};
 
 /** Steps 4–7: opening scene, exploration, finale and result (spec §4). */
 @Component({
@@ -80,13 +85,14 @@ const INTRO_LINES: [number, string][] = [
         </div>
       </header>
 
-      <aside class="objectives card" [class.collapsed]="!showObjectives()">
+      <aside class="objectives card" [class.collapsed]="!showObjectives()" [class.glow]="objFlash()">
         <button class="obj-head" (click)="showObjectives.set(!showObjectives())" [attr.aria-expanded]="showObjectives()">
           <b>המשימות שלנו</b><span>{{ showObjectives() ? '−' : '+' }}</span></button>
         @if (showObjectives()) {
           <ul>
             @for (p of objectives(); track p.id) {
-              <li [class.done]="p.status === 'solved'" [class.locked]="p.status === 'locked'">
+              <li [class.done]="p.status === 'solved'" [class.locked]="p.status === 'locked'" [class.current]="p.id === activeObjective()" [class.flash]="objFlash() && p.id === activeObjective()"
+                [attr.aria-current]="p.id === activeObjective() ? 'step' : null">
                 <span class="box">@if (p.status === 'solved') { <px-icon name="check" [size]="14" /> } @else if (p.status === 'locked') { <px-icon name="lock" [size]="12" /> }</span>
                 {{ p.objective }}
               </li>
@@ -240,6 +246,13 @@ const INTRO_LINES: [number, string][] = [
     .objectives ul { list-style:none; padding:0; margin:.5rem 0; display:flex; flex-direction:column; gap:.35rem; font-size:.92rem; }
     .objectives li { display:flex; gap:.45rem; align-items:center; } .objectives li.done { color: var(--muted); text-decoration: line-through; } .objectives li.locked { opacity:.5; }
     .box { width: 18px; height: 18px; border:1px solid var(--gold); border-radius: 4px; display:grid; place-items:center; flex-shrink:0; color: var(--ok); }
+    /* the task to do now: a soft gold-and-blue frame; right after a task is done the box glows and the next task blinks gently three times */
+    .objectives li.current { border:1px solid rgba(246,215,141,.8); border-radius:8px; padding:.2rem .4rem; background: rgba(224,185,92,.1); box-shadow: 0 0 10px rgba(110,160,255,.35); }
+    .objectives.glow { animation: objGlow 1.1s ease-in-out 3; }
+    .objectives li.flash { animation: objPulse 1.1s ease-in-out 3; }
+    @keyframes objGlow { 0%, 100% { box-shadow: var(--shadow); } 50% { box-shadow: 0 0 0 2px var(--gold-2), 0 0 26px rgba(110,160,255,.7); } }
+    @keyframes objPulse { 0%, 100% { background: rgba(224,185,92,.1); } 50% { background: rgba(246,215,141,.32); box-shadow: 0 0 16px rgba(246,215,141,.6); } }
+    @media (prefers-reduced-motion: reduce) { .objectives.glow, .objectives li.flash { animation:none; } }
     .players-line { display:flex; flex-wrap:wrap; gap:.5rem; font-size:.82rem; margin:0; } .players-line span { color: var(--ok); } .players-line .off { color: var(--muted); }
     .map { position:fixed; top: 70px; inset-inline-end: 10px; z-index: 9; display:flex; flex-direction:column; gap:.3rem; padding:.6rem; }
     .mz { display:flex; gap:.4rem; align-items:center; padding:.3rem .6rem; border-radius: 8px; } .mz.here { background: rgba(224,185,92,.25); color: var(--gold-2); } .mz.locked { opacity:.45; }
@@ -354,6 +367,12 @@ export class PlayComponent implements AfterViewInit, OnDestroy {
     if (!sc || !s) return [];
     return sc.puzzles.map((p) => ({ id: p.id, objective: p.objective, status: s.puzzles.find((x) => x.id === p.id)?.status ?? 'locked' }));
   });
+  /** The task to do now: the first one the server lists as open. */
+  activeObjective = computed(() => this.objectives().find((p) => p.status === 'active')?.id ?? null);
+  /** True for a few seconds after the server confirmed a task and the next one became the active one. */
+  objFlash = signal(false);
+  private lastActiveObjective: string | null | undefined;
+  private objFlashTimer?: ReturnType<typeof setTimeout>;
   emptyLetters = computed(() => Array.from({ length: Math.max(0, 5 - (this.game.snapshot()?.letters.length ?? 0)) }));
   introT = computed(() => {
     this.tick();
@@ -449,6 +468,27 @@ export class PlayComponent implements AfterViewInit, OnDestroy {
       if (this.showChat()) untracked(() => this.unread.set(0));
     });
 
+    // the room's own music, changed gradually when the player walks into another room
+    effect(() => {
+      const zone = this.zone();
+      if (this.phase() === 'playing') untracked(() => this.audio.setMusic(ROOM_MUSIC[zone] ?? 'explore'));
+    });
+
+    // the next task lights up when it changes — it follows the server's state, so every player sees the same task
+    effect(() => {
+      const id = this.activeObjective();
+      const playing = this.phase() === 'playing';
+      untracked(() => {
+        if (playing && id && this.lastActiveObjective !== undefined && id !== this.lastActiveObjective) {
+          clearTimeout(this.objFlashTimer);
+          this.objFlash.set(false);
+          setTimeout(() => this.objFlash.set(true), 40);
+          this.objFlashTimer = setTimeout(() => this.objFlash.set(false), 3640);
+        }
+        this.lastActiveObjective = playing ? id : undefined;
+      });
+    });
+
     this.game.notices$.pipe(takeUntilDestroyed()).subscribe((n) => this.onNotice(n));
     this.game.pings$.pipe(takeUntilDestroyed()).subscribe((p) => {
       const def = this.world?.focusOn(p.objectId);
@@ -518,7 +558,7 @@ export class PlayComponent implements AfterViewInit, OnDestroy {
         const mine = this.game.positions.get(this.game.playerId() ?? '');
         if (mine && prev === null) this.world.placePlayer(mine);
       }
-      this.audio.setMusic('explore');
+      this.audio.setMusic(ROOM_MUSIC[this.zone()] ?? 'explore');
       if (prev === 'intro') {
         this.audio.speak('mission', undefined, undefined, true);
         this.toast('המשימה התחילה! חפשו בספרייה את הקלף ואת ספר המפתח.', 'zone-unlocked');

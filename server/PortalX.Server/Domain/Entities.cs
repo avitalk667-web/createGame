@@ -148,6 +148,26 @@ public class WorldState
     public Dictionary<string, string> Clues { get; set; } = new();
     /// <summary>Scores of the current round (only for scenarios with scoring).</summary>
     public ScoreBoard? Score { get; set; }
+    /// <summary>
+    /// The admin's questions this round uses, by puzzle — copied when the game started, so later edits never change it.
+    /// The answers stay on the server.
+    /// </summary>
+    public Dictionary<string, QuestionUse> Questions { get; set; } = new();
+}
+
+/// <summary>One admin question as a game uses it (a copy of a GameQuestion version).</summary>
+public sealed class QuestionUse
+{
+    public Guid QuestionId { get; set; }
+    public int Version { get; set; }
+    /// <summary>The public field it replaces ("question" or "riddle").</summary>
+    public string Field { get; set; } = "question";
+    public string Question { get; set; } = "";
+    public string Answer { get; set; } = "";
+    public List<string> Accept { get; set; } = new();
+    public int? Points { get; set; }
+    /// <summary>The answer buttons of a multiple-choice question, with the right one in place of the built-in answer.</summary>
+    public List<string>? Options { get; set; }
 }
 
 public sealed class MechanismState
@@ -169,6 +189,11 @@ public sealed class MechanismState
     public int Tilt { get; set; }
     /// <summary>Something the solved mechanism reveals, e.g. the code in the maze's collection box.</summary>
     public string? Revealed { get; set; }
+    /// <summary>
+    /// "Check the arrangement" (the pedestals of the hall): for each checked place, whether its item is right. Set only by
+    /// the server's check and cleared when that place changes; a right item stays where it is.
+    /// </summary>
+    public Dictionary<string, bool> Verdict { get; set; } = new();
 }
 
 /// <summary>Personal and group score of a round. The server is the only authority (spec Part G §19).</summary>
@@ -347,6 +372,50 @@ public class FaqEntry
     public string CreatedBy { get; set; } = "";
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+}
+
+/// <summary>
+/// A question of a game that the admin manages (not the site's FAQ): it replaces the built-in question and answer of one
+/// answer puzzle ("slot") in new games. Several may wait for the same puzzle; the first active one by order is used.
+/// A game keeps the version it started with, so an edit never changes a game in progress or one that ended.
+/// </summary>
+public class GameQuestion
+{
+    public Guid Id { get; set; }
+    public string ScenarioId { get; set; } = "";
+    public string PuzzleId { get; set; } = "";
+    public string Zone { get; set; } = "";
+    public string Question { get; set; } = "";
+    /// <summary>Checked only on the server; never sent to players.</summary>
+    public string Answer { get; set; } = "";
+    /// <summary>Other accepted answers, a JSON array of strings.</summary>
+    public string AcceptJson { get; set; } = "[]";
+    public string Category { get; set; } = "";
+    public string Difficulty { get; set; } = "";
+    /// <summary>Personal points for the right answer; null = the game's usual value.</summary>
+    public int? Points { get; set; }
+    public int SortOrder { get; set; }
+    public bool Active { get; set; }
+    /// <summary>Goes up with every saved change; a game records the version it used.</summary>
+    public int Version { get; set; }
+    public string CreatedBy { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+    public string UpdatedBy { get; set; } = "";
+    public DateTime UpdatedAt { get; set; }
+}
+
+/// <summary>The question as it was before and after every change, with who changed it and when.</summary>
+public class GameQuestionRevision
+{
+    public long Id { get; set; }
+    public Guid QuestionId { get; set; }
+    public int Version { get; set; }
+    /// <summary>"created" or "updated".</summary>
+    public string Action { get; set; } = "";
+    public string? BeforeJson { get; set; }
+    public string AfterJson { get; set; } = "";
+    public string Admin { get; set; } = "";
+    public DateTime At { get; set; }
 }
 
 public enum CouponKind { Percent = 0, Fixed = 1 }

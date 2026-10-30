@@ -68,7 +68,17 @@ public sealed class GameHub(RoomService rooms, RoomRuntime runtime, PortalDbCont
     public Task<HubResult> UpdateProfile(string characterId, string appearanceJson) =>
         Run("profile", null, (room, pid) => rooms.Engine.UpdateProfile(room, pid, characterId, appearanceJson));
 
-    public Task<HubResult> StartGame() => Run("start", null, (room, pid) => rooms.Engine.StartGame(room, pid, DateTime.UtcNow));
+    public async Task<HubResult> StartGame()
+    {
+        // the admin's active questions are read now and fixed for this round; later edits only reach new games
+        var questions = await db.GameQuestions.AsNoTracking().Where(q => q.Active).ToListAsync();
+        return await Run("start", null, (room, pid) =>
+        {
+            var outcome = rooms.Engine.StartGame(room, pid, DateTime.UtcNow);
+            if (outcome.Ok) rooms.Engine.UseQuestions(room, questions, DateTime.UtcNow);
+            return outcome;
+        });
+    }
 
     public Task<HubResult> FinishIntro(bool skip) => Run("intro-finished", null, (room, pid) => rooms.Engine.FinishIntro(room, pid, skip, DateTime.UtcNow));
 

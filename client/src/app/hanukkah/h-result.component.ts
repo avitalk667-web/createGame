@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { GameService } from '../core/game.service';
 import { ResultsEmailComponent } from '../ui/results-email.component';
@@ -58,7 +58,6 @@ import { ResultsEmailComponent } from '../ui/results-email.component';
         <px-results-email />
 
         <div class="actions">
-          @if (game.isHost()) { <button class="btn primary" (click)="again()" [disabled]="busy()">משחק נוסף באותו חדר</button> }
           @if (freeGame()) { <a class="btn primary" routerLink="/" fragment="games">גלו את שאר המשחקים</a> }
           <button class="btn" (click)="home.emit()">לדף הבית</button>
         </div>
@@ -92,7 +91,6 @@ export class HResultComponent {
   home = output<void>();
   /** The free trial game ends with an invitation to the full games (spec 1.4). */
   freeGame = input(false);
-  busy = signal(false);
   confetti = Array.from({ length: 30 }, (_, i) => i);
 
   score = computed(() => this.game.snapshot()?.score ?? null);
@@ -103,13 +101,4 @@ export class HResultComponent {
     const sec = s?.result?.durationSeconds ?? (s?.startedAt && s?.endedAt ? Math.round((Date.parse(s.endedAt) - Date.parse(s.startedAt)) / 1000) : 0);
     return `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
   });
-
-  async again() {
-    this.busy.set(true);
-    try {
-      await this.game.playAgain();
-    } finally {
-      this.busy.set(false);
-    }
-  }
 }

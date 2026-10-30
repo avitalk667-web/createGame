@@ -92,6 +92,11 @@ public sealed class PuzzleContent
     public string? UnlocksZone { get; init; }
     /// <summary>Stays locked until this puzzle (in the same room) is solved.</summary>
     public string? RequiresPuzzle { get; init; }
+    /// <summary>
+    /// An extra puzzle: it gives personal points, but never opens or blocks a door, the room's group points or the end
+    /// of the game (the scales beside the mosaic).
+    /// </summary>
+    public bool Bonus { get; init; }
 }
 
 /// <summary>Loads game scenarios from the content folder. Content is kept separate from code (spec §13).</summary>
@@ -146,6 +151,8 @@ public sealed class ScenarioCatalog
             if (p.RequiresPuzzle != null && s.Puzzles.All(x => x.Id != p.RequiresPuzzle)) throw new InvalidDataException($"{p.Id}: unknown required puzzle");
             if (s.Zones.All(z => z.Id != p.Zone)) throw new InvalidDataException($"{p.Id}: unknown zone {p.Zone}");
             if (p.RewardItem != null && s.Item(p.RewardItem) == null) throw new InvalidDataException($"{p.Id}: unknown item");
+            if (p.Bonus && (p.UnlocksZone != null || s.Puzzles.Any(x => x.RequiresPuzzle == p.Id)))
+                throw new InvalidDataException($"{p.Id}: a bonus puzzle may not open a room or be required by another puzzle");
             if (p.PersonalKey.Count > 0 && p.PublicData["message"] is System.Text.Json.Nodes.JsonArray msg)
             {
                 // every symbol of the message must be in exactly one part, and no single part may decode it alone

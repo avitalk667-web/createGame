@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { ApiError, ApiService, ReferralReply } from '../core/api.service';
+import { ApiError, ApiService, ReferralReply, myLinkStore } from '../core/api.service';
+import { CampaignBannerComponent } from '../ui/campaign-banner.component';
 
 const EMAIL = /^[^\s@<>()[\],;:"\\]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\.[A-Za-z]{2,}$/;
 const NAME = /^\p{L}[\p{L}\p{M} '\-׳״.]{0,39}$/u;
@@ -11,7 +12,7 @@ const NAME = /^\p{L}[\p{L}\p{M} '\-׳״.]{0,39}$/u;
  */
 @Component({
   selector: 'px-share',
-  imports: [RouterLink],
+  imports: [RouterLink, CampaignBannerComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="bg" aria-hidden="true"></div>
@@ -26,6 +27,7 @@ const NAME = /^\p{L}[\p{L}\p{M} '\-׳״.]{0,39}$/u;
             <input #box class="link" dir="ltr" readonly [value]="d.url" aria-label="הקישור האישי שלך" (focus)="box.select()" />
             <button type="button" class="btn primary" (click)="copy(box)">{{ copied() ? 'הועתק ✓' : 'העתקת הקישור' }}</button>
           </div>
+          <px-campaign-banner [showButton]="false" />
           @if (emailNote(); as n) { <p class="msg" [class.ok]="n.ok" [attr.role]="n.ok ? 'status' : 'alert'">{{ n.text }}</p> }
           <button type="button" class="btn" (click)="resend()" [disabled]="busy()">{{ busy() ? 'שולחים...' : 'שליחת הקישור שוב למייל' }}</button>
           <p class="muted note">הקישור מאפשר לעקוב אחר רכישות שבוצעו באמצעותו. מי שנכנס דרכו ורוכש משחק באותו ביקור — הרכישה נרשמת בנתוני הקישור.
@@ -33,6 +35,7 @@ const NAME = /^\p{L}[\p{L}\p{M} '\-׳״.]{0,39}$/u;
         </section>
       } @else {
         <h1>יצירת קישור אישי</h1>
+        <px-campaign-banner [showButton]="false" />
         <p class="intro">אהבתם את PORTAL X? צרו קישור אישי ושתפו אותו עם חברים ומכרים. רכישות שיתבצעו דרך הקישור יירשמו בנתוני הקישור שלכם.</p>
         <form (submit)="$event.preventDefault(); submit()" novalidate>
           <div class="row">
@@ -139,6 +142,8 @@ export class SharePage {
 
   private show(r: ReferralReply) {
     this.done.set({ firstName: r.firstName ?? this.first().trim(), url: r.url!, token: r.token!, message: r.message });
+    // remembered in this browser only, so the campaign popup can offer it again for copying
+    if (r.url) myLinkStore.set(r.url);
     // "sent" is shown only when the server says Gmail confirmed it
     if (r.emailStatus === 'sent') this.emailNote.set({ ok: true, text: r.emailMessage! });
     else if (r.emailStatus) this.emailNote.set({ ok: false, text: r.emailMessage! });

@@ -102,6 +102,9 @@ public sealed partial class GameEngine
         var checkEach = puzzle.PublicData["checkEach"]?.GetValue<bool>() == true;
         // an automatic mechanism may still offer a "check" button that explains what is wrong (the dreidel stand)
         var checkButton = puzzle.PublicData["checkButton"]?.GetValue<bool>() == true;
+        // "check the arrangement" (the hall's pedestals): nothing is judged while placing; the check marks every place
+        // right or wrong, right items stay put, and the mechanism opens once all of them are right
+        var verify = puzzle.PublicData["verify"]?.GetValue<bool>() == true;
         var solution = puzzle.Solution["slots"]!.AsObject();
         bool Correct() => slotIds.All(id => mech.Slots.TryGetValue(id, out var it) && solution[id]!.GetValue<string>() == it);
 
@@ -131,7 +134,14 @@ public sealed partial class GameEngine
                 world.Inventory.Remove(itemId);
                 mech.Slots[slot] = itemId;
                 mech.SlotBy[slot] = player.Id.ToString();
+                mech.Verdict.Remove(slot);
                 Contribute(world, player.Id);
+                if (verify)
+                {
+                    SaveWorld(room, world, now);
+                    var left = slotIds.Count - mech.Slots.Count;
+                    return new ActionOutcome(true, "placed", left == 0 ? $"כל הפריטים הונחו — אפשר ללחוץ „{puzzle.PublicData["checkLabel"]}”." : $"{item.Name} הונח", notices, true);
+                }
                 var full = mech.Slots.Count == slotIds.Count;
                 if (full && puzzle.Solution["backs"] is JsonObject backs)
                     mech.Backs = mech.Slots.ToDictionary(kv => kv.Key, kv => backs[kv.Value]?.GetValue<string>() ?? "");
@@ -156,8 +166,12 @@ public sealed partial class GameEngine
             {
                 var slot = action.GetProperty("slot").GetString() ?? "";
                 if (!mech.Slots.TryGetValue(slot, out var itemId)) return ActionOutcome.Fail("slot-empty", "המקום הזה ריק.");
+                // an item the check found in its right place stays there, so it is never taken off by mistake
+                if (verify && mech.Verdict.GetValueOrDefault(slot))
+                    return ActionOutcome.Fail("verified", "הפריט הזה כבר במקום הנכון ונשאר בו.");
                 mech.Slots.Remove(slot);
                 mech.SlotBy.Remove(slot);
+                mech.Verdict.Remove(slot);
                 mech.Ready = false;
                 mech.Backs.Clear();
                 world.Inventory.Add(itemId);
@@ -167,11 +181,30 @@ public sealed partial class GameEngine
             case "activate":
             {
                 // "Check assembly": says what is missing, or completes the mechanism when everything is in place
-                if (!activateMode && !checkEach && !checkButton) return ActionOutcome.Fail("wrong-action", "המתקן הזה פועל מעצמו כשהכול במקומו.");
+                if (!activateMode && !checkEach && !checkButton && !verify) return ActionOutcome.Fail("wrong-action", "המתקן הזה פועל מעצמו כשהכול במקומו.");
                 var missing = slotIds.Count - mech.Slots.Count;
                 if (missing > 0)
                     return ActionOutcome.Fail("not-ready", puzzle.PublicData["incompleteMessage"]?.GetValue<string>()
                         ?? (missing == 1 ? "חסר עוד חלק אחד." : $"חסרים עוד {missing} חלקים."));
+                if (verify)
+                {
+                    // every place is checked here on the server; the clients only see right / wrong per place
+                    foreach (var id in slotIds) mech.Verdict[id] = solution[id]!.GetValue<string>() == mech.Slots[id];
+                    state.Attempts++;
+                    Contribute(world, player.Id);
+                    if (Correct())
+                    {
+                        mech.Ready = true;
+                        SaveWorld(room, world, now);
+                        return Solve(room, scenario, puzzle, state, player, now,
+                            [new("arrangement-checked", "כל הפריטים במקום הנכון!", player.Id.ToString(), puzzle.Id)]);
+                    }
+                    var right = mech.Verdict.Count(v => v.Value);
+                    SaveWorld(room, world, now);
+                    var text = $"{right} מתוך {slotIds.Count} פריטים במקום הנכון. הזיזו את הפריטים שסומנו באדום ובדקו שוב.";
+                    return new ActionOutcome(false, "checked", text,
+                        [new("arrangement-checked", $"{player.Nickname} בדק את הסידור: {text}", player.Id.ToString(), puzzle.Id)], true);
+                }
                 if (!mech.Ready || !Correct()) return ActionOutcome.Fail("not-ready", puzzle.Failure);
                 state.Attempts++;
                 return Solve(room, scenario, puzzle, state, player, now);
@@ -180,6 +213,21 @@ public sealed partial class GameEngine
             {
                 // "Return parts": only this assembly goes back to the start; nothing else in the room changes
                 if (mech.Slots.Count == 0) return new ActionOutcome(true, "noop", "כל החלקים כבר בתיק.", [], false);
+                if (verify)
+                {
+                    // only what the check did not confirm comes back; the right items keep their places
+                    var back = mech.Slots.Where(kv => !mech.Verdict.GetValueOrDefault(kv.Key)).Select(kv => kv.Key).ToList();
+                    if (back.Count == 0) return new ActionOutcome(true, "noop", "כל הפריטים שעל הכנים במקום הנכון.", [], false);
+                    foreach (var id in back)
+                    {
+                        world.Inventory.Add(mech.Slots[id]);
+                        mech.Slots.Remove(id);
+                        mech.SlotBy.Remove(id);
+                        mech.Verdict.Remove(id);
+                    }
+                    SaveWorld(room, world, now);
+                    return ActionOutcome.Done("הפריטים שלא במקומם חזרו לתיק");
+                }
                 foreach (var it in mech.Slots.Values) world.Inventory.Add(it);
                 mech.Slots.Clear();
                 mech.SlotBy.Clear();
@@ -450,13 +498,15 @@ public sealed partial class GameEngine
         var pid = player.Id.ToString();
         board.Solved[pid] = board.Solved.GetValueOrDefault(pid) + 1;
 
-        if (MechanismTypes.Contains(puzzle.Type))
+        // the pedestal of the original game ("items") is a mechanism too: it starts when everything is on it
+        if (MechanismTypes.Contains(puzzle.Type) || puzzle.Type == "items")
         {
             notices.Add(new("mechanism", $"{player.Nickname} הפעיל את המנגנון בהצלחה!", pid, puzzle.Id));
             Award(world, scenario, $"mechanism:{puzzle.Id}", player, rules.Mechanism, "mechanism", "המנגנון הופעל בהצלחה", puzzle.Zone, puzzle.Id, now, notices);
         }
         else
-            Award(world, scenario, $"answer:{puzzle.Id}", player, rules.Answer, "answer", "תשובה נכונה ראשונה", puzzle.Zone, puzzle.Id, now, notices);
+            Award(world, scenario, $"answer:{puzzle.Id}", player, world.Questions.GetValueOrDefault(puzzle.Id)?.Points ?? rules.Answer,
+                "answer", "תשובה נכונה ראשונה", puzzle.Zone, puzzle.Id, now, notices);
 
         // each correctly placed part counts for the player who placed it (given only now, so it never reveals a right spot early)
         if (puzzle.Type == "slots" && world.Mechanisms.TryGetValue(puzzle.Id, out var mech))
@@ -469,12 +519,13 @@ public sealed partial class GameEngine
 
         notices.Add(new("team-solved", "הקבוצה פתרה את החידה!", PuzzleId: puzzle.Id));
 
-        // the room is complete when all its puzzles are solved: group points minus the hints used in it
-        var roomPuzzles = scenario.Puzzles.Where(p => p.Zone == puzzle.Zone).ToList();
+        // the room is complete when all its puzzles are solved (a bonus puzzle is not needed): group points minus the hints used in it
+        var zonePuzzles = scenario.Puzzles.Where(p => p.Zone == puzzle.Zone).ToList();
+        var roomPuzzles = zonePuzzles.Where(p => !p.Bonus).ToList();
         if (roomPuzzles.All(p => room.Puzzles.First(s => s.PuzzleId == p.Id).Status == PuzzleStatus.Solved))
         {
             var basePoints = rules.Room[scenario.ZoneDifficulty[puzzle.Zone]];
-            var hints = roomPuzzles.Sum(p => room.Puzzles.First(s => s.PuzzleId == p.Id).HintsRevealed);
+            var hints = zonePuzzles.Sum(p => room.Puzzles.First(s => s.PuzzleId == p.Id).HintsRevealed);
             var points = Math.Max(0, basePoints - hints * rules.HintPenalty);
             var zoneName = scenario.Zones.First(z => z.Id == puzzle.Zone).Name;
             Award(world, scenario, $"room:{puzzle.Zone}", null, points, "room", hints > 0 ? $"{zoneName} הושלם ({hints} רמזים)" : $"{zoneName} הושלם", puzzle.Zone, null, now, notices);

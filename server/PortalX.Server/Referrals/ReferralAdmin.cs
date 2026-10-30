@@ -34,7 +34,7 @@ public sealed record GameCount(string ProductId, string Name, int Purchases);
 public sealed record ReferralRow(
     Guid Id, string FirstName, string LastName, string Email, string Url, DateTime CreatedAt, string Status,
     int Purchases, int Refunded, IReadOnlyList<MoneyTotals> Money, IReadOnlyList<GameCount> Games,
-    string? LastEmailStatus, DateTime? LastEmailAt, string Consent);
+    string? LastEmailStatus, DateTime? LastEmailAt, string Consent, int DrawBuyers = 0, bool DrawEligible = false);
 
 /// <summary>
 /// The admin's view of personal links. A purchase counts for a link only when: it came through the link (set at checkout),
@@ -42,7 +42,7 @@ public sealed record ReferralRow(
 /// Gross = what was charged; refunds = what was really refunded; net = gross − refunds. Pending, failed and cancelled
 /// orders are never revenue.
 /// </summary>
-public sealed class ReferralAdmin(PortalDbContext db)
+public sealed class ReferralAdmin(PortalDbContext db, CampaignContent campaign)
 {
     /// <summary>Whether an attributed order counts in the link's numbers.</summary>
     public static bool Counts(Order o) =>
@@ -70,6 +70,8 @@ public sealed class ReferralAdmin(PortalDbContext db)
         var counted = orders.Where(Counts)
             .Where(o => (f.PaidFrom == null || o.PaidAt >= f.PaidFrom) && (f.PaidTo == null || o.PaidAt < f.PaidTo)).ToList();
         var byLink = counted.GroupBy(o => o.ReferralLinkId!.Value).ToDictionary(g => g.Key, g => g.ToList());
+        // the campaign counts every qualifying purchase of the link, whatever the purchase dates filtered above
+        var drawBuyers = orders.GroupBy(o => o.ReferralLinkId!.Value).ToDictionary(g => g.Key, g => CampaignContent.QualifyingBuyers(g));
         var consents = await db.MarketingConsents.AsNoTracking().Where(c => links.Select(l => l.Email).Contains(c.Email))
             .ToDictionaryAsync(c => c.Email, c => c.Status == ConsentStatus.Active ? "active" : c.Status == ConsentStatus.Revoked ? "revoked" : "pending");
 
@@ -79,7 +81,8 @@ public sealed class ReferralAdmin(PortalDbContext db)
             var games = mine.GroupBy(o => o.ProductId).Select(g => new GameCount(g.Key, g.First().ProductName, g.Count())).OrderByDescending(g => g.Purchases).ToList();
             return new ReferralRow(l.Id, l.FirstName, l.LastName, l.Email, ReferralService.LinkUrl(l, siteUrl), l.CreatedAt,
                 l.Status == ReferralLinkStatus.Active ? "active" : "disabled", mine.Count, mine.Count(o => o.Status == OrderStatus.Refunded),
-                Money(mine), games, l.LastEmailStatus, l.LastEmailAt, consents.GetValueOrDefault(l.Email, "none"));
+                Money(mine), games, l.LastEmailStatus, l.LastEmailAt, consents.GetValueOrDefault(l.Email, "none"),
+                drawBuyers.GetValueOrDefault(l.Id), drawBuyers.GetValueOrDefault(l.Id) >= campaign.MinBuyers);
         });
         if (f.Game != null) rows = rows.Where(r => r.Games.Any(g => g.ProductId == f.Game));
         if (f.MinPurchases is { } minP) rows = rows.Where(r => r.Purchases >= minP);
@@ -92,6 +95,8 @@ public sealed class ReferralAdmin(PortalDbContext db)
         {
             links = list.Count,
             activeLinks = list.Count(r => r.Status == "active"),
+            drawEligible = list.Count(r => r.DrawEligible),
+            drawMinBuyers = campaign.MinBuyers,
             purchases = shownOrders.Count,
             refunded = shownOrders.Count(o => o.Status == OrderStatus.Refunded),
             money = Money(shownOrders),
@@ -114,6 +119,7 @@ public sealed class ReferralAdmin(PortalDbContext db)
             consent = consent == null ? "none" : consent.Status == ConsentStatus.Active ? "active" : consent.Status == ConsentStatus.Revoked ? "revoked" : "pending",
             consentAt = l.ConsentAt, consentRevokedAt = consent?.RevokedAt,
             purchases = counted.Count, money = Money(counted),
+            drawBuyers = CampaignContent.QualifyingBuyers(orders), drawMinBuyers = campaign.MinBuyers,
             // a commission plan is prepared but off: nothing is calculated or paid
             commission = new { mode = l.CommissionMode.ToString().ToLowerInvariant(), enabled = l.CommissionEnabled },
             // only what managing the links needs: no buyer details, no payment details
@@ -136,14 +142,14 @@ public sealed class ReferralAdmin(PortalDbContext db)
         sb.AppendLine(string.Join(",", new[]
         {
             "שם פרטי", "שם משפחה", "מייל", "קישור אישי", "תאריך יצירה", "מספר רכישות", "מכירות ברוטו", "החזרים", "הכנסה נטו",
-            "משחקים שנרכשו", "סטטוס", "הסכמה שיווקית", "מייל קישור אחרון",
+            "משחקים שנרכשו", "סטטוס", "הסכמה שיווקית", "מייל קישור אחרון", "רוכשים שונים (מבצע)", "זכאות להגרלה",
         }.Select(CsvText.Cell)));
         foreach (var r in rows)
             sb.AppendLine(string.Join(",", new object?[]
             {
                 r.FirstName, r.LastName, r.Email, r.Url, r.CreatedAt, r.Purchases, Money(r.Money, x => x.Gross), Money(r.Money, x => x.Refunds), Money(r.Money, x => x.Net),
                 string.Join(" · ", r.Games.Select(g => $"{g.Name} ({g.Purchases})")), r.Status == "active" ? "פעיל" : "מושבת",
-                r.Consent switch { "active" => "פעילה", "revoked" => "בוטלה", _ => "אין" }, r.LastEmailAt,
+                r.Consent switch { "active" => "פעילה", "revoked" => "בוטלה", _ => "אין" }, r.LastEmailAt, r.DrawBuyers, r.DrawEligible ? "כן" : "לא",
             }.Select(CsvText.Cell)));
         return Encoding.UTF8.GetBytes(sb.ToString());
     }

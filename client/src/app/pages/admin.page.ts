@@ -4,9 +4,14 @@ import { Router, RouterLink } from '@angular/router';
 import { sessionStore } from '../core/api.service';
 import {
   AdminApiService, AdminFilters, AdminGame, AdminOrder, AdminProduct, AuditEntry, CouponRow, CouponUse, Dashboard, FaqRow, EmailSetup, MailingFilters, MailingList,
-  MoneyTotals, ReferralDetails, ReferralFilters, ReferralList } from '../core/admin-api.service';
+  GameQuestionRevision, GameQuestionRow, GameQuestionSlot, MoneyTotals, ReferralDetails, ReferralFilters, ReferralList } from '../core/admin-api.service';
 
-type Tab = 'dashboard' | 'orders' | 'games' | 'products' | 'faq' | 'coupons' | 'mailing' | 'referrals' | 'email-setup' | 'audit';
+/** The question form of "game questions and answers": a slot is "scenarioId|puzzleId". */
+interface QuestionForm {
+  id?: string; slot: string; question: string; answer: string; accept: string; category: string; difficulty: string; points: string; sortOrder: string; active: boolean;
+}
+
+type Tab = 'dashboard' | 'orders' | 'games' | 'products' | 'faq' | 'questions' | 'coupons' | 'mailing' | 'referrals' | 'email-setup' | 'audit';
 
 /** The coupon form as typed (spec 4.3). Dates are local date-time strings from the inputs. */
 interface CouponForm {
@@ -35,6 +40,7 @@ const ACTIONS: Record<string, string> = {
   'coupon-created': 'יצירת קופון', 'coupon-updated': 'עדכון קופון', 'coupon-enabled': 'הפעלת קופון', 'coupon-disabled': 'השבתת קופון',
   'referral-enabled': 'הפעלת קישור אישי', 'referral-disabled': 'השבתת קישור אישי', 'referrals-exported': 'ייצוא קישורים שיווקיים',
   'mailing-exported': 'ייצוא רשימת מיילים',
+  'game-question-added': 'הוספת שאלת משחק', 'game-question-updated': 'עדכון שאלת משחק',
 };
 
 /**
@@ -295,6 +301,86 @@ const ACTIONS: Record<string, string> = {
             <h2>שאלות קבועות (מגיעות עם האתר)</h2>
             <ol class="fixed-faq">@for (q of faqBuiltIn(); track q.question) { <li><b>{{ q.question }}</b> {{ q.answer }}</li> }</ol>
           }
+          @case ('questions') {
+            <section class="card faq-form" aria-labelledby="q-title">
+              <h2 id="q-title">{{ qForm().id ? 'עריכת שאלת משחק' : 'הוספת שאלת משחק' }}</h2>
+              <p class="muted small">שאלות שמופיעות בתוך המשחקים עצמם — לא השאלות הנפוצות של האתר. בכל חידה משמשת השאלה הפעילה הראשונה לפי הסדר; בלי שאלה פעילה המשחק משתמש בשאלה המקורית.
+                שינוי נכנס למשחקים שמתחילים מעכשיו: משחק שכבר התחיל (או הסתיים) נשאר עם הגרסה שלו. התשובה נבדקת בשרת בלבד ואינה נשלחת לשחקנים.</p>
+              <label>משחק, חדר וחידה
+                <select [value]="qForm().slot" (change)="qf('slot', $any($event.target).value)">
+                  <option value="">בחרו חידה...</option>
+                  @for (s of qSlots(); track s.scenarioId + s.puzzleId) { <option [value]="s.scenarioId + '|' + s.puzzleId">{{ s.game }} · {{ s.zoneName }} · {{ s.title }}</option> }
+                </select>
+              </label>
+              @if (qSlot(); as s) {
+                <p class="muted small">השאלה המקורית: „{{ s.builtInQuestion }}” · תשובה: <b>{{ s.builtInAnswer }}</b>@if (s.builtInAccept.length) { (וגם: {{ s.builtInAccept.join(', ') }}) }
+                  @if (s.hasOptions) { · שאלה עם כפתורי בחירה: התשובה הנכונה תופיע במקום התשובה המקורית, ושאר האפשרויות יישארו. }
+                  <button type="button" class="btn small ghost" (click)="fromBuiltIn()">העתקת המקור לטופס</button></p>
+              }
+              <label>נוסח השאלה <textarea rows="3" maxlength="500" [value]="qForm().question" (input)="qf('question', $any($event.target).value)"></textarea></label>
+              <div class="row3">
+                <label>תשובה נכונה <input maxlength="100" [value]="qForm().answer" (input)="qf('answer', $any($event.target).value)" /></label>
+                <label>קטגוריה <input maxlength="60" [value]="qForm().category" (input)="qf('category', $any($event.target).value)" /></label>
+                <label>רמת קושי
+                  <select [value]="qForm().difficulty" (change)="qf('difficulty', $any($event.target).value)">
+                    @for (d of qDifficulties(); track d) { <option [value]="d" [selected]="d === qForm().difficulty">{{ d }}</option> }
+                  </select>
+                </label>
+              </div>
+              <label>תשובות חלופיות שמתקבלות (שורה או פסיק בין תשובה לתשובה) <textarea rows="2" [value]="qForm().accept" (input)="qf('accept', $any($event.target).value)"></textarea></label>
+              <div class="row3">
+                <label>ניקוד אישי לתשובה נכונה <input type="number" min="0" max="500" [placeholder]="qSlot()?.builtInPoints ?? ''" [value]="qForm().points" (input)="qf('points', $any($event.target).value)" /></label>
+                <label>סדר הופעה <input type="number" min="0" max="10000" placeholder="אוטומטי" [value]="qForm().sortOrder" (input)="qf('sortOrder', $any($event.target).value)" /></label>
+                <label class="check"><input type="checkbox" [checked]="qForm().active" (change)="qf('active', $any($event.target).checked)" /> פעילה</label>
+              </div>
+              <p class="muted small">ניקוד ריק = הניקוד הרגיל של המשחק. השוואת התשובה מתעלמת מניקוד עברי, מרווחים ומפיסוק. הרמזים של החידה נשארים כפי שהם.</p>
+              <div class="row">
+                <button class="btn primary small" (click)="saveQuestion()" [disabled]="busy() || !qForm().slot">{{ qForm().id ? 'שמירה' : 'הוספה' }}</button>
+                @if (qForm().id) { <button class="btn small ghost" (click)="qForm.set(emptyQuestion())">ביטול</button> }
+              </div>
+              @if (qMsg(); as m) { <p class="msg-box ok" role="status">{{ m }}</p> }
+            </section>
+            <h2>שאלות המשחקים</h2>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>משחק · חדר · חידה</th><th>שאלה</th><th>תשובה</th><th>חלופות</th><th>קטגוריה</th><th>קושי</th><th>ניקוד</th><th>סדר</th><th>מצב</th><th>גרסה</th><th>עודכן</th><th>פעולות</th></tr></thead>
+                <tbody>
+                  @for (r of qRows(); track r.id) {
+                    <tr>
+                      <td class="wrap small">{{ slotLabel(r) }}</td><td class="wrap">{{ r.question }}</td><td><b>{{ r.answer }}</b></td>
+                      <td class="wrap small">{{ r.accept.join(', ') || '—' }}</td><td>{{ r.category || '—' }}</td><td>{{ r.difficulty }}</td>
+                      <td>{{ r.points ?? 'רגיל' }}</td><td>{{ r.sortOrder }}</td>
+                      <td>{{ r.active ? (inUse(r) ? 'פעילה — בשימוש' : 'פעילה') : 'מושבתת' }}</td><td>{{ r.version }}</td>
+                      <td class="small">{{ r.updatedAt | date: 'd.M.yy HH:mm' }} · {{ r.updatedBy }}</td>
+                      <td class="row">
+                        <button class="btn small" (click)="moveQuestion(r, -1)" aria-label="העברה למעלה">↑</button>
+                        <button class="btn small" (click)="moveQuestion(r, 1)" aria-label="העברה למטה">↓</button>
+                        <button class="btn small" (click)="editQuestion(r)">עריכה</button>
+                        <button class="btn small" (click)="toggleQuestion(r)">{{ r.active ? 'השבתה' : 'הפעלה' }}</button>
+                        <button class="btn small ghost" (click)="showHistory(r)">היסטוריה</button>
+                      </td>
+                    </tr>
+                  } @empty { <tr><td colspan="12" class="muted">עדיין אין שאלות. המשחקים משתמשים בשאלות המקוריות שלהם.</td></tr> }
+                </tbody>
+              </table>
+            </div>
+            @if (qHistory(); as h) {
+              <section class="card details" aria-label="היסטוריית שינויים">
+                <div class="row"><h2>היסטוריית שינויים — {{ slotLabel(h.row) }}</h2><button class="btn small ghost" (click)="qHistory.set(null)">סגירה</button></div>
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr><th>מועד</th><th>מנהל</th><th>פעולה</th><th>גרסה</th><th>לפני</th><th>אחרי</th></tr></thead>
+                    <tbody>
+                      @for (v of h.list; track v.id) {
+                        <tr><td>{{ v.at | date: 'd.M.yy HH:mm' }}</td><td>{{ v.admin }}</td><td>{{ v.action === 'created' ? 'נוצרה' : 'עודכנה' }}</td><td>{{ v.version }}</td>
+                          <td class="wrap small">@if (v.before) { <code>{{ v.before | json }}</code> } @else { — }</td><td class="wrap small"><code>{{ v.after | json }}</code></td></tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            }
+          }
           @case ('email-setup') {
             @if (gmailResult(); as g) {
               <p class="msg-box" [class.ok]="GMAIL_RESULT[g]?.ok" role="status">{{ GMAIL_RESULT[g]?.text ?? ('תוצאת החיבור: ' + g) }}</p>
@@ -424,12 +510,13 @@ const ACTIONS: Record<string, string> = {
                 <div class="stat card"><span>סך רכישות ששולמו</span><b>{{ rl.summary.purchases }}</b><small>{{ rl.summary.refunded }} מהן הוחזרו · ללא רכישות בדיקה ורכישה עצמית</small></div>
                 <div class="stat card"><span>סך מכירות ברוטו</span><b>{{ money(rl.summary.money, 'gross') }}</b><small>סך החזרים: {{ money(rl.summary.money, 'refunds') }}</small></div>
                 <div class="stat card"><span>הכנסה נטו מיוחסת</span><b>{{ money(rl.summary.money, 'net') }}</b><small>ברוטו פחות החזרים בפועל</small></div>
+                <div class="stat card"><span>זכאים להגרלת 888 ₪</span><b>{{ rl.summary.drawEligible }}</b><small>לפחות {{ rl.summary.drawMinBuyers }} רוכשים שונים ששילמו בפועל · ללא בדיקה, החזר ורכישה עצמית</small></div>
               </div>
               <div class="bar"><span class="muted">{{ rl.rows.length }} קישורים · תאריכי „קישור נוצר” מסננים קישורים; תאריכי „רכישות שולמו” מסננים את הרכישות שנספרות</span>
                 <a class="btn small" [href]="referralsCsvUrl()" download>ייצוא CSV</a></div>
               <div class="table-wrap">
                 <table>
-                  <thead><tr><th>שם פרטי</th><th>שם משפחה</th><th>מייל</th><th>קישור אישי</th><th>תאריך יצירה</th><th>מספר רכישות</th><th>מכירות ברוטו</th><th>החזרים</th><th>הכנסה נטו</th><th>משחקים שנרכשו</th><th>סטטוס</th><th></th></tr></thead>
+                  <thead><tr><th>שם פרטי</th><th>שם משפחה</th><th>מייל</th><th>קישור אישי</th><th>תאריך יצירה</th><th>מספר רכישות</th><th>מכירות ברוטו</th><th>החזרים</th><th>הכנסה נטו</th><th>משחקים שנרכשו</th><th>רוכשים שונים (מבצע)</th><th>סטטוס</th><th></th></tr></thead>
                   <tbody>
                     @for (r of rl.rows; track r.id) {
                       <tr class="click" (click)="showReferral(r.id)">
@@ -439,10 +526,11 @@ const ACTIONS: Record<string, string> = {
                         <td>{{ r.purchases }}</td>
                         <td>{{ money(r.money, 'gross') }}</td><td>{{ money(r.money, 'refunds') }}</td><td><b>{{ money(r.money, 'net') }}</b></td>
                         <td class="wrap">@for (g of r.games; track g.productId) { <span>{{ g.name }} ({{ g.purchases }})</span>@if (!$last) {<span> · </span>} } @empty { — }</td>
+                        <td>{{ r.drawBuyers }} @if (r.drawEligible) { <span class="st" data-s="paid">זכאי להגרלה</span> }</td>
                         <td><span class="st" [attr.data-s]="r.status === 'active' ? 'paid' : 'failed'">{{ r.status === 'active' ? 'פעיל' : 'מושבת' }}</span></td>
                         <td><button type="button" class="btn small" (click)="$event.stopPropagation(); showReferral(r.id)">פרטים</button></td>
                       </tr>
-                    } @empty { <tr><td colspan="12" class="muted">אין קישורים בסינון הזה.</td></tr> }
+                    } @empty { <tr><td colspan="13" class="muted">אין קישורים בסינון הזה.</td></tr> }
                   </tbody>
                 </table>
               </div>
@@ -645,7 +733,7 @@ export class AdminPage {
   private router = inject(Router);
   tabs: { id: Tab; label: string }[] = [
     { id: 'dashboard', label: 'לוח בקרה' }, { id: 'orders', label: 'רכישות' }, { id: 'games', label: 'משחקים' },
-    { id: 'products', label: 'מוצרים ומחירים' }, { id: 'faq', label: 'שאלות ותשובות' }, { id: 'coupons', label: 'קופונים והנחות' }, { id: 'mailing', label: 'מיילים ותוצאות' }, { id: 'referrals', label: 'קישורים שיווקיים' }, { id: 'email-setup', label: 'הגדרת שליחת מיילים' },
+    { id: 'products', label: 'מוצרים ומחירים' }, { id: 'faq', label: 'שאלות ותשובות' }, { id: 'questions', label: 'ניהול שאלות ותשובות במשחקים' }, { id: 'coupons', label: 'קופונים והנחות' }, { id: 'mailing', label: 'מיילים ותוצאות' }, { id: 'referrals', label: 'קישורים שיווקיים' }, { id: 'email-setup', label: 'הגדרת שליחת מיילים' },
     { id: 'audit', label: 'יומן פעולות' },
   ];
   state = signal<'loading' | 'denied' | 'ok'>('loading');
@@ -838,6 +926,13 @@ export class AdminPage {
           this.faqBuiltIn.set(f.builtIn);
           break;
         }
+        case 'questions': {
+          const q = await this.api.gameQuestions();
+          this.qSlots.set(q.slots);
+          this.qDifficulties.set(q.difficulties);
+          this.qRows.set(q.questions);
+          break;
+        }
         case 'coupons': this.coupons.set(await this.api.coupons()); break;
         case 'email-setup': this.emailSetup.set(await this.api.emailSetup()); break;
         case 'referrals':
@@ -917,6 +1012,103 @@ export class AdminPage {
     } catch (e: any) {
       this.fail(e);
     }
+  }
+
+  // ------------------------------------------------------------------ game questions (not the site's FAQ)
+
+  qSlots = signal<GameQuestionSlot[]>([]);
+  qDifficulties = signal<string[]>([]);
+  qRows = signal<GameQuestionRow[]>([]);
+  qForm = signal<QuestionForm>(this.emptyQuestion());
+  qMsg = signal<string | null>(null);
+  qHistory = signal<{ row: GameQuestionRow; list: GameQuestionRevision[] } | null>(null);
+  qSlot = computed(() => this.slotOf(this.qForm().slot));
+
+  emptyQuestion(): QuestionForm {
+    return { slot: '', question: '', answer: '', accept: '', category: '', difficulty: 'בינונית', points: '', sortOrder: '', active: true };
+  }
+
+  slotOf(key: string) {
+    return this.qSlots().find((s) => `${s.scenarioId}|${s.puzzleId}` === key);
+  }
+
+  slotLabel(r: { scenarioId: string; puzzleId: string }) {
+    const s = this.slotOf(`${r.scenarioId}|${r.puzzleId}`);
+    return s ? `${s.game} · ${s.zoneName} · ${s.title}` : `${r.scenarioId} · ${r.puzzleId}`;
+  }
+
+  qf<K extends keyof QuestionForm>(key: K, value: QuestionForm[K]) {
+    this.qForm.update((f) => ({ ...f, [key]: value }));
+  }
+
+  editQuestion(r: GameQuestionRow) {
+    this.qMsg.set(null);
+    this.qForm.set({
+      id: r.id, slot: `${r.scenarioId}|${r.puzzleId}`, question: r.question, answer: r.answer, accept: r.accept.join('\n'), category: r.category,
+      difficulty: r.difficulty, points: r.points == null ? '' : String(r.points), sortOrder: String(r.sortOrder), active: r.active,
+    });
+  }
+
+  /** Starts a new question from the built-in one of the chosen puzzle, so the admin edits rather than retypes. */
+  fromBuiltIn() {
+    const s = this.qSlot();
+    if (!s) return;
+    this.qForm.update((f) => ({ ...f, question: s.builtInQuestion, answer: s.builtInAnswer, accept: s.builtInAccept.join('\n') }));
+  }
+
+  async saveQuestion() {
+    const f = this.qForm();
+    const [scenarioId, puzzleId] = f.slot.split('|');
+    const points = f.points.trim();
+    const body = {
+      scenarioId, puzzleId, question: f.question, answer: f.answer, accept: f.accept.split(/[\n,]/).map((a) => a.trim()).filter(Boolean),
+      category: f.category, difficulty: f.difficulty, points: points ? Number(points) : null, clearPoints: !points,
+      sortOrder: f.sortOrder.trim() ? Number(f.sortOrder) : undefined, active: f.active,
+    };
+    this.busy.set(true);
+    this.error.set(null);
+    try {
+      if (f.id) await this.api.updateGameQuestion(f.id, body);
+      else await this.api.addGameQuestion(body);
+      this.qForm.set(this.emptyQuestion());
+      this.qMsg.set('נשמר. השינוי ייכנס למשחקים שיתחילו מעכשיו — משחק שכבר התחיל ממשיך עם הגרסה שלו.');
+      await this.reload();
+    } catch (err: any) {
+      this.fail(err);
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  async toggleQuestion(r: GameQuestionRow) {
+    try { await this.api.updateGameQuestion(r.id, { active: !r.active }); await this.reload(); } catch (e: any) { this.fail(e); }
+  }
+
+  /** Moves a question up or down among the questions of the same puzzle. */
+  async moveQuestion(r: GameQuestionRow, dir: number) {
+    const same = this.qRows().filter((x) => x.scenarioId === r.scenarioId && x.puzzleId === r.puzzleId);
+    const i = same.findIndex((x) => x.id === r.id);
+    if (!same[i + dir]) return;
+    try {
+      const order = same.map((x) => x.id);
+      [order[i], order[i + dir]] = [order[i + dir], order[i]];
+      for (const [k, id] of order.entries()) {
+        const row = same.find((x) => x.id === id)!;
+        if (row.sortOrder !== k + 1) await this.api.updateGameQuestion(id, { sortOrder: k + 1 });
+      }
+      await this.reload();
+    } catch (e: any) {
+      this.fail(e);
+    }
+  }
+
+  /** Among the questions of one puzzle, whether this one is the one new games use (the first active one). */
+  inUse(r: GameQuestionRow) {
+    return r.active && this.qRows().find((x) => x.scenarioId === r.scenarioId && x.puzzleId === r.puzzleId && x.active)?.id === r.id;
+  }
+
+  async showHistory(r: GameQuestionRow) {
+    try { this.qHistory.set({ row: r, list: await this.api.gameQuestionRevisions(r.id) }); } catch (e: any) { this.fail(e); }
   }
 
   // ------------------------------------------------------------------ FAQ

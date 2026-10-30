@@ -3,7 +3,8 @@ using static System.Net.WebUtility;
 
 namespace PortalX.Server.Referrals;
 
-public sealed record ReferralEmailModel(string FirstName, string LinkUrl, string SiteUrl, string ContactEmail, string? UnsubscribeUrl);
+public sealed record ReferralEmailModel(string FirstName, string LinkUrl, string SiteUrl, string ContactEmail, string? UnsubscribeUrl,
+    CampaignContent? Campaign = null);
 
 /// <summary>
 /// The personal-link email: the same look as the results email (table layout, inline styles, right-to-left Hebrew, no
@@ -24,6 +25,8 @@ public static class ReferralEmailTemplate
     {
         string E(string s) => HtmlEncode(s);
         var h = new StringBuilder();
+        // the "friend brings a friend" banner, while the campaign is on
+        var banner = m.Campaign is { Enabled: true } c ? c.EmailHtml(m.SiteUrl) : "";
         h.Append($"""
 <!doctype html>
 <html lang="he" dir="rtl">
@@ -52,6 +55,7 @@ public static class ReferralEmailTemplate
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr><td align="center" style="border-radius:999px;background:{Gold};">
     <a href="{E(m.LinkUrl)}" style="display:inline-block;padding:14px 32px;font-family:{Font};font-size:17px;font-weight:bold;color:#2a1606;text-decoration:none;border-radius:999px;">פתיחת האתר דרך הקישור</a>
   </td></tr></table>
+  {banner}
   <p style="margin:22px 0 0;font-size:16px;line-height:1.7;">תודה שהצטרפת ל־PORTAL X!</p>
 </td></tr>
 <tr><td align="center" style="padding:20px 12px 6px;font-family:{Font};font-size:13px;line-height:1.7;color:#c9d2ee;" dir="rtl">
@@ -84,6 +88,7 @@ public static class ReferralEmailTemplate
         t.AppendLine("הקישור האישי שלך:");
         t.AppendLine(m.LinkUrl);
         t.AppendLine();
+        if (m.Campaign is { Enabled: true } c) t.AppendLine(c.EmailText(m.SiteUrl));
         t.AppendLine("תודה שהצטרפת ל-PORTAL X!");
         t.AppendLine();
         t.AppendLine("קיבלת את המייל הזה כי יצרת קישור אישי באתר PORTAL X.");

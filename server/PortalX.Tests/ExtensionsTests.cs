@@ -118,10 +118,8 @@ public class ExtensionsTests
         Assert.False(buy.IsSuccessStatusCode);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void The_free_game_has_exactly_two_rooms_and_every_puzzle_is_solvable(bool mirroredScales)
+    [Fact]
+    public void The_free_game_has_exactly_two_rooms_and_every_puzzle_is_solvable()
     {
         var c = Catalog.Get("gate-of-secrets");
         Assert.Equal(["maproom", "gearworks"], c.Zones.Select(z => z.Id).ToArray());
@@ -171,7 +169,7 @@ public class ExtensionsTests
         Assert.Equal("gearworks", world().PendingZone);
         Assert.True(e.Continue(r, ps[0].Id, T0).Ok);
 
-        // room 2: gears by the diagram (wrong axle refused), the lever, then the ancient scales
+        // room 2: gears by the diagram (wrong axle refused), then the lever
         foreach (var gear in new[] { "gear-large", "gear-small", "gear-medium" }) Assert.True(e.PickUp(r, ps[1].Id, gear, T0).Ok);
         Assert.Equal("wrong-place", Op(0, "g2-gears", new { op = "place", slot = "a1", item = "gear-small" }).Code);
         Op(0, "g2-gears", new { op = "place", slot = "a1", item = "gear-large" });
@@ -180,46 +178,10 @@ public class ExtensionsTests
         Assert.Equal(PuzzleStatus.Active, r.Puzzles.First(p => p.PuzzleId == "g2-gears").Status); // waits for the lever
         Assert.Equal("solved", Op(1, "g2-gears", new { op = "activate" }).Code);
 
-        // the ancient scales: every item in a pan, the beam leans to the heavier side, the check says whether it balances
-        foreach (var it in new[] { "sc-feather", "sc-key", "sc-crystal", "sc-hourglass" }) Assert.True(e.PickUp(r, ps[0].Id, it, T0).Ok, it);
-        Assert.Equal("הניחו את כל ארבעת החפצים על המאזניים לפני הבדיקה.", Op(0, "g2-scales", new { op = "activate" }).Message);
-        Assert.True(Op(0, "g2-scales", new { op = "place", slot = "l1", item = "sc-crystal" }).Ok);
-        Assert.Equal(-1, world().Mechanisms["g2-scales"].Tilt);
-        Assert.True(Op(1, "g2-scales", new { op = "place", slot = "r1", item = "sc-key" }).Ok);
-        Assert.True(Op(1, "g2-scales", new { op = "place", slot = "r2", item = "sc-feather" }).Ok);
-        Assert.Equal(0, world().Mechanisms["g2-scales"].Tilt); // 3 = 2 + 1, but not every item is on yet
-        Assert.True(Op(0, "g2-scales", new { op = "place", slot = "l2", item = "sc-hourglass" }).Ok);
-        Assert.Equal(-1, world().Mechanisms["g2-scales"].Tilt);
-        var wrong = Op(0, "g2-scales", new { op = "activate" });
-        Assert.Equal("wrong-answer", wrong.Code);
-        Assert.Equal("המאזניים עדיין אינם מאוזנים. בדקו שוב את הרמזים.", wrong.Message);
-        Assert.Equal(RoomPhase.Playing, r.Phase);
-        // moving items between the pans: the feather to the left, the hourglass to the right
-        Assert.True(Op(1, "g2-scales", new { op = "remove", slot = "l2" }).Ok);
-        Assert.Contains("sc-hourglass", world().Inventory);
-        Assert.True(Op(1, "g2-scales", new { op = "place", slot = "l2", item = "sc-feather" }).Ok);
-        Assert.False(world().Mechanisms["g2-scales"].Slots.ContainsKey("r2"));
-        Assert.True(Op(1, "g2-scales", new { op = "place", slot = "r2", item = "sc-hourglass" }).Ok);
-        Assert.Equal(0, world().Mechanisms["g2-scales"].Tilt);
-        if (mirroredScales)
-        {
-            // the same balance with the pans swapped is just as level
-            Assert.True(Op(0, "g2-scales", new { op = "reset" }).Ok);
-            Assert.Equal(4, new[] { "sc-feather", "sc-key", "sc-crystal", "sc-hourglass" }.Count(world().Inventory.Contains));
-            Op(0, "g2-scales", new { op = "place", slot = "l1", item = "sc-key" });
-            Op(0, "g2-scales", new { op = "place", slot = "l2", item = "sc-hourglass" });
-            Op(1, "g2-scales", new { op = "place", slot = "r1", item = "sc-feather" });
-            Assert.Equal(-1, world().Mechanisms["g2-scales"].Tilt);
-            Op(1, "g2-scales", new { op = "place", slot = "r2", item = "sc-crystal" });
-            Assert.Equal(0, world().Mechanisms["g2-scales"].Tilt);
-        }
-        var right = Op(1, "g2-scales", new { op = "activate" });
-        Assert.Equal("solved", right.Code);
-        Assert.Equal("הצלחתם לאזן את המאזניים! המנגנון העתיק התעורר לחיים.", c.Puzzle("g2-scales").Success);
-        var points = world().Score!.Log.Count(l => l.Key == "mechanism:g2-scales");
-        Assert.Equal(1, points);
-        Assert.False(Op(0, "g2-scales", new { op = "activate" }).Ok); // solved once only
-        Assert.Equal(1, world().Score!.Log.Count(l => l.Key == "mechanism:g2-scales"));
+        // the ancient scales moved to the Hanukkah game: the lever ends the free game
+        Assert.DoesNotContain(c.Puzzles, p => p.Type == "balance");
+        Assert.DoesNotContain(c.Items, i => i.Id.StartsWith("sc-"));
+        Assert.DoesNotContain(c.Clues, k => k.Id.Contains("scale"));
         Assert.Equal(RoomPhase.Completed, r.Phase);
         Assert.True(world().Score!.Personal.Values.All(v => v > 0));
     }

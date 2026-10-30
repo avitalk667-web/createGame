@@ -31,6 +31,7 @@ builder.Services.AddDbContext<PortalDbContext>((sp, o) => o.UseNpgsql(
     npgsql => npgsql.EnableRetryOnFailure(4, TimeSpan.FromSeconds(3), null)));
 builder.Services.AddSingleton(_ => ScenarioCatalog.LoadDefault());
 builder.Services.AddSingleton(_ => ProductSeed.LoadDefault());
+builder.Services.AddSingleton(_ => PortalX.Server.Referrals.CampaignContent.LoadDefault());
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IConfiguration>().GetSection("Game").Get<GameOptions>() ?? new GameOptions());
 builder.Services.AddSingleton<GameEngine>();
 builder.Services.AddSingleton<RoomRuntime>();

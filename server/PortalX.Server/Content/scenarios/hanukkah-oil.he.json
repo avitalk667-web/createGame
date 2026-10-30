@@ -212,7 +212,11 @@
       "description": "גביש אור כחול מחדר הפסיפס והמראות.",
       "zone": "mosaic",
       "spawnedAtStart": false
-    }
+    },
+    { "id": "sc-feather", "name": "נוצה", "description": "נוצה לבנה וארוכה.", "zone": "mosaic", "spawnedAtStart": true },
+    { "id": "sc-key", "name": "מפתח עתיק", "description": "מפתח ברזל עתיק וכבד.", "zone": "mosaic", "spawnedAtStart": true },
+    { "id": "sc-crystal", "name": "גביש קסום", "description": "גביש סגול שזוהר באור חלש.", "zone": "mosaic", "spawnedAtStart": true },
+    { "id": "sc-hourglass", "name": "שעון חול", "description": "שעון חול במסגרת עץ ופליז.", "zone": "mosaic", "spawnedAtStart": true }
   ],
   "recipes": [],
   "clues": [
@@ -275,7 +279,10 @@
       "zone": "lab",
       "title": "הכתובת מעל הכדים",
       "text": "„רק אחת מארבע הכתובות שעל הכדים נכונה.”"
-    }
+    },
+    { "id": "h7-scale-1", "zone": "mosaic", "title": "חריטה ראשונה", "text": "שתי נוצות שוקלות כמו המפתח." },
+    { "id": "h7-scale-2", "zone": "mosaic", "title": "חריטה שנייה", "text": "הגביש שוקל כמו המפתח והנוצה יחד." },
+    { "id": "h7-scale-3", "zone": "mosaic", "title": "חריטה שלישית", "text": "שעון החול שוקל בדיוק כמו המפתח." }
   ],
   "achievements": [],
   "puzzles": [
@@ -677,6 +684,35 @@
       "unlocksZone": "hall"
     },
     {
+      "id": "h7-scales",
+      "order": 9,
+      "type": "balance",
+      "zone": "mosaic",
+      "bonus": true,
+      "title": "המאזניים העתיקים",
+      "objective": "חידת בונוס: אזנו את המאזניים העתיקים בעזרת ארבעת החפצים",
+      "instructions": "אספו את הנוצה, המפתח העתיק, הגביש הקסום ושעון החול. גררו כל חפץ אל אחת מכפות המאזניים — או הקישו על חפץ ואחר כך על מקום בכף. קראו את שלוש החריטות שעל הקיר, וכשכל החפצים על המאזניים לחצו על „בדיקת האיזון”.",
+      "publicData": {
+        "activateLabel": "בדיקת האיזון",
+        "incompleteMessage": "הניחו את כל ארבעת החפצים על המאזניים לפני הבדיקה.",
+        "accepts": ["sc-feather", "sc-key", "sc-crystal", "sc-hourglass"],
+        "slots": [
+          { "id": "l1", "label": "כף שמאל" },
+          { "id": "l2", "label": "כף שמאל" },
+          { "id": "r1", "label": "כף ימין" },
+          { "id": "r2", "label": "כף ימין" }
+        ]
+      },
+      "solution": { "weights": { "sc-feather": 1, "sc-key": 2, "sc-crystal": 3, "sc-hourglass": 2 } },
+      "hints": [
+        "שלוש החריטות שעל הקיר מספרות כמה כל חפץ שוקל ביחס לחפצים האחרים.",
+        "נסו למדוד כל חפץ ב„נוצות”: כמה נוצות שוקל המפתח? וכמה הגביש? אחר כך חלקו את ארבעת החפצים לשתי קבוצות שוות במשקל.",
+        "בכל כף צריכים להיות שני חפצים. החפץ הכבד מכולם צריך לצדו דווקא את הקל מכולם."
+      ],
+      "success": "הצלחתם לאזן את המאזניים! המנגנון העתיק התעורר לחיים.",
+      "failure": "המאזניים עדיין אינם מאוזנים. בדקו שוב את הרמזים."
+    },
+    {
       "id": "h8-pedestals",
       "order": 10,
       "type": "slots",
@@ -686,6 +722,9 @@
       "instructions": "על כל כן מופיע רמז שמתאר את הפריט המתאים. הרימו כל פריט מהתיק, בדקו אותו והניחו אותו על הכן המתאים. כשהפריטים מסודרים נכון, מנגנון ההיכל מופעל.",
       "publicData": {
         "mode": "auto",
+        "verify": true,
+        "checkLabel": "בדיקת הסידור",
+        "incompleteMessage": "הניחו את כל שבעת הפריטים על הכנים לפני בדיקת הסידור.",
         "accepts": [
           "antique-key",
           "menorah-symbol",

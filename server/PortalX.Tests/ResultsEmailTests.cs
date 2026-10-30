@@ -157,19 +157,12 @@ public class ResultsEmailTests
         Assert.Contains("21:05", m.Html);
         var result = await Db(f, db => db.Results.AsNoTracking().FirstAsync(x => db.Rooms.Any(rm => rm.Code == code && rm.Id == x.RoomId)));
         Assert.Contains($"{result.PuzzlesSolved} מתוך {result.PuzzlesTotal}", m.Html);
-        if (scenario == "last-portal")
-        {
-            // the original game keeps no points: none are shown or made up
-            Assert.DoesNotContain("הניקוד האישי", m.Html);
-            Assert.DoesNotContain("הניקוד הקבוצתי", m.Html);
-        }
-        else
-        {
-            Assert.Contains(">125<", m.Html);
-            Assert.Contains(">340<", m.Html);
-            Assert.Contains("Dudi", m.Html);
-            Assert.Contains(">90<", m.Html);
-        }
+        // every game keeps personal points now (the original game too): the stored scores and the full ranking
+        Assert.Contains(">125<", m.Html);
+        Assert.Contains(">340<", m.Html);
+        Assert.Contains("Dudi", m.Html);
+        Assert.Contains(">90<", m.Html);
+        Assert.Contains("דירוג המשתתפים", m.Html);
         Assert.Null(m.UnsubscribeUrl);
         Assert.False(await Db(f, db => db.MarketingConsents.AnyAsync(c => c.Email == address.ToLowerInvariant())));
         var req = await Db(f, db => db.ResultEmailRequests.AsNoTracking().FirstAsync(x => x.Email == address.ToLowerInvariant()));

@@ -12,7 +12,7 @@ public sealed record ResultsEmailModel(
     string GameName, DateTime? PlayedAtUtc, string RecipientNickname,
     int? PersonalPoints, int? PersonalRank, bool Tie, IReadOnlyList<TeamScore> Team, int? GroupPoints,
     int? DurationSeconds, int? PuzzlesSolved, int? PuzzlesTotal, int PlayersCount, IReadOnlyList<EarnedAchievement> Achievements,
-    string SiteUrl, string ContactEmail, string? UnsubscribeUrl);
+    string SiteUrl, string ContactEmail, string? UnsubscribeUrl, PortalX.Server.Referrals.CampaignContent? Campaign = null);
 
 /// <summary>
 /// The results email: table layout and inline styles so it looks right in common mail programs, right-to-left Hebrew,
@@ -60,6 +60,8 @@ public static class ResultsEmailTemplate
     {
         var h = new StringBuilder();
         string E(string s) => HtmlEncode(s);
+        // the "friend brings a friend" banner, while the campaign is on
+        var banner = m.Campaign is { Enabled: true } c ? c.EmailHtml(m.SiteUrl) : "";
         h.Append($"""
 <!doctype html>
 <html lang="he" dir="rtl">
@@ -104,14 +106,20 @@ public static class ResultsEmailTemplate
             h.Append("</table>");
         }
 
-        // the team's points: nicknames only, never anyone's address
-        if (m.Team.Count > 1)
+        // the full ranking of everyone who played — the same order as the results screen; nicknames only, never an address
+        if (m.Team.Count > 0)
         {
-            h.Append($"""<p style="margin:0 0 6px;font-size:15px;font-weight:bold;color:{Navy};">הניקוד של הצוות</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px;">""");
+            const string th = "padding:8px 10px;font-family:" + Font + ";font-size:13px;font-weight:bold;color:" + GoldLight + ";background:" + Navy + ";";
+            h.Append($"""<p style="margin:0 0 6px;font-size:15px;font-weight:bold;color:{Navy};">דירוג המשתתפים</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px;border:1px solid #e3e7f2;border-radius:10px;border-collapse:separate;overflow:hidden;">""");
+            h.Append($"""<tr><td width="18%" align="center" style="{th}">מקום</td><td style="{th}text-align:right;">כינוי המשתתף</td><td width="26%" align="left" style="{th}">ניקוד אישי</td></tr>""");
             foreach (var p in m.Team)
             {
-                var bg = p.IsRecipient ? "#fff6dc" : "#f7f8fc";
-                h.Append($"""<tr><td style="padding:8px 12px;background:{bg};font-family:{Font};font-size:15px;color:{Ink};border-bottom:2px solid #ffffff;">{(p.Rank == 1 ? "🏆 " : $"{p.Rank}. ")}{E(p.Nickname)}{(p.IsRecipient ? " (את/ה)" : "")}</td><td align="left" style="padding:8px 12px;background:{bg};font-family:{Font};font-size:15px;font-weight:bold;color:{Navy};border-bottom:2px solid #ffffff;">{p.Points}</td></tr>""");
+                // first place in gold; the recipient's own row softly marked
+                var first = p.Rank == 1;
+                var bg = first ? "#fbe7a8" : p.IsRecipient ? "#fff6dc" : "#f7f8fc";
+                var weight = first || p.IsRecipient ? "bold" : "normal";
+                var td = $"padding:9px 10px;background:{bg};font-family:{Font};font-size:15px;color:{Ink};border-top:1px solid #ffffff;";
+                h.Append($"""<tr><td align="center" style="{td}font-weight:bold;color:{(first ? "#7a5a12" : Ink)};">{(first ? "🏆 1" : p.Rank.ToString(CultureInfo.InvariantCulture))}</td><td style="{td}font-weight:{weight};text-align:right;">{E(p.Nickname)}{(p.IsRecipient ? " (את/ה)" : "")}</td><td align="left" style="{td}font-weight:bold;color:{Navy};">{p.Points}</td></tr>""");
             }
             h.Append("</table>");
         }
@@ -125,6 +133,7 @@ public static class ResultsEmailTemplate
 
         h.Append($"""
   <p style="margin:16px 0 20px;font-size:16px;line-height:1.6;color:{Ink};">{E(Summary(m))}</p>
+  {banner}
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr><td align="center" style="border-radius:999px;background:{Gold};">
     <a href="{E(m.SiteUrl)}/#games" style="display:inline-block;padding:14px 32px;font-family:{Font};font-size:17px;font-weight:bold;color:#2a1606;text-decoration:none;border-radius:999px;">לגלות עוד משחקים ב־PORTAL X</a>
   </td></tr></table>
@@ -158,10 +167,10 @@ public static class ResultsEmailTemplate
         if (m.GroupPoints != null) t.AppendLine($"הניקוד הקבוצתי: {m.GroupPoints}");
         if (m.DurationSeconds != null) t.AppendLine("זמן המשחק: " + Duration(m.DurationSeconds.Value));
         if (m.PuzzlesSolved != null && m.PuzzlesTotal is > 0) t.AppendLine($"חידות שנפתרו: {m.PuzzlesSolved} מתוך {m.PuzzlesTotal}");
-        if (m.Team.Count > 1)
+        if (m.Team.Count > 0)
         {
             t.AppendLine();
-            t.AppendLine("הניקוד של הצוות:");
+            t.AppendLine("דירוג המשתתפים (מקום · כינוי · ניקוד אישי):");
             foreach (var p in m.Team) t.AppendLine($"{p.Rank}. {p.Nickname}{(p.IsRecipient ? " (את/ה)" : "")} — {p.Points}");
         }
         if (m.Achievements.Count > 0)
@@ -173,6 +182,11 @@ public static class ResultsEmailTemplate
         t.AppendLine();
         t.AppendLine(Summary(m));
         t.AppendLine("לגלות עוד משחקים: " + m.SiteUrl);
+        if (m.Campaign is { Enabled: true } campaign)
+        {
+            t.AppendLine();
+            t.Append(campaign.EmailText(m.SiteUrl));
+        }
         t.AppendLine();
         t.AppendLine("קיבלת את המייל הזה כי ביקשת לקבל את תוצאות המשחק.");
         t.AppendLine("יצירת קשר: " + m.ContactEmail);

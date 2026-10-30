@@ -19,9 +19,12 @@ export interface Caption {
  * 'home' … 'victory' are the original escape room's music (unchanged). The themed modes belong to the newer games:
  * 'ancient' — old rooms and investigation; 'mechanism' — machines and mazes; 'magic' — light and enchanted rooms;
  * 'hanukkah' — the Hanukkah journey; 'finale' — the end of a journey.
+ * Room moods: 'mystery' — libraries and investigation, quiet suspense; 'dungeon' — mazes, a tense pulse;
+ * 'riddle' — decoding and puzzle rooms, sparse anticipation that leaves room to think; 'ascent' — a final room that
+ * slowly grows toward the moment of success.
  */
 export type MusicMode = 'none' | 'home' | 'intro' | 'explore' | 'tension' | 'victory' | ThemeId;
-export type ThemeId = 'ancient' | 'mechanism' | 'magic' | 'hanukkah' | 'finale';
+export type ThemeId = 'ancient' | 'mechanism' | 'magic' | 'hanukkah' | 'finale' | 'mystery' | 'dungeon' | 'riddle' | 'ascent';
 
 export type Sfx =
   // the original effects
@@ -49,6 +52,12 @@ interface Theme {
   tick?: boolean;
   /** A bell on the first step of every bar of 8. */
   bell?: boolean;
+  /** A low double heartbeat at the start of every bar of 8 — suspense. */
+  pulse?: boolean;
+  /** A faint metallic clink between the beats — machines. */
+  metal?: boolean;
+  /** Steps over which the piece slowly grows louder and fuller (a final room building up). */
+  swell?: number;
   drone: { muls: number[]; level: number; cutoff: number };
 }
 
@@ -67,7 +76,7 @@ const THEMES: Record<ThemeId, Theme> = {
   },
   // light tension at a moderate pace: soft ticks, a pulsing bass and sparse piano — puzzles, not panic
   mechanism: {
-    root: 196, scale: MINOR, beat: 0.4, voice: 'piano', vol: 0.05, tick: true,
+    root: 196, scale: MINOR, beat: 0.4, voice: 'piano', vol: 0.05, tick: true, metal: true,
     melody: [4, -1, -1, 3, -1, -1, 2, -1, 4, -1, -1, 5, -1, 4, -1, -1, 2, -1, -1, 1, -1, -1, 0, -1, 2, -1, 3, -1, 4, -1, -1, -1],
     bass: [0, -1, 0, -1, 4, -1, 0, -1, 0, -1, 0, -1, 3, -1, 4, -1],
     drone: { muls: [0.5, 0.75], level: 0.08, cutoff: 420 },
@@ -84,6 +93,32 @@ const THEMES: Record<ThemeId, Theme> = {
     melody: [0, 1, 2, -1, 3, 2, 1, 0, 2, 3, 4, -1, 5, 4, 3, -1, 4, 5, 6, 5, 4, -1, 3, 2, 1, 2, 3, 1, 0, -1, -1, -1],
     bass: [0, -1, 4, -1, 0, -1, 4, -1, 3, -1, 4, -1, 0, -1, 4, -1],
     drone: { muls: [0.5, 0.75], level: 0.08, cutoff: 600 },
+  },
+  // libraries and investigation: low, sparse piano over a dark drone and a slow heartbeat — mysterious and quiet
+  mystery: {
+    root: 196, scale: MINOR, beat: 0.7, voice: 'piano', vol: 0.05, pulse: true,
+    melody: [0, -1, -1, 2, -1, -1, 1, -1, 0, -1, -1, -1, 4, -1, 3, -1, 2, -1, -1, 1, -1, -1, 0, -1, -1, -1, 5, -1, 4, -1, -1, -1],
+    drone: { muls: [0.5, 0.75], level: 0.09, cutoff: 380 },
+  },
+  // mazes: a driving low ostinato and close half-steps — the challenge is on
+  dungeon: {
+    root: 146.83, scale: FREYGISH, beat: 0.36, voice: 'pluck', vol: 0.055, pulse: true,
+    melody: [4, -1, 5, -1, 4, -1, 1, -1, 2, -1, 1, -1, 0, -1, -1, -1, 4, -1, 5, -1, 7, -1, 5, -1, 4, -1, 2, -1, 1, -1, -1, -1],
+    bass: [0, 0, -1, 0, 1, -1, 0, -1],
+    drone: { muls: [0.5, 0.75], level: 0.08, cutoff: 360 },
+  },
+  // decoding and puzzle rooms: a few suspended bell notes, far apart — anticipation without disturbing the thinking
+  riddle: {
+    root: 220, scale: DORIAN, beat: 0.5, voice: 'bell', vol: 0.032,
+    melody: [0, -1, -1, -1, 4, -1, -1, -1, 3, -1, -1, -1, 1, -1, -1, -1, 0, -1, -1, -1, 5, -1, -1, -1, 4, -1, -1, -1, -1, -1, -1, -1],
+    drone: { muls: [0.5, 0.75], level: 0.07, cutoff: 500 },
+  },
+  // the last room: rising arpeggios that grow louder and fuller over a minute and a half, up to the success
+  ascent: {
+    root: 261.63, scale: MAJOR, beat: 0.42, voice: 'bell', vol: 0.05, swell: 220,
+    melody: [0, -1, 2, -1, 4, -1, 2, -1, 3, -1, 5, -1, 7, -1, 5, -1, 4, -1, 6, -1, 8, -1, 6, -1, 7, -1, 9, -1, 11, -1, -1, -1],
+    bass: [0, -1, -1, -1, 3, -1, -1, -1, 4, -1, -1, -1, 0, -1, -1, -1],
+    drone: { muls: [0.5, 1], level: 0.07, cutoff: 800 },
   },
   // the end of a journey: bright, rising arpeggios
   finale: {
@@ -469,8 +504,9 @@ export class AudioService {
     this.musicTimer = undefined;
     const t = this.ctx?.currentTime ?? 0;
     for (const n of this.musicNodes) {
-      if (n instanceof GainNode) n.gain.setTargetAtTime(0, t, 0.6);
-      if (n instanceof OscillatorNode) n.stop(t + 3);
+      // the old piece fades out while the next one fades in — one gradual change, never two pieces playing on
+      if (n instanceof GainNode) n.gain.setTargetAtTime(0, t, 0.9);
+      if (n instanceof OscillatorNode) n.stop(t + 4);
     }
     this.musicNodes = [];
   }
@@ -534,8 +570,16 @@ export class AudioService {
       const t = this.nextNoteTime;
       const deg = th.melody[s % th.melody.length];
       // the first bars come in softly, so a new room's music never starts with a jump
-      const fade = Math.min(1, 0.35 + s / 24);
+      const grow = th.swell ? Math.min(1, s / th.swell) : 1;
+      const fade = Math.min(1, 0.35 + s / 24) * (th.swell ? 0.6 + 0.6 * grow : 1);
       if (deg >= 0) this.musicNote(freq(deg), t, th.beat * 2.6, th.voice, th.vol * fade);
+      // a swelling piece adds its octave once it is half way up
+      if (deg >= 0 && th.swell && grow > 0.5) this.musicNote(freq(deg, 1), t, th.beat * 1.6, th.voice, th.vol * fade * (grow - 0.5));
+      if (th.pulse && s % 8 < 2) this.tone(th.root / 4, t, 0.32, 'sine', (s % 8 ? 0.06 : 0.09) * fade, false, this.musicBus);
+      if (th.metal && s % 4 === 2) {
+        this.tone(1870, t, 0.12, 'sine', 0.01 * fade, true, this.musicBus);
+        this.tone(2931, t, 0.08, 'sine', 0.006 * fade, true, this.musicBus);
+      }
       const b = th.bass?.[s % th.bass.length] ?? -1;
       if (b >= 0) this.musicNote(freq(b, -1), t, th.beat * 1.8, 'piano', th.vol * 0.8 * fade);
       if (th.tick) this.tone(s % 2 ? 2400 : 3000, t, 0.025, 'square', 0.012 * fade, false, this.musicBus);

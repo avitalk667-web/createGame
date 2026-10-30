@@ -10,6 +10,9 @@ public static class ReferralEndpoints
 {
     public static void MapReferralEndpoints(this RouteGroupBuilder api)
     {
+        // the "friend brings a friend" campaign texts for the site's banner and popup (from Content/campaign.he.json)
+        api.MapGet("/campaign", (CampaignContent campaign) => Results.Ok(campaign.Public()));
+
         api.MapGet("/referrals/terms", () => Results.Ok(new
         {
             consentText = ReferralService.ConsentText, consentVersion = ReferralService.ConsentVersion, termsText = ReferralService.TermsText,

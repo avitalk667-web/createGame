@@ -21,6 +21,8 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
     public DbSet<AdminAuditLog> AdminAuditLog => Set<AdminAuditLog>();
     public DbSet<PlayerScoreEvent> ScoreEvents => Set<PlayerScoreEvent>();
     public DbSet<FaqEntry> Faq => Set<FaqEntry>();
+    public DbSet<GameQuestion> GameQuestions => Set<GameQuestion>();
+    public DbSet<GameQuestionRevision> GameQuestionRevisions => Set<GameQuestionRevision>();
     public DbSet<Coupon> Coupons => Set<Coupon>();
     public DbSet<CouponProduct> CouponProducts => Set<CouponProduct>();
     public DbSet<CouponRedemption> CouponRedemptions => Set<CouponRedemption>();
@@ -195,6 +197,29 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.Property(x => x.Question).HasMaxLength(300);
             e.Property(x => x.Answer).HasMaxLength(3000);
             e.HasIndex(x => x.SortOrder);
+        });
+
+        b.Entity<GameQuestion>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.ScenarioId).HasMaxLength(64);
+            e.Property(x => x.PuzzleId).HasMaxLength(64);
+            e.Property(x => x.Zone).HasMaxLength(64);
+            e.Property(x => x.Question).HasMaxLength(500);
+            e.Property(x => x.Answer).HasMaxLength(100);
+            e.Property(x => x.AcceptJson).HasColumnType("jsonb");
+            e.Property(x => x.Category).HasMaxLength(60);
+            e.Property(x => x.Difficulty).HasMaxLength(20);
+            e.HasIndex(x => new { x.ScenarioId, x.PuzzleId, x.SortOrder });
+        });
+
+        b.Entity<GameQuestionRevision>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.BeforeJson).HasColumnType("jsonb");
+            e.Property(x => x.AfterJson).HasColumnType("jsonb");
+            e.HasIndex(x => new { x.QuestionId, x.At });
         });
 
         b.Entity<Coupon>(e =>

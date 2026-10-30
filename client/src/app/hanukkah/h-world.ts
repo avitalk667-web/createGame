@@ -54,8 +54,9 @@ const BENCH_SCALE = 1.1;
 const BENCH_REST: Record<string, number> = { 'lamp-base': 0.045, 'lamp-tank': 0.135, 'lamp-wick': 0.09, 'lamp-glass': 0.125, 'lamp-cover': 0.07 };
 const BENCH_STACK: Record<string, number> = { 'lamp-base': 0.045, 'lamp-tank': 0.22, 'lamp-wick': 0.4, 'lamp-glass': 0.42, 'lamp-cover': 0.61 };
 
+// the ancient scales (a bonus puzzle in room 7, the mosaic room), relative to the room centre: on a table at the front left
 const SCALE_X = -4.6;
-const SCALE_Z = -3.25;
+const SCALE_Z = 2.6;
 const SCALE_ARM = 0.78;
 const SCALE_PIVOT_Y = 1.92;
 const SCALE_PAN_Y = 1.35;
@@ -113,17 +114,16 @@ const ASSEMBLIES: Record<string, Assembly> = {
     look: [0, -1.15], halfWidth: 2.1, bounds: [-2.3, 2.3, -2.1, -0.5], stand: [3.0, -1.2, -Math.PI / 2], snap: 0.42,
   },
   // the ancient scales: two places in each pan (l = the left pan, r = the right one, as the players see it)
-  'g2-scales': {
-    zone: 'gearworks', slots: ['l1', 'l2', 'r1', 'r2'],
+  'h7-scales': {
+    zone: 'mosaic', slots: ['l1', 'l2', 'r1', 'r2'],
     pad: { l1: [SCALE_X - SCALE_ARM - 0.15, SCALE_Z], l2: [SCALE_X - SCALE_ARM + 0.15, SCALE_Z], r1: [SCALE_X + SCALE_ARM - 0.15, SCALE_Z], r2: [SCALE_X + SCALE_ARM + 0.15, SCALE_Z] },
-    tray: { 'sc-feather': [-5.5, -2.8], 'sc-key': [-5.0, -2.8], 'sc-crystal': [-4.2, -2.8], 'sc-hourglass': [-3.7, -2.8] },
+    tray: { 'sc-feather': [SCALE_X - 0.9, SCALE_Z + 0.45], 'sc-key': [SCALE_X - 0.4, SCALE_Z + 0.45], 'sc-crystal': [SCALE_X + 0.4, SCALE_Z + 0.45], 'sc-hourglass': [SCALE_X + 0.9, SCALE_Z + 0.45] },
     top: SCALE_PAN_Y + 0.025, trayTop: 1.0, rest: { 'sc-feather': 0.02, 'sc-key': 0.02, 'sc-crystal': 0, 'sc-hourglass': 0 },
-    look: [SCALE_X, -3.15], halfWidth: 1.45, bounds: [-5.85, -3.35, -3.75, -2.7], stand: [-6.3, -3.2, Math.PI / 2], snap: 0.2,
+    look: [SCALE_X, SCALE_Z + 0.1], halfWidth: 1.45, bounds: [SCALE_X - 1.25, SCALE_X + 1.25, SCALE_Z - 0.5, SCALE_Z + 0.55], stand: [-6.3, SCALE_Z + 0.05, Math.PI / 2], snap: 0.2,
   },
 };
 /** Where the digits of a solved arrangement appear, relative to each place (dreidels: beside; symbols: in front). */
 const BACKS_OFFSET: Record<string, [number, number, number]> = { 'h5-stand': [0.2, 0.03, 0.08], 'g1-symbols': [0, 0.02, 0.24] };
-// the ancient scales of the free game (room 2), relative to the room centre: the pivot, the arm, the pans' height when level
 const LETTERS = 'אבגדהוזחטיכלמנסעפצקרשת'.split('');
 /** Symbols carved on each door, by the room it leads to. */
 const DOOR_SYMBOL: Partial<Record<HZone, string>> = {
@@ -675,6 +675,7 @@ export class HanukkahWorld {
   private exitDoor?: THREE.Object3D;
   private gateGlow?: THREE.Mesh;
   private sampleDone = false;
+  private scalesDone = false;
   // maze table (room 3): the key is dragged on the board itself and the levers are pulled in the room
   private mazeGrid: string[] = [];
   private mazeGateIds: string[] = [];
@@ -727,6 +728,8 @@ export class HanukkahWorld {
   private mosaicStones: { mesh: THREE.Mesh; kind: string; lit?: boolean }[] = [];
   private mosaicBeam?: THREE.Mesh;
   private pedestalItems = new Map<string, THREE.Object3D>();
+  /** A glowing ring on each pedestal after "check the arrangement": green right, red wrong. */
+  private pedestalMarks = new Map<string, THREE.Mesh>();
   private hallGate?: THREE.Mesh;
   private gatePower = 0.2;
   private gateTarget = 0.2;
@@ -1845,6 +1848,8 @@ export class HanukkahWorld {
       this.scene.add(lever);
     }
     this.box(1.0, 0.8, 0.8, this.std('#4a4458', { map: stoneTexture([1, 1]) }), 3.4, 0.4, c - 5.6);
+    // the ancient scales — a bonus puzzle beside the mosaic, at the front of the room, clear of the board and its light
+    this.buildScales(c);
     for (let k = 0; k < 4; k++) this.box(0.4, 0.4, 0.1, this.std('#3a4662'), 5.2 + (k % 2) * 0.45, 0.25, c - 2.6 + Math.floor(k / 2) * 0.3);
     const flame = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.7), new THREE.MeshBasicMaterial({ map: glyphTexture('🔥'), transparent: true }));
     flame.position.set(0, DOOR_H + 0.5, c - H_HALF_D + 0.05);
@@ -1891,6 +1896,12 @@ export class HanukkahWorld {
       slot.position.set(x, 1.15, c + z);
       this.scene.add(slot);
       this.pedestalItems.set(`p${k}`, slot);
+      const mark = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.035, 8, 40), new THREE.MeshBasicMaterial({ color: '#3fbf6a', toneMapped: false }));
+      mark.rotation.x = Math.PI / 2;
+      mark.position.set(x, 1.02, c + z);
+      mark.visible = false;
+      this.scene.add(mark);
+      this.pedestalMarks.set(`p${k}`, mark);
     }
     // the open book with the last riddle on a lectern
     this.box(0.12, 1.0, 0.12, this.wood('#3a2414'), 0, 0.5, c + 1.4);
@@ -2075,11 +2086,10 @@ export class HanukkahWorld {
       m.position.set(x, y, c + z);
       this.addItem(id, m);
     }
-    this.buildScales(c);
-    // a small locked box; the magic crystal lies on it
+    // a small locked box
     this.box(0.7, 0.45, 0.5, this.wood('#5a3416'), 3.6, 0.23, c - 4.6);
     this.box(0.72, 0.06, 0.52, this.gold(), 3.6, 0.48, c - 4.6);
-    // the exit: a gilded door with the gate symbol, which glows once the scales are balanced
+    // the exit: a gilded door with the gate symbol, which glows once the mechanism turns
     this.exitDoor = this.buildDoor('gearworks', c - H_HALF_D, '🚪');
     this.doors.set('exit' as HZone, this.exitDoor);
     this.doorOpen.set('exit' as HZone, 0);
@@ -2101,8 +2111,8 @@ export class HanukkahWorld {
    * four things to weigh, found around the room.
    */
   private buildScales(c: number) {
-    this.box(2.6, 0.1, 1.2, this.wood('#4a2e1a'), SCALE_X, 0.95, c - 3.25);
-    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) this.box(0.1, 0.9, 0.1, this.std('#3a2414'), SCALE_X + sx * 1.15, 0.45, c - 3.25 + sz * 0.45);
+    this.box(2.6, 0.1, 1.2, this.wood('#4a2e1a'), SCALE_X, 0.95, c + SCALE_Z);
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) this.box(0.1, 0.9, 0.1, this.std('#3a2414'), SCALE_X + sx * 1.15, 0.45, c + SCALE_Z + sz * 0.45);
     const brass = this.std('#c9a24d', { metalness: 0.85, roughness: 0.3 });
     this.scaleShine.push(brass);
     const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 0.06, 24), brass);
@@ -2148,7 +2158,7 @@ export class HanukkahWorld {
       this.scene.add(pan);
       this.scalePans.push(pan);
     }
-    this.buildAssembly('g2-scales', 'pan', (id) => {
+    this.buildAssembly('h7-scales', 'pan', (id) => {
       const part = this.itemModel(id);
       part.scale.multiplyScalar(1.3);
       return part;
@@ -2159,12 +2169,15 @@ export class HanukkahWorld {
     // the three inscriptions, on the wall to the left of the scales
     const lines = ['שתי נוצות שוקלות כמו המפתח.', 'הגביש שוקל כמו המפתח והנוצה יחד.', 'שעון החול שוקל בדיוק כמו המפתח.'];
     lines.forEach((text, k) => {
-      this.box(0.05, 0.5, 1.14, this.wood('#3a2414'), -7.97, 2.3, c - 5.6 + k * 1.25);
-      this.label(text, 1.05, 0.42, -7.93, 2.3, c - 5.6 + k * 1.25, Math.PI / 2, { bg: '#e9d8ad' });
+      this.box(0.05, 0.5, 1.14, this.wood('#3a2414'), -7.97, 2.3, c - 0.6 + k * 1.25);
+      this.label(text, 1.05, 0.42, -7.93, 2.3, c - 0.6 + k * 1.25, Math.PI / 2, { bg: '#e9d8ad' });
     });
-    // the four things to weigh: on the shelf, on the crate, on the small box and on the floor
+    // the four things to weigh: on a wall shelf, on a crate, on a stone block and on the floor
+    this.box(1.4, 0.06, 0.6, this.wood('#3a2414'), -7.5, 1.35, c + 4.3);
+    this.box(1.2, 0.7, 1.0, this.wood('#5a3a20'), 5.8, 0.35, c + 2.8);
+    this.box(0.7, 0.45, 0.5, this.std('#4a4458', { map: stoneTexture([1, 1]) }), 5.4, 0.23, c + 0.2);
     const where: Record<string, [number, number, number]> = {
-      'sc-feather': [-7.95, 1.4, -3.0], 'sc-key': [6.15, 0.72, 2.8], 'sc-crystal': [3.6, 0.5, -4.6], 'sc-hourglass': [-5.6, 0.02, 3.8],
+      'sc-feather': [-7.6, 1.4, 4.3], 'sc-key': [6.15, 0.72, 2.8], 'sc-crystal': [5.4, 0.5, 0.2], 'sc-hourglass': [-2.6, 0.02, 5.2],
     };
     for (const [id, [x, y, z]] of Object.entries(where)) {
       const m = this.itemModel(id);
@@ -2173,7 +2186,7 @@ export class HanukkahWorld {
     }
   }
 
-  /** Room 2: the lever follows the gears, the beam of the scales leans toward the heavier pan and the pans follow it. */
+  /** The free game's lever follows the gears; the beam of the scales (room 7) leans toward the heavier pan and the pans follow it. */
   private updateSample(dt: number, t: number) {
     if (this.gearLever) this.gearLever.rotation.z = THREE.MathUtils.lerp(this.gearLever.rotation.z, this.gearsRunning ? -0.5 : 0.5, Math.min(1, dt * 5));
     if (this.scaleBeam) {
@@ -2187,13 +2200,13 @@ export class HanukkahWorld {
         pan.position.y = SCALE_PAN_Y + dx * Math.sin(this.scaleBeam!.rotation.z);
       });
     }
-    // balanced: the scales shine and the sign above the gate glows
-    const shine = this.sampleDone ? 0.5 + Math.sin(t * 3) * 0.15 : 0;
+    // balanced: the scales shine; the mechanism turns: the sign above the free game's gate glows
+    const shine = this.scalesDone ? 0.5 + Math.sin(t * 3) * 0.15 : 0;
     for (const m of this.scaleShine) {
       m.emissive.set('#ffb347');
       m.emissiveIntensity = THREE.MathUtils.lerp(m.emissiveIntensity, shine, Math.min(1, dt * 2));
     }
-    if (this.scaleGlow) this.scaleGlow.intensity = THREE.MathUtils.lerp(this.scaleGlow.intensity, this.sampleDone ? 7 : 0, Math.min(1, dt * 2));
+    if (this.scaleGlow) this.scaleGlow.intensity = THREE.MathUtils.lerp(this.scaleGlow.intensity, this.scalesDone ? 7 : 0, Math.min(1, dt * 2));
     if (this.gateGlow) (this.gateGlow.material as THREE.MeshBasicMaterial).opacity = this.sampleDone ? 0.7 + Math.sin(t * 4) * 0.2 : 0;
     if (this.mapWhole) {
       const mat = this.mapWhole.material as THREE.MeshBasicMaterial;
@@ -2244,8 +2257,9 @@ export class HanukkahWorld {
     this.setOpen(this.mapDrawer, !!s.clues?.['g1-note']);
     for (const d of this.cabinetDoors) this.setOpen(d, solved('g1-cabinet'));
     this.gearsRunning = solved('g2-gears');
-    this.scaleTilt = m['g2-scales']?.tilt ?? 0;
-    this.sampleDone = solved('g2-scales');
+    this.scaleTilt = m['h7-scales']?.tilt ?? 0;
+    this.scalesDone = solved('h7-scales');
+    this.sampleDone = solved('g2-gears');
     if (this.exitDoor) this.doorOpen.set('exit' as HZone, s.phase === 'completed' ? 1 : 0);
     this.benchGuess.clear();
     const lampLit = solved('h2-lamp');
@@ -2297,6 +2311,12 @@ export class HanukkahWorld {
       if (this.mosaicBeam) (this.mosaicBeam.material as THREE.MeshBasicMaterial).opacity = mosaic.reached ? 0.7 : 0;
     }
     this.fillSlots([...this.pedestalItems.values()], [...this.pedestalItems.keys()], m['h8-pedestals'], (_slot, item) => this.itemModel(item));
+    const verdict = m['h8-pedestals']?.verdict ?? {};
+    for (const [slot, mark] of this.pedestalMarks) {
+      const v = verdict[slot];
+      mark.visible = v !== undefined && !solved('h8-pedestals');
+      (mark.material as THREE.MeshBasicMaterial).color.set(v ? '#3fbf6a' : '#e2715b');
+    }
 
     // the hanukkiah follows the stage of the game: one candle per completed room, the shamash once the journey began
     const done = scenario ? H_ZONES.filter((z) => {
@@ -2369,6 +2389,32 @@ export class HanukkahWorld {
     }));
     this.sparkles.frustumCulled = false;
     this.scene.add(this.sparkles);
+    // a soft golden arrow over the next task's object, shown for a few seconds after a task is completed
+    this.guide = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.36, 16), new THREE.MeshBasicMaterial({
+      color: '#ffd98a', transparent: true, opacity: 0, depthWrite: false, toneMapped: false,
+    }));
+    this.guide.rotation.x = Math.PI;
+    this.guide.visible = false;
+    this.scene.add(this.guide);
+    this.animated.push((t) => {
+      const g = this.guide!;
+      const left = this.guideUntil - t;
+      g.visible = !!this.guideAt && left > 0;
+      if (!g.visible || !this.guideAt) return;
+      g.position.set(this.guideAt[0], this.guideAt[1] + 0.75 + Math.sin(t * 3) * 0.08, this.guideAt[2]);
+      (g.material as THREE.MeshBasicMaterial).opacity = Math.min(0.85, left * 0.5);
+    });
+  }
+
+  private guide?: THREE.Mesh;
+  private guideAt: [number, number, number] | null = null;
+  private guideUntil = 0;
+
+  /** Points at the object of the next task (only when exactly one object in the room belongs to it). */
+  showGuide(interactableId: string | null, seconds = 8) {
+    const def = interactableId ? H_INTERACTABLES.find((d) => d.id === interactableId) : undefined;
+    this.guideAt = def ? hWorldPos(def) : null;
+    this.guideUntil = this.time + seconds;
   }
 
   private updateFeedback(t: number, dt: number) {
@@ -2597,7 +2643,7 @@ export class HanukkahWorld {
           part.position.copy(goal).setY(goal.y - 0.3);
           part.visible = true;
         }
-        const fast = lampDone || this.benchDrag?.id === id || pid === 'g2-scales';
+        const fast = lampDone || this.benchDrag?.id === id || pid === 'h7-scales';
         part.position.lerp(goal, Math.min(1, dt * (fast ? 14 : 9)));
         const shook = this.benchShake.get(id);
         if (shook !== undefined) {
@@ -2613,7 +2659,7 @@ export class HanukkahWorld {
       for (const [slot, ring] of a.pads) {
         const mat = ring.material as THREE.MeshBasicMaterial;
         const hot = here && (this.benchHover === slot || (!!this.benchPicked && !a.slots[slot]));
-        if (pid === 'g2-scales') ring.position.y = def.top + 0.007 + this.panLift(pid, slot);
+        if (pid === 'h7-scales') ring.position.y = def.top + 0.007 + this.panLift(pid, slot);
         if (flashing) {
           mat.color.set('#e8281a');
           mat.opacity = 0.5 + Math.abs(Math.sin((t - a.flash) * 9)) * 0.5;
@@ -2665,7 +2711,7 @@ export class HanukkahWorld {
 
   /** How far a place has moved up or down with the beam of the scales (0 everywhere else). */
   private panLift(pid: string, slot: string) {
-    if (pid !== 'g2-scales' || !this.scaleBeam) return 0;
+    if (pid !== 'h7-scales' || !this.scaleBeam) return 0;
     return (slot[0] === 'l' ? -SCALE_ARM : SCALE_ARM) * Math.sin(this.scaleBeam.rotation.z);
   }
 

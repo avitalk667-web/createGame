@@ -135,6 +135,15 @@ const HANUKKAH_INTERACTABLES: HInteractable[] = [
   { id: 'mosaic-levers', zone: 'mosaic', label: 'מנופים להזזת האבנים', verb: 'הפעלה', kind: 'panel', panel: 'mosaic', pos: [3.4, 1.0, -5.6], radius: 0.6 },
   { id: 'mirrors', zone: 'mosaic', label: 'מראות קטנות', verb: 'בדיקה', kind: 'decor', text: 'מראות קטנות מחזירות את האור הכחול אל הקירות.', pos: [-5.4, 1.6, -3.0], radius: 0.7 },
   { id: 'spare-stones', zone: 'mosaic', label: 'אבני פסיפס חלופיות', verb: 'בדיקה', kind: 'decor', text: 'אבני פסיפס חלופיות. הן לא נכנסות ללוח — אלה מסיחים.', pos: [5.4, 0.5, -2.4], radius: 0.6 },
+  // a bonus puzzle in the same room: the ancient scales, their three inscriptions and the four things to weigh
+  { id: 'bonus-scales', zone: 'mosaic', label: 'המאזניים העתיקים — חידת בונוס', verb: 'הנחה', kind: 'panel', panel: 'scales', pos: [-4.6, 1.4, 2.75], radius: 0.9 },
+  { id: 'scale-note-1', zone: 'mosaic', label: 'חריטה ראשונה על הקיר', verb: 'קריאה', kind: 'clue', clueId: 'h7-scale-1', pos: [-7.9, 2.3, -0.6], radius: 0.55 },
+  { id: 'scale-note-2', zone: 'mosaic', label: 'חריטה שנייה על הקיר', verb: 'קריאה', kind: 'clue', clueId: 'h7-scale-2', pos: [-7.9, 2.3, 0.65], radius: 0.55 },
+  { id: 'scale-note-3', zone: 'mosaic', label: 'חריטה שלישית על הקיר', verb: 'קריאה', kind: 'clue', clueId: 'h7-scale-3', pos: [-7.9, 2.3, 1.9], radius: 0.55 },
+  { id: 'sc-feather', zone: 'mosaic', label: 'נוצה', verb: 'הרמה', kind: 'item', itemId: 'sc-feather', pos: [-7.6, 1.45, 4.3], radius: 0.35 },
+  { id: 'sc-key', zone: 'mosaic', label: 'מפתח עתיק', verb: 'הרמה', kind: 'item', itemId: 'sc-key', pos: [6.15, 0.77, 2.8], radius: 0.35 },
+  { id: 'sc-crystal', zone: 'mosaic', label: 'גביש קסום', verb: 'הרמה', kind: 'item', itemId: 'sc-crystal', pos: [5.4, 0.67, 0.2], radius: 0.35 },
+  { id: 'sc-hourglass', zone: 'mosaic', label: 'שעון חול', verb: 'הרמה', kind: 'item', itemId: 'sc-hourglass', pos: [-2.6, 0.16, 5.2], radius: 0.35 },
 
   // 8 · היכל האור
   ...[1, 2, 3, 4, 5, 6, 7].map((k): HInteractable => {
@@ -176,16 +185,8 @@ const SAMPLE_INTERACTABLES: HInteractable[] = [
   { id: 'gear-small', zone: 'gearworks', label: 'גלגל שיניים קטן', verb: 'הרמה', kind: 'item', itemId: 'gear-small', pos: [5.8, 0.75, 2.8], radius: 0.4 },
   { id: 'gear-medium', zone: 'gearworks', label: 'גלגל שיניים בינוני', verb: 'הרמה', kind: 'item', itemId: 'gear-medium', pos: [-3.0, 0.2, 3.5], radius: 0.4 },
   { id: 'gear-diagram', zone: 'gearworks', label: 'איור הגלגלים על הקיר', verb: 'קריאה', kind: 'clue', clueId: 'g2-diagram', pos: [-4.0, 2.3, -6.8], radius: 0.9 },
-  { id: 'scales', zone: 'gearworks', label: 'המאזניים העתיקים', verb: 'הנחה', kind: 'panel', panel: 'scales', pos: [-4.6, 1.4, -3.25], radius: 0.9 },
-  { id: 'scale-note-1', zone: 'gearworks', label: 'חריטה ראשונה על הקיר', verb: 'קריאה', kind: 'clue', clueId: 'g2-scale-1', pos: [-7.9, 2.3, -5.6], radius: 0.55 },
-  { id: 'scale-note-2', zone: 'gearworks', label: 'חריטה שנייה על הקיר', verb: 'קריאה', kind: 'clue', clueId: 'g2-scale-2', pos: [-7.9, 2.3, -4.35], radius: 0.55 },
-  { id: 'scale-note-3', zone: 'gearworks', label: 'חריטה שלישית על הקיר', verb: 'קריאה', kind: 'clue', clueId: 'g2-scale-3', pos: [-7.9, 2.3, -3.1], radius: 0.55 },
-  { id: 'sc-feather', zone: 'gearworks', label: 'נוצה', verb: 'הרמה', kind: 'item', itemId: 'sc-feather', pos: [-7.95, 1.45, -3.0], radius: 0.35 },
-  { id: 'sc-key', zone: 'gearworks', label: 'מפתח עתיק', verb: 'הרמה', kind: 'item', itemId: 'sc-key', pos: [6.15, 0.77, 2.8], radius: 0.35 },
-  { id: 'sc-crystal', zone: 'gearworks', label: 'גביש קסום', verb: 'הרמה', kind: 'item', itemId: 'sc-crystal', pos: [3.6, 0.67, -4.6], radius: 0.35 },
-  { id: 'sc-hourglass', zone: 'gearworks', label: 'שעון חול', verb: 'הרמה', kind: 'item', itemId: 'sc-hourglass', pos: [-5.6, 0.16, 3.8], radius: 0.35 },
   { id: 'small-box', zone: 'gearworks', label: 'תיבה קטנה עם מנעול', verb: 'בדיקה', kind: 'decor', text: 'תיבת עץ קטנה ונעולה, עם מכסה מוזהב.', pos: [3.6, 0.4, -4.6], radius: 0.45 },
-  { id: 'gate-sign', zone: 'gearworks', label: 'סמל השער מעל הדלת', verb: 'בדיקה', kind: 'decor', text: 'סמל השער. כשהמאזניים העתיקים יאוזנו — השער ייפתח.', pos: [0, 3.9, -6.8], radius: 0.6 },
+  { id: 'gate-sign', zone: 'gearworks', label: 'סמל השער מעל הדלת', verb: 'בדיקה', kind: 'decor', text: 'סמל השער. כשמנגנון גלגלי השיניים יופעל — השער ייפתח.', pos: [0, 3.9, -6.8], radius: 0.6 },
 ];
 
 export let H_INTERACTABLES: HInteractable[] = HANUKKAH_INTERACTABLES;
@@ -209,10 +210,11 @@ const OBSTACLES: [HZone, number, number, number, number][] = [
   ['dreidels', -1.2, 1.2, -4.6, -2.2], ['dreidels', 1.0, 4.6, -2.2, -0.2], ['dreidels', -3.4, -2.2, -2.2, -1.0],
   ['lab', -3.4, 3.4, -3.2, -1.2], ['lab', 2.0, 4.0, -1.0, 0.2],
   ['mosaic', -1.0, 1.0, -0.8, 0.8],
+  ['mosaic', -6.0, -3.2, 1.95, 3.25], ['mosaic', 5.2, 6.4, 2.2, 3.4], ['mosaic', 5.0, 5.8, -0.1, 0.5],
   ['hall', -1.0, 1.0, -2.6, -0.6],
   ['maproom', -2.6, 2.6, -2.3, -0.4], ['maproom', 2.6, 5.4, -4.1, -2.6], ['maproom', -5.1, -3.3, -7.0, -5.8],
   ['maproom', -8.0, -6.3, 0.7, 2.3], ['maproom', 6.5, 8.0, -2.9, -1.1], ['maproom', 5.0, 6.2, 2.0, 3.2],
-  ['gearworks', -2.6, 2.6, -2.2, -0.4], ['gearworks', -6.0, -3.2, -3.95, -2.55],
+  ['gearworks', -2.6, 2.6, -2.2, -0.4],
   ['gearworks', 3.0, 4.2, -5.0, -4.2], ['gearworks', 5.2, 6.4, 2.2, 3.4], ['gearworks', -8.0, -6.4, -3.8, -2.2],
 ];
 

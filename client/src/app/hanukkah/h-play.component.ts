@@ -12,7 +12,7 @@ import { JoystickComponent } from '../ui/joystick.component';
 import { SettingsPanelComponent } from '../ui/settings-panel.component';
 import { LeaveDialogComponent } from '../ui/leave-dialog.component';
 import { RoomOverlaysComponent } from '../ui/room-overlays.component';
-import { H_ZONES, HInteractable, HPanel, HZone, useLayout } from './h-layout';
+import { H_INTERACTABLES, H_ZONES, HInteractable, HPanel, HZone, useLayout } from './h-layout';
 import { HPanelComponent, ITEM_EMOJI } from './h-panel.component';
 import { HResultComponent } from './h-result.component';
 import { HanukkahWorld } from './h-world';
@@ -25,16 +25,26 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
   'h5-lock': 'lock', 'h6-jugs': 'jugs', 'h7-mosaic': 'mosaic', 'h8-pedestals': 'pedestals', 'h8-final': 'final',
 };
 
+/** The mood of each room of the Hanukkah journey. */
+const HANUKKAH_MUSIC: Partial<Record<HZone, ThemeId>> = {
+  library: 'mystery', workshop: 'mechanism', maze: 'dungeon', cipher: 'riddle', dreidels: 'hanukkah', lab: 'riddle', mosaic: 'magic', hall: 'ascent',
+};
+
+/** Tables used in the room itself (drag and drop), by puzzle — the object a task's guide arrow points at. */
+const BENCH_PANEL: Record<string, HPanel> = {
+  'h2-lamp': 'lamp', 'h5-stand': 'stand', 'h3-maze': 'maze', 'g1-map': 'map', 'g1-symbols': 'symbols', 'g2-gears': 'gears', 'h7-scales': 'scales',
+};
+
 /** The Hanukkah game: opening scene, eight rooms, puzzles, scores, chat, finale and results. */
 /** The sound of each solved puzzle, heard once by every player with its celebration (spec 3, 4). */
 const SOLVE_SOUND: Record<string, Sfx> = {
-  'g1-map': 'decode', 'g1-symbols': 'success', 'g1-cabinet': 'cabinet', 'g2-gears': 'mechanism', 'g2-scales': 'gate',
+  'g1-map': 'decode', 'g1-symbols': 'success', 'g1-cabinet': 'cabinet', 'g2-gears': 'mechanism', 'h7-scales': 'gate',
   'h1-riddle': 'decode', 'h2-lamp': 'beam', 'h3-maze': 'success', 'h3-box': 'drawer', 'h4-wheel': 'decode',
   'h5-stand': 'success', 'h5-lock': 'codeOk', 'h6-jugs': 'oil', 'h7-mosaic': 'beam', 'h8-pedestals': 'success',
 };
 
 /** Laying a part in its place on a table: map paper, a gear on its axle, a dreidel on its stand. */
-const PLACE_SOUND: Record<string, Sfx> = { 'g1-map': 'paper', 'g2-gears': 'gear', 'g2-scales': 'scale', 'g1-symbols': 'place', 'h5-stand': 'place', 'h2-lamp': 'place' };
+const PLACE_SOUND: Record<string, Sfx> = { 'g1-map': 'paper', 'g2-gears': 'gear', 'h7-scales': 'scale', 'g1-symbols': 'place', 'h5-stand': 'place', 'h2-lamp': 'place' };
 
 function pickupSound(item: string): Sfx {
   if (item.startsWith('map-')) return 'find';
@@ -105,14 +115,15 @@ function pickupSound(item: string): Sfx {
         </ol>
       </aside>
 
-      <aside class="objectives card" [class.collapsed]="!showObjectives()" [style.display]="focus() ? 'none' : null">
+      <aside class="objectives card" [class.collapsed]="!showObjectives()" [class.glow]="objFlash()" [style.display]="focus() ? 'none' : null">
         <button class="obj-head" (click)="showObjectives.set(!showObjectives())" [attr.aria-expanded]="showObjectives()">
           <b>המשימות בחדר</b><span>{{ showObjectives() ? '−' : '+' }}</span></button>
         @if (showObjectives()) {
           <ul>
             @for (p of objectives(); track p.id) {
-              <li [class.done]="p.status === 'solved'" [class.locked]="p.status === 'locked'">
-                <span class="box">{{ p.status === 'solved' ? '✓' : p.status === 'locked' ? '🔒' : '' }}</span>{{ p.objective }}
+              <li [class.done]="p.status === 'solved'" [class.locked]="p.status === 'locked'" [class.current]="p.id === activeObjective()" [class.flash]="objFlash() && p.id === activeObjective()"
+                [attr.aria-current]="p.id === activeObjective() ? 'step' : null">
+                <span class="box">{{ p.status === 'solved' ? '✓' : p.status === 'locked' ? '🔒' : p.id === activeObjective() ? '➤' : '' }}</span>{{ p.objective }}@if (p.bonus) { <small class="bonus-tag">בונוס</small> }
               </li>
             }
           </ul>
@@ -124,17 +135,34 @@ function pickupSound(item: string): Sfx {
       </div>
 
       @if (focus(); as f) {
-        <section class="bench card" role="region" [attr.aria-label]="focusPuzzle()?.title">
-          <header>
+        @if (benchClosed()) {
+          <div class="bench-closed">
+            <button class="btn small primary" (click)="benchClosed.set(false)" aria-label="פתיחת חלונית ההוראות">📋 הוראות</button>
+            <button class="btn small" (click)="exitBench()">↩ חזרה לחדר</button>
+          </div>
+        } @else {
+        <section #benchEl class="bench card" role="region" [attr.aria-label]="focusPuzzle()?.title" [class.min]="benchMin()" [class.moved]="!!benchPos()"
+          [style.left.px]="benchPos()?.x" [style.top.px]="benchPos()?.y"
+          (pointerdown)="$event.stopPropagation()" (pointermove)="$event.stopPropagation()" (pointerup)="$event.stopPropagation()" (wheel)="$event.stopPropagation()">
+          <header class="b-drag" (pointerdown)="benchDragStart($event, benchEl)" title="גררו כדי להזיז את החלונית">
+            <span class="grip" aria-hidden="true">⠿</span>
             <b>{{ focusPuzzle()?.title }}</b>
-            <button class="btn small ghost" (click)="exitBench()" aria-label="חזרה לחדר">✕ חזרה לחדר</button>
+            <span class="b-win">
+              @if (benchPos()) { <button class="btn small ghost" (click)="benchPos.set(null)" aria-label="החזרת החלונית למקומה" title="החזרה למקום">↺</button> }
+              <button class="btn small ghost" (click)="benchMin.set(!benchMin())" [attr.aria-label]="benchMin() ? 'הרחבת החלונית' : 'מזעור החלונית'" [attr.aria-expanded]="!benchMin()"
+                [title]="benchMin() ? 'הרחבה' : 'מזעור'">{{ benchMin() ? '▢' : '—' }}</button>
+              <button class="btn small ghost" (click)="benchClosed.set(true)" aria-label="סגירת חלונית ההוראות" title="סגירה">✕</button>
+            </span>
           </header>
+          @if (!benchMin()) {
+          <div class="b-body">
+          <button class="btn small ghost b-exit" (click)="exitBench()">↩ חזרה לחדר</button>
           @if (focusState()?.status === 'solved') {
             <p class="b-ok">{{ FOCUS_DONE[f] }}</p>
           } @else {
             <p class="b-ins">{{ FOCUS_HELP[f] || focusPuzzle()?.instructions }}</p>
             @if (f !== 'h3-maze' && !benchHasParts()) { <p class="muted small">{{ EMPTY_LABEL[f] }}</p> }
-            @if (f === 'g2-scales' && scaleNotes().length) {
+            @if (f === 'h7-scales' && scaleNotes().length) {
               <ul class="b-notes" aria-label="החריטות שמצאתם">@for (n of scaleNotes(); track n) { <li>📜 {{ n }}</li> }</ul>
             }
             @if (f === 'h3-maze') { <p class="muted small">סמלים שהמפתח עבר לפי הסדר: {{ game.snapshot()?.mechanisms?.['h3-maze']?.progress ?? 0 }} מתוך 3</p> }
@@ -151,7 +179,10 @@ function pickupSound(item: string): Sfx {
               }
             </div>
           }
+          </div>
+          }
         </section>
+        }
       }
 
       @if (hover(); as h) { <div class="hover-label">@if (h.kind !== 'decor') { <span aria-hidden="true">👆 </span> }{{ h.label }} <small>· {{ h.verb }}</small></div> }
@@ -251,9 +282,18 @@ function pickupSound(item: string): Sfx {
     :host { display:block; position:fixed; inset:0; overflow:hidden; }
     .stage { position:absolute; inset:0; } canvas { width:100%; height:100%; display:block; outline:none; touch-action:none; cursor:grab; }
     .loading { position:absolute; inset:0; display:grid; place-items:center; font-size:1.4rem; color: var(--gold-2); background: var(--bg); }
-    .bench { position:fixed; z-index:20; inset-inline:0; margin-inline:auto; bottom:12px; width:min(680px, calc(100% - 24px)); display:flex; flex-direction:column; gap:.4rem;
-      background: linear-gradient(180deg, rgba(40,30,8,.92), rgba(14,20,44,.94)); border:1px solid var(--gold); }
-    .bench header { display:flex; justify-content:space-between; align-items:center; gap:.6rem; } .bench header b { font-family: var(--font-title); color: var(--gold-2); font-size:1.2rem; }
+    .bench { position:fixed; z-index:20; inset-inline:0; margin-inline:auto; bottom:12px; width:min(560px, calc(100% - 24px)); display:flex; flex-direction:column; gap:.4rem;
+      background: linear-gradient(180deg, rgba(40,30,8,.92), rgba(14,20,44,.94)); border:1px solid var(--gold); padding:.55rem .8rem; box-sizing:border-box; }
+    /* moved by the player: placed by its top-left corner, always kept inside the screen */
+    .bench.moved { inset:auto; margin:0; }
+    .bench header { display:flex; justify-content:space-between; align-items:center; gap:.5rem; } .bench header b { font-family: var(--font-title); color: var(--gold-2); font-size:1.1rem; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .b-drag { cursor:grab; touch-action:none; user-select:none; -webkit-user-select:none; min-height:36px; } .b-drag:active { cursor:grabbing; }
+    .grip { color: var(--gold); font-size:1.1rem; line-height:1; }
+    .b-win { display:flex; gap:.2rem; flex-shrink:0; } .b-win .btn { min-width:2.2rem; padding:.3em .55em; }
+    .b-body { display:flex; flex-direction:column; gap:.4rem; max-height:min(40vh, 340px); overflow:auto; overscroll-behavior:contain; touch-action:pan-y; }
+    .b-exit { align-self:flex-start; }
+    .bench-closed { position:fixed; z-index:20; bottom:84px; left:50%; transform:translateX(-50%); display:flex; gap:.4rem; }
+    @media (max-height: 560px) { .b-body { max-height:30vh; } .bench { bottom:6px; } }
     .b-ins { margin:0; line-height:1.6; } .b-msg { margin:0; color:#9be3b4; } .b-msg.bad { color:#ffb4a3; } .b-ok { margin:0; color:#9be3b4; font-size:1.1rem; }
     .b-hint { margin:0; color:#cfe2ff; }
     .b-notes { margin:0; padding:0; list-style:none; display:grid; gap:.2rem; color:#f3e2b8; font-size:.92rem; } .b-actions { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; }
@@ -290,6 +330,15 @@ function pickupSound(item: string): Sfx {
     .objectives ul { list-style:none; padding:0; margin:.5rem 0; display:flex; flex-direction:column; gap:.35rem; font-size:.92rem; }
     .objectives li { display:flex; gap:.45rem; align-items:center; } .objectives li.done { color: var(--muted); text-decoration: line-through; } .objectives li.locked { opacity:.55; }
     .box { width:18px; height:18px; border:1px solid var(--gold); border-radius:4px; display:grid; place-items:center; flex-shrink:0; color: var(--ok); font-size:.75rem; }
+    /* the task to do now: a soft gold-and-blue frame; right after a task is done the box glows and the next task blinks gently three times */
+    .objectives li.current { border:1px solid rgba(246,215,141,.8); border-radius:8px; padding:.2rem .4rem; background: rgba(224,185,92,.1); box-shadow: 0 0 10px rgba(110,160,255,.35); }
+    .objectives li.current .box { color: var(--gold-2); }
+    .bonus-tag { margin-inline-start:auto; flex-shrink:0; font-size:.72rem; color:#0a1230; background: var(--gold-2); border-radius:999px; padding:0 .45rem; }
+    .objectives.glow { animation: objGlow 1.1s ease-in-out 3; }
+    .objectives li.flash { animation: objPulse 1.1s ease-in-out 3; }
+    @keyframes objGlow { 0%, 100% { box-shadow: var(--shadow); } 50% { box-shadow: 0 0 0 2px var(--gold-2), 0 0 26px rgba(110,160,255,.7); } }
+    @keyframes objPulse { 0%, 100% { background: rgba(224,185,92,.1); } 50% { background: rgba(246,215,141,.32); box-shadow: 0 0 16px rgba(246,215,141,.6); } }
+    @media (prefers-reduced-motion: reduce) { .objectives.glow, .objectives li.flash { animation:none; } }
     .players-line { display:flex; flex-wrap:wrap; gap:.5rem; font-size:.82rem; margin:0; } .players-line span { color: var(--ok); } .players-line .off { color: var(--muted); }
     .hover-label { position:fixed; top:46%; left:50%; transform: translate(-50%, -140%); background: rgba(0,0,0,.75); padding:.35rem .8rem; border-radius:999px; border:1px solid var(--line); pointer-events:none; z-index:8; white-space:nowrap; }
     .hover-label small { color: var(--gold-2); }
@@ -370,15 +419,15 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
   texts = computed(() => this.isSample()
     ? { title: 'שער הסודות — משחק התנסות חינמי', mission: 'עברו את שער הסודות', rooms: 'שני חדרים — כל חדר שנפתר פותח את הדלת לבא אחריו', done: 'עברתם את שער הסודות! ראו את התוצאות, וגלו את המשחקים המלאים של PORTAL X.' }
     : { title: 'סוד פך השמן — מסע בעקבות נס החנוכה', mission: 'גלו את סוד פך השמן', rooms: 'שמונה חדרים רציפים — כל חדר שנפתר פותח את הדלת לבא אחריו', done: 'גיליתם את סוד פך השמן והשלמתם את מסע החנוכה.' });
-  readonly CHECK_LABEL: Record<string, string> = { 'h2-lamp': 'בדוק הרכבה', 'g1-map': 'בדוק את המפה', 'g2-gears': 'הפעלת הידית', 'g2-scales': 'בדיקת האיזון' };
-  readonly RESET_LABEL: Record<string, string> = { 'h5-stand': 'החזר סביבונים', 'g1-symbols': 'החזר סמלים', 'g1-map': 'החזר חלקים', 'g2-gears': 'החזר גלגלים', 'g2-scales': 'הורדת החפצים' };
+  readonly CHECK_LABEL: Record<string, string> = { 'h2-lamp': 'בדוק הרכבה', 'g1-map': 'בדוק את המפה', 'g2-gears': 'הפעלת הידית', 'h7-scales': 'בדיקת האיזון' };
+  readonly RESET_LABEL: Record<string, string> = { 'h5-stand': 'החזר סביבונים', 'g1-symbols': 'החזר סמלים', 'g1-map': 'החזר חלקים', 'g2-gears': 'החזר גלגלים', 'h7-scales': 'הורדת החפצים' };
   readonly EMPTY_LABEL: Record<string, string> = {
     'h2-lamp': 'אין חלקים על השולחן — חפשו את חלקי המנורה בחדר והרימו אותם.',
     'h5-stand': 'אין סביבונים בתיק — חפשו את ארבעת הסביבונים בחדר והרימו אותם.',
     'g1-map': 'אין חלקי מפה בתיק — חפשו אותם על השולחן, במגירה ובמדף.',
     'g1-symbols': 'אין סמלים בתיק — חפשו בחדר את המצפן, המפתח, הספר והמנורה.',
     'g2-gears': 'אין גלגלי שיניים בתיק — חפשו אותם בסדנה והרימו אותם.',
-    'g2-scales': 'אין חפצים לשקילה בתיק — חפשו בסדנה נוצה, מפתח עתיק, גביש קסום ושעון חול.',
+    'h7-scales': 'אין חפצים לשקילה בתיק — חפשו בחדר נוצה, מפתח עתיק, גביש קסום ושעון חול.',
   };
   hover = signal<HInteractable | null>(null);
   panel = signal<{ id: HPanel; ref?: string } | null>(null);
@@ -399,6 +448,11 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
   focus = signal<string | null>(null);
   benchBusy = signal(false);
   benchMsg = signal<{ ok: boolean; text: string } | null>(null);
+  /** The instructions panel at a table — this player's own view only, never shared with the group. */
+  benchPos = signal<{ x: number; y: number } | null>(null);
+  benchMin = signal(false);
+  benchClosed = signal(false);
+  private benchRef = viewChild<ElementRef<HTMLElement>>('benchEl');
   focusPuzzle = computed(() => this.game.scenario()?.puzzles.find((p) => p.id === this.focus()));
   focusState = computed(() => this.game.snapshot()?.puzzles.find((p) => p.id === this.focus()));
   benchHasParts = computed(() => {
@@ -410,7 +464,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
   /** The inscriptions of the scales the group has read so far, shown beside the scales. */
   scaleNotes = computed(() => {
     const read = this.game.snapshot()?.clues ?? {};
-    return (this.game.scenario()?.clues ?? []).filter((c) => c.id.startsWith('g2-scale-') && read[c.id]).map((c) => c.text);
+    return (this.game.scenario()?.clues ?? []).filter((c) => c.id.startsWith('h7-scale-') && read[c.id]).map((c) => c.text);
   });
   readonly FOCUS_HELP: Record<string, string> = {
     'h2-lamp': '',
@@ -418,7 +472,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     'g1-map': 'גררו כל חלק מפה אל מקומו על השולחן — לכל חלק צד ישר אחד שמראה איפה הוא. כשהמפה שלמה, יופיע עליה רמז.',
     'g1-symbols': 'גררו את ארבעת הסמלים אל ארבעת המקומות הממוספרים, לפי ההוראה שעל המפה. כשסיימתם — לחצו „בדוק סידור”.',
     'g2-gears': 'גררו כל גלגל שיניים אל הציר המתאים לפי האיור שעל הקיר, ואז לחצו על הידית האדומה (או על „הפעלת הידית”).',
-    'g2-scales': 'גררו כל חפץ אל אחת מכפות המאזניים — או הקישו על חפץ ואחר כך על מקום פנוי בכף. אפשר להעביר חפץ בין הכפות או להחזיר אותו לשולחן. היעזרו בשלוש החריטות שעל הקיר, וכשכל החפצים על המאזניים — לחצו „בדיקת האיזון”.',
+    'h7-scales': 'גררו כל חפץ אל אחת מכפות המאזניים — או הקישו על חפץ ואחר כך על מקום פנוי בכף. אפשר להעביר חפץ בין הכפות או להחזיר אותו לשולחן. היעזרו בשלוש החריטות שעל הקיר, וכשכל החפצים על המאזניים — לחצו „בדיקת האיזון”.',
     'h3-maze': 'גררו את המפתח על הלוח לאורך המסלול — הוא לא עובר דרך קירות. לחצו על ידית כדי להזיז אותה ולפתוח או לסגור שער. התיבה שבצד נפתחת בקוד שיתגלה ביציאה.',
   };
   readonly FOCUS_DONE: Record<string, string> = {
@@ -426,8 +480,8 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     'h5-stand': 'כל הסביבונים במקומם! קראו את הספרות שלפניהם משמאל לימין, שורה אחר שורה, והזינו את הקוד במנעול שבדלת.',
     'g1-map': 'המפה שלמה! עליה כתוב: „התחילו במה שמראה כיוון, המשיכו במה שפותח מנעול, אחר כך חפשו את מה שקוראים בו, וסיימו במה שמפיצה אור.”',
     'g1-symbols': 'הסמלים במקומם! הספרות מופיעות לפני הסמלים — קראו אותן לפי סדר המקומות והזינו בארון.',
-    'g2-gears': 'המנגנון מסתובב והמאזניים העתיקים השתחררו! עכשיו אזנו אותם בעזרת ארבעת החפצים.',
-    'g2-scales': 'הצלחתם לאזן את המאזניים! המנגנון העתיק התעורר לחיים.',
+    'g2-gears': 'גלגלי השיניים משתלבים והמנגנון מסתובב — השער נפתח!',
+    'h7-scales': 'הצלחתם לאזן את המאזניים! המנגנון העתיק התעורר לחיים.',
     'h3-maze': 'המפתח הגיע ליציאה! הקוד שהתגלה מוצג ליד הלוח — לחצו על התיבה שבצד כדי להזין אותו.',
   };
   tick = signal(0);
@@ -438,8 +492,17 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     const s = this.game.snapshot();
     if (!sc || !s) return [];
     return sc.puzzles.filter((p) => p.zone === this.zone())
-      .map((p) => ({ id: p.id, objective: p.objective, status: s.puzzles.find((x) => x.id === p.id)?.status ?? 'locked' }));
+      .map((p) => ({ id: p.id, objective: p.objective, bonus: !!p.bonus, status: s.puzzles.find((x) => x.id === p.id)?.status ?? 'locked' }));
   });
+  /** The task to do now in this room: the first one the server lists as open. */
+  activeObjective = computed(() => {
+    const open = this.objectives().filter((p) => p.status === 'active');
+    return (open.find((p) => !p.bonus) ?? open[0])?.id ?? null;
+  });
+  /** True for a few seconds after the server confirmed a task and the next one became the active one. */
+  objFlash = signal(false);
+  private lastActiveObjective: string | null | undefined;
+  private objFlashTimer?: ReturnType<typeof setTimeout>;
   introT = computed(() => {
     this.tick();
     const s = this.game.snapshot();
@@ -527,6 +590,22 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
       if (this.world) this.world.sensitivity = sens;
     });
     this.destroyRef.onDestroy(() => this.progressTimers.forEach(clearTimeout));
+    // the next task lights up when it changes — it follows the server's state, so every player sees the same task
+    effect(() => {
+      const id = this.activeObjective();
+      const playing = this.phase() === 'playing';
+      untracked(() => {
+        if (playing && id && this.lastActiveObjective !== undefined && id !== this.lastActiveObjective) this.flashObjective(id);
+        this.lastActiveObjective = playing ? id : undefined;
+      });
+    });
+    addEventListener('resize', this.onResize);
+    this.destroyRef.onDestroy(() => removeEventListener('resize', this.onResize));
+    // a panel that grows back from its minimized bar stays on the screen
+    effect(() => {
+      this.benchMin();
+      untracked(() => setTimeout(this.onResize));
+    });
   }
 
   ngAfterViewInit() {
@@ -537,6 +616,8 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
         onTooFar: (d) => this.ngZone.run(() => this.toast(`התקרבו אל ${d.label} כדי ל${d.verb === 'הרמה' ? 'הרים' : 'השתמש'}`, 'info')),
         onZoneChange: (z) => this.ngZone.run(() => {
           this.zone.set(z);
+          // a new room starts with the instructions panel in its usual place
+          this.resetBenchPanel();
           const s = this.game.snapshot();
           if (s) this.updateSound(s);
         }),
@@ -582,18 +663,17 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     this.settings.update({ [key]: !this.settings.settings()[key] });
   }
 
-  /** The music of the room the player is in: investigation, machines, light — or the Hanukkah journey's own. */
+  /** The music of the room the player is in, by the kind of room: investigation, machines, maze, decoding, light, the finale. */
   private musicFor(s: RoomSnapshot): ThemeId {
     const zone = this.zone();
-    const solved = (id: string) => s.puzzles.find((p) => p.id === id)?.status === 'solved';
-    if (this.isSample()) return zone === 'gearworks' ? (solved('g2-gears') ? 'magic' : 'mechanism') : 'ancient';
-    return zone === 'mosaic' ? 'magic' : 'hanukkah';
+    if (this.isSample()) return zone === 'gearworks' ? 'mechanism' : 'ancient';
+    return HANUKKAH_MUSIC[zone] ?? 'hanukkah';
   }
 
   /** Room music and the swing of the scales — both follow the shared server state, so everyone hears the same. */
   private updateSound(s: RoomSnapshot) {
     if (s.phase === 'playing') this.audio.setMusic(this.musicFor(s));
-    const tilt = s.mechanisms?.['g2-scales']?.tilt ?? 0;
+    const tilt = s.mechanisms?.['h7-scales']?.tilt ?? 0;
     if (this.scaleTilt !== undefined && tilt !== this.scaleTilt && s.phase === 'playing') this.audio.sfx('scale');
     this.scaleTilt = tilt;
   }
@@ -887,7 +967,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
       .filter((x) => x.zone === this.zone())
       .sort((a, b) => a.order - b.order)
       .find((x) => s?.puzzles.find((y) => y.id === x.id)?.status === 'active');
-    if (p && ['h2-lamp', 'h5-stand', 'g1-map', 'g1-symbols', 'g2-gears', 'g2-scales'].includes(p.id)) this.openBench(p.id);
+    if (p && ['h2-lamp', 'h5-stand', 'g1-map', 'g1-symbols', 'g2-gears', 'h7-scales'].includes(p.id)) this.openBench(p.id);
     else if (p?.id === 'h3-maze') this.openMaze();
     else if (p && PUZZLE_PANEL[p.id]) this.panel.set({ id: PUZZLE_PANEL[p.id] });
     else this.toast('אין בחדר הזה חידה פתוחה.', 'info');
@@ -916,18 +996,78 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     this.panel.set(null);
     this.note.set(null);
     this.benchMsg.set(null);
+    this.benchClosed.set(false);
+    this.benchMin.set(false);
     this.world.enterBench(puzzle);
     this.focus.set(this.world.isBench ? puzzle : null);
   }
 
-  /** The scales hang still until the gears turn the mechanism. */
+  private flashObjective(puzzleId: string) {
+    clearTimeout(this.objFlashTimer);
+    this.objFlash.set(false);
+    // restart the animation a moment later, then leave only the steady frame around the task
+    setTimeout(() => this.objFlash.set(true), 40);
+    this.objFlashTimer = setTimeout(() => this.objFlash.set(false), 3640);
+    this.world?.showGuide(this.guideFor(puzzleId));
+  }
+
+  /** The one object of the room that belongs to a task, or null when there are several (or none). */
+  private guideFor(puzzleId: string): string | null {
+    const panel = BENCH_PANEL[puzzleId] ?? PUZZLE_PANEL[puzzleId];
+    const zone = this.game.scenario()?.puzzles.find((p) => p.id === puzzleId)?.zone;
+    const found = H_INTERACTABLES.filter((d) => d.zone === zone && d.kind === 'panel' && d.panel === panel);
+    return found.length === 1 ? found[0].id : null;
+  }
+
+  resetBenchPanel() {
+    this.benchPos.set(null);
+    this.benchMin.set(false);
+    this.benchClosed.set(false);
+  }
+
+  /** Drags the instructions panel by its title bar (mouse or touch); it can never leave the screen. */
+  benchDragStart(e: PointerEvent, el: HTMLElement) {
+    if ((e.target as HTMLElement).closest('button') || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    e.preventDefault();
+    const r = el.getBoundingClientRect();
+    const dx = e.clientX - r.left;
+    const dy = e.clientY - r.top;
+    const handle = e.currentTarget as HTMLElement;
+    handle.setPointerCapture?.(e.pointerId);
+    const move = (ev: PointerEvent) => this.benchPos.set(this.clampBench(ev.clientX - dx, ev.clientY - dy));
+    const up = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
+  }
+
+  private clampBench(x: number, y: number) {
+    const w = this.benchRef()?.nativeElement.offsetWidth ?? 320;
+    const h = this.benchRef()?.nativeElement.offsetHeight ?? 60;
+    return {
+      x: Math.round(Math.min(Math.max(0, x), Math.max(0, innerWidth - w))),
+      y: Math.round(Math.min(Math.max(0, y), Math.max(0, innerHeight - h))),
+    };
+  }
+
+  /** After the window changes size (or the phone turns), a moved panel is pulled back inside the screen. */
+  private onResize = () => {
+    const p = this.benchPos();
+    if (p) this.ngZone.run(() => this.benchPos.set(this.clampBench(p.x, p.y)));
+  };
+
+  /** The bonus scales of the mosaic room: open once the room is (balancing them again after a solve only shows the result). */
   openScales() {
-    if (this.game.snapshot()?.puzzles.find((p) => p.id === 'g2-scales')?.status === 'locked') {
+    if (this.game.snapshot()?.puzzles.find((p) => p.id === 'h7-scales')?.status === 'locked') {
       this.audio.sfx('wrong');
-      this.toast('המאזניים עדיין נעולים — קודם הפעילו את מנגנון גלגלי השיניים.', 'info');
+      this.toast('המאזניים עדיין נעולים.', 'info');
       return;
     }
-    this.openBench('g2-scales');
+    this.openBench('h7-scales');
   }
 
   openMaze() {
@@ -1020,7 +1160,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     if (puzzle === 'g2-gears') this.audio.sfx('lever');
     const r = await this.benchOp(puzzle, { op: 'activate' });
     if (r.ok) {
-      this.benchMsg.set({ ok: true, text: puzzle === 'h2-lamp' ? 'המנורה מורכבת נכון!' : puzzle === 'g2-scales' ? 'המאזניים מאוזנים!' : 'הסידור נכון!' });
+      this.benchMsg.set({ ok: true, text: puzzle === 'h2-lamp' ? 'המנורה מורכבת נכון!' : puzzle === 'h7-scales' ? 'המאזניים מאוזנים!' : 'הסידור נכון!' });
       return;
     }
     this.benchMsg.set({ ok: false, text: r.message });

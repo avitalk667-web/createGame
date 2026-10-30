@@ -24,7 +24,8 @@ public sealed record RoomSnapshot(
     IReadOnlyList<GoldenLetter> Letters, ResultDto? Result,
     string ActiveZone, DateTime? ActiveZoneSince, int TransitionDelayMs,
     JsonNode? Mechanisms = null, IReadOnlyDictionary<string, string>? Clues = null, ScoreDto? Score = null,
-    string? PendingZone = null, DateTime? PendingSince = null, int ContinueFallbackSeconds = 0, int SeatsTaken = 0, int SeatHoldMinutes = 0);
+    string? PendingZone = null, DateTime? PendingSince = null, int ContinueFallbackSeconds = 0, int SeatsTaken = 0, int SeatHoldMinutes = 0,
+    IReadOnlyDictionary<string, JsonObject>? Questions = null);
 
 /// <summary>Scores of the current round: personal ranking (with ties), group total, per-room points and hints.</summary>
 public sealed record ScoreDto(int Group, IReadOnlyDictionary<string, int> Rooms, IReadOnlyDictionary<string, int> HintsByZone, int HintsUsed,
@@ -67,8 +68,17 @@ public static class Snapshots
             world.Mechanisms.Count == 0 ? null : MechanismsView(scenario, world),
             scenario.Clues.Count == 0 ? null : world.Clues,
             scenario.Scoring == null ? null : ScoreView(scenario, room, world),
-            world.PendingZone, world.PendingSince, engine.Options.ContinueFallbackSeconds, engine.SeatsTaken(room, now), engine.Options.SeatHoldMinutes);
+            world.PendingZone, world.PendingSince, engine.Options.ContinueFallbackSeconds, engine.SeatsTaken(room, now), engine.Options.SeatHoldMinutes,
+            world.Questions.Count == 0 ? null : QuestionsView(world));
     }
+
+    /// <summary>The admin's question texts of this game, as patches over each puzzle's public data — never the answers.</summary>
+    private static Dictionary<string, JsonObject> QuestionsView(WorldState world) => world.Questions.ToDictionary(kv => kv.Key, kv =>
+    {
+        var patch = new JsonObject { [kv.Value.Field] = kv.Value.Question };
+        if (kv.Value.Options != null) patch["options"] = new JsonArray(kv.Value.Options.Select(o => (JsonNode)o).ToArray());
+        return patch;
+    });
 
     /// <summary>Shared mechanism state; the mosaic also gets the cells its light currently reaches.</summary>
     private static JsonNode MechanismsView(ScenarioContent scenario, WorldState world)

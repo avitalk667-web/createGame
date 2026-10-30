@@ -8,7 +8,7 @@ import { HPanel } from './h-layout';
 const PANEL_PUZZLE: Record<HPanel, string> = {
   riddle: 'h1-riddle', lamp: 'h2-lamp', maze: 'h3-maze', box: 'h3-box', wheel: 'h4-wheel', stand: 'h5-stand',
   lock: 'h5-lock', jugs: 'h6-jugs', mosaic: 'h7-mosaic', pedestals: 'h8-pedestals', final: 'h8-final',
-  map: 'g1-map', symbols: 'g1-symbols', cabinet: 'g1-cabinet', gears: 'g2-gears', scales: 'g2-scales',
+  map: 'g1-map', symbols: 'g1-symbols', cabinet: 'g1-cabinet', gears: 'g2-gears', scales: 'h7-scales',
 };
 
 export const ITEM_EMOJI: Record<string, string> = {
@@ -174,13 +174,26 @@ const MAZE_SYMBOLS: Record<string, string> = { '*': '⭐', F: '🔥', M: '🕎',
             @case ('pedestals') {
               <div class="peds">
                 @for (sl of slots(); track sl.id) {
-                  <button class="slot ped" [class.focus]="ref() === sl.id" [class.full]="!!mech()?.slots?.[sl.id]" (click)="slotClick(sl.id)" [disabled]="busy() || state()?.status === 'solved'">
+                  @let v = mech()?.verdict?.[sl.id];
+                  <button class="slot ped" [class.focus]="ref() === sl.id" [class.full]="!!mech()?.slots?.[sl.id]" [class.right]="v === true" [class.wrong]="v === false"
+                    (click)="slotClick(sl.id)" [disabled]="busy() || state()?.status === 'solved' || v === true">
                     <small>כן {{ sl.id.slice(1) }} · {{ sl.label }}</small>
                     <b>{{ mech()?.slots?.[sl.id] ? emoji(mech()!.slots[sl.id]) + ' ' + itemName(mech()!.slots[sl.id]) : 'ריק' }}</b>
+                    @if (v === true) { <span class="verdict ok" role="status">✓ מיקום נכון</span> }
+                    @else if (v === false) { <span class="verdict bad" role="status">✗ מיקום שגוי — אפשר להזיז</span> }
                   </button>
                 }
               </div>
               <ng-container *ngTemplateOutlet="bag" />
+              @if (data().verify && state()?.status !== 'solved') {
+                <div class="row check-row">
+                  @if (allPlaced()) {
+                    <button class="btn primary" (click)="operate({ op: 'activate' })" [disabled]="busy()">{{ data().checkLabel }}</button>
+                  } @else {
+                    <span class="muted small">כשכל שבעת הפריטים יונחו על הכנים, יופיע כאן הכפתור „{{ data().checkLabel }}”.</span>
+                  }
+                </div>
+              }
             }
             @case ('final') {
               <blockquote class="riddle">{{ data().question }}</blockquote>
@@ -284,6 +297,12 @@ const MAZE_SYMBOLS: Record<string, string> = { '*': '⭐', F: '🔥', M: '🕎',
     .stone.lit { background:#1a3a6a; box-shadow: 0 0 12px #5aa8ff; } .stone.lit path { stroke:#9fd0ff; }
     .peds { display:grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap:.4rem; }
     .ped.focus { outline: 2px solid var(--gold-2); }
+    /* after "check the arrangement": green — the right place (it stays), red — the wrong place (move it and check again) */
+    .ped.right { border:2px solid #3fbf6a; background: rgba(63,191,106,.16); box-shadow: 0 0 12px rgba(63,191,106,.35); }
+    .ped.wrong { border:2px solid #e2715b; background: rgba(226,113,91,.16); box-shadow: 0 0 12px rgba(226,113,91,.35); }
+    .ped:disabled.right { opacity:1; cursor:default; }
+    .verdict { font-weight:800; font-size:.85rem; } .verdict.ok { color:#9be3b4; } .verdict.bad { color:#ffb4a3; }
+    .check-row { margin-top:.6rem; }
     .warn { color:#ffd59a; } .msg { margin:.6rem 0 0; } .msg.bad { color:#ffb4a3; }
     footer { margin-top:1rem; border-top:1px solid var(--line); padding-top:.6rem; display:flex; flex-direction:column; gap:.4rem; align-items:flex-start; }
     .hint { margin:0; color:#cfe2ff; }
@@ -311,7 +330,9 @@ export class HPanelComponent {
   puzzle = computed<PuzzleContent | undefined>(() => this.game.scenario()?.puzzles.find((p) => p.id === this.puzzleId()));
   state = computed<PuzzleStateDto | undefined>(() => this.game.snapshot()?.puzzles.find((p) => p.id === this.puzzleId()));
   mech = computed<MechanismState | undefined>(() => this.game.snapshot()?.mechanisms?.[this.puzzleId()]);
-  data = computed(() => this.puzzle()?.publicData ?? {});
+  /** The puzzle's public data, with the texts the admin set for this game (fixed when it started) over it. */
+  data = computed(() => ({ ...(this.puzzle()?.publicData ?? {}), ...(this.game.snapshot()?.questions?.[this.puzzleId()] ?? {}) }));
+  allPlaced = computed(() => this.slots().length > 0 && this.slots().every((s) => !!this.mech()?.slots?.[s.id]));
   slots = computed<{ id: string; label: string }[]>(() => this.data().slots ?? []);
   bagItems = computed(() => {
     const accepts: string[] = this.data().accepts ?? [];

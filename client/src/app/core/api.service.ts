@@ -20,6 +20,22 @@ export interface ReferralReply {
   emailMessage?: string | null;
 }
 
+/** The "friend brings a friend" campaign texts (from the server's content file). */
+export interface Campaign {
+  enabled: boolean; title: string; prize: string; lead: string; body: string; drawLabel: string; drawDate: string; buttonLabel: string;
+  popupTitle: string; popupBody: string; popupCreateLabel: string; popupLaterLabel: string; minBuyers: number;
+}
+
+/** The visitor's own personal link, remembered in this browser after it was created (shown again in the campaign popup). */
+export const myLinkStore = {
+  get(): string | null {
+    try { return localStorage.getItem('px_my_link'); } catch { return null; }
+  },
+  set(url: string) {
+    try { localStorage.setItem('px_my_link', url); } catch { /* private mode: nothing to remember */ }
+  },
+};
+
 export interface RoomInfo {
   code: string;
   scenarioId: string;
@@ -53,6 +69,15 @@ export class ApiService {
 
   products() {
     return this.request<Product[]>('GET', '/api/products');
+  }
+
+  private campaignCache?: Promise<Campaign>;
+  campaign() {
+    this.campaignCache ??= this.request<Campaign>('GET', '/api/campaign').catch((e) => {
+      this.campaignCache = undefined;
+      throw e;
+    });
+    return this.campaignCache;
   }
 
   createReferral(body: { firstName: string; lastName: string; email: string; marketingConsent: boolean; acceptTerms: boolean }) {

@@ -21,7 +21,7 @@ public sealed record EndOfGameReply(bool Ok, string Code, string Message, string
 /// </summary>
 public sealed partial class ResultsEmailService(
     PortalDbContext db, RoomService rooms, ScenarioCatalog scenarios, IEmailSender sender, SiteOptions site, ResultsEmailPolicy policy,
-    UnsubscribeLinks links, ConsentRecorder consents, ILogger<ResultsEmailService> logger)
+    UnsubscribeLinks links, ConsentRecorder consents, PortalX.Server.Referrals.CampaignContent campaign, ILogger<ResultsEmailService> logger)
 {
     public const string ConsentVersion = "2026-10-v2";
     public const string ConsentText = "אני מסכים/ה לקבל מיילים שיווקיים ועדכונים מ-PORTAL X על משחקים חדשים, הטבות, קופונים ותכנים נוספים. ניתן לבטל את ההסכמה בכל עת.";
@@ -224,7 +224,7 @@ public sealed partial class ResultsEmailService(
             productName ?? scenario.Name, room.EndedAt, player.Nickname, personal, rank, tie, team, group,
             result?.DurationSeconds, result?.PuzzlesSolved, result?.PuzzlesTotal,
             result?.PlayersCount ?? GameEngine.ActivePlayers(room).Count(), achievements,
-            siteUrl.TrimEnd('/'), site.ContactEmail, consent == null ? null : await links.UrlAsync(consent, siteUrl));
+            siteUrl.TrimEnd('/'), site.ContactEmail, consent == null ? null : await links.UrlAsync(consent, siteUrl), campaign);
         return new EmailMessage(email, ResultsEmailTemplate.Subject(model), ResultsEmailTemplate.Html(model), ResultsEmailTemplate.Text(model), model.UnsubscribeUrl);
     }
 }
