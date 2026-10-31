@@ -30,7 +30,17 @@ public static partial class StaticCaching
             headers.CacheControl = "public, max-age=3600";
     }
 
-    public static StaticFileOptions Options => new() { OnPrepareResponse = Apply };
+    /// <summary>The usual web types, plus 3D models (.glb), which ASP.NET does not serve by default.</summary>
+    private static readonly FileExtensionContentTypeProvider Types = CreateTypes();
+
+    private static FileExtensionContentTypeProvider CreateTypes()
+    {
+        var t = new FileExtensionContentTypeProvider();
+        t.Mappings[".glb"] = "model/gltf-binary";
+        return t;
+    }
+
+    public static StaticFileOptions Options => new() { OnPrepareResponse = Apply, ContentTypeProvider = Types };
 
     /// <summary>What is deployed: the git commit (Render sets RENDER_GIT_COMMIT), the front-end bundle and when it was built.</summary>
     public static object Version(IWebHostEnvironment env)

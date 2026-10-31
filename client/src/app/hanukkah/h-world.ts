@@ -3,6 +3,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MechanismState, PlayerDto, RemotePosition, RoomSnapshot, ScenarioContent } from '../core/models';
 import { Quality } from '../core/settings.service';
 import { BoyAvatar } from '../world/avatar';
@@ -36,6 +37,8 @@ export interface HWorldCallbacks {
   onBenchLever?(): void;
 }
 
+/** Raise when tools/blender/library_build.py is run again, so browsers fetch the new model. */
+const LIBRARY_MODEL_VERSION = 3;
 const DOOR_W = 2.4;
 const DOOR_H = 3.4;
 const INTERACT_DISTANCE = 4.2;
@@ -131,6 +134,29 @@ const DOOR_SYMBOL: Partial<Record<HZone, string>> = {
 };
 
 interface Flicker { light: THREE.PointLight; base: number; seed: number }
+
+/** A light shaft: bright along its middle, fading to the sides and toward its far end. */
+function shaftTexture() {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 256;
+  const g = c.getContext('2d')!;
+  const across = g.createLinearGradient(0, 0, 64, 0);
+  across.addColorStop(0, 'rgba(255,255,255,0)');
+  across.addColorStop(0.5, 'rgba(255,255,255,1)');
+  across.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = across;
+  g.fillRect(0, 0, 64, 256);
+  g.globalCompositeOperation = 'destination-in';
+  const along = g.createLinearGradient(0, 0, 0, 256);
+  along.addColorStop(0, 'rgba(0,0,0,1)');
+  along.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = along;
+  g.fillRect(0, 0, 64, 256);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
 
 /** The easel drawing in room 2: the lamp's silhouette with its five levels numbered from the bottom (no names). */
 function lampDrawingTexture() {
@@ -616,6 +642,11 @@ export class HanukkahWorld {
   private raf = 0;
   private watchdog?: ReturnType<typeof setInterval>;
   private disposed = false;
+  // brighter but still mysterious: a soft sky/ground fill, no near-black corners (spec 10); the modelled library is darker and warmer
+  private hemi = new THREE.HemisphereLight('#a8b4e6', '#4a3620', 1.35);
+  private ambient = new THREE.AmbientLight('#b0b6d0', 0.45);
+  private libraryModel = false;
+  private drawerBurst = false;
   private resizeObs: ResizeObserver;
   private mode: HMode = 'intro';
   private modeTime = 0;
@@ -795,8 +826,7 @@ export class HanukkahWorld {
       this.hitTargets.set(def.id, m);
     }
     // brighter but still mysterious: a soft sky/ground fill, no near-black corners (spec 10)
-    this.scene.add(new THREE.HemisphereLight('#a8b4e6', '#4a3620', 1.35));
-    this.scene.add(new THREE.AmbientLight('#b0b6d0', 0.45));
+    this.scene.add(this.hemi, this.ambient);
     this.buildLightPool();
     this.assignLights('library');
     this.buildFeedback();
@@ -859,6 +889,10 @@ export class HanukkahWorld {
     const here = this.lightSpecs.filter((s) => s.zone === zone).sort((a, b) => b.intensity - a.intensity).slice(0, HanukkahWorld.POOL - 3);
     const ahead = this.lightSpecs.filter((s) => s.zone === next).sort((a, b) => b.intensity - a.intensity).slice(0, HanukkahWorld.POOL - here.length);
     const chosen = [...here, ...ahead];
+    const moody = zone === 'library' && this.libraryModel;
+    this.hemi.intensity = moody ? 0.75 : 1.35;
+    this.hemi.color.set(moody ? '#b8a890' : '#a8b4e6');
+    this.ambient.intensity = moody ? 0.22 : 0.45;
     this.lightPool.forEach((p, i) => {
       const s = chosen[i] ?? null;
       p.spec = s;
@@ -1116,11 +1150,6 @@ export class HanukkahWorld {
 
   private buildLibrary() {
     const c = hCenter('library');
-    this.shelfWall(-H_HALF_W + 0.3, c, -2.5, Math.PI / 2, 1);
-    this.shelfWall(-H_HALF_W + 0.3, c, 1.5, Math.PI / 2, 5);
-    this.shelfWall(H_HALF_W - 0.3, c, -2.5, -Math.PI / 2, 9);
-    this.shelfWall(H_HALF_W - 0.3, c, 1.5, -Math.PI / 2, 13);
-    this.desk(c);
     // the folded letter
     const letter = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.3), this.std('#ffffff', { map: parchmentTexture() }));
     letter.rotation.x = -Math.PI / 2;
@@ -1128,12 +1157,10 @@ export class HanukkahWorld {
     letter.position.set(-1.2, 1.01, c - 1.2);
     this.scene.add(letter);
     this.halo(letter, '#fff1c0', 0.6).position.z = 0.1;
-    // locked drawer under the desk
-    this.box(1.0, 0.36, 0.5, this.wood('#4a2c16'), 0.4, 0.62, c - 1.2);
+    // the locked drawer's mechanism: it slides open when the riddle is solved (the model's drawer rides on it)
     this.drawerFront = this.box(0.9, 0.3, 0.06, this.wood('#5e3a1e'), 0.4, 0.62, c - 0.93);
-    this.box(0.12, 0.12, 0.04, this.gold(), 0.4, 0.62, c - 0.89);
     this.openTargets.set(this.drawerFront, { axis: 'z', kind: 'pos', from: c - 0.93, to: c - 0.45, on: false });
-    // magnifier, oil lamp, globe, three books
+    // magnifier and the turning globe
     const lens = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.015, 8, 24), this.gold());
     lens.rotation.x = -Math.PI / 2;
     lens.position.set(-0.3, 1.02, c - 1.5);
@@ -1142,23 +1169,13 @@ export class HanukkahWorld {
     glass.position.set(-0.3, 1.025, c - 1.5);
     this.box(0.03, 0.03, 0.22, this.std('#3a2414'), -0.3, 1.02, c - 1.33);
     this.scene.add(lens, glass);
-    this.oilLamp(1.6, 1.0, c - 1.6, true);
-    const globeStand = this.box(0.08, 0.6, 0.08, this.std('#3a2414'), 3.4, 0.3, c - 3.2);
-    globeStand.castShadow = true;
     const globe = new THREE.Mesh(new THREE.SphereGeometry(0.38, 24, 16), this.std('#2e5a7a', { roughness: 0.5 }));
     globe.position.set(3.4, 1.0, c - 3.2);
     const meridian = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.02, 8, 32), this.gold());
     meridian.position.copy(globe.position);
     this.scene.add(globe, meridian);
     this.animated.push((t) => (globe.rotation.y = t * 0.2));
-    [['#8a1f1f', -2.9], ['#1f5a2a', -2.6], ['#1f3a7a', -2.3]].forEach(([col, x]) => this.box(0.22, 0.32, 0.28, this.std(col as string), x as number, 1.16, c - 1.6));
-    // maps and scrolls on a side table
-    this.box(1.2, 0.08, 0.7, this.wood(), -6.6, 1.0, c + 2.5);
-    this.box(0.08, 1.0, 0.08, this.std('#3a2414'), -6.6, 0.5, c + 2.5);
-    this.scroll(-6.7, 1.08, c + 2.3, 0.5);
-    this.scroll(-6.4, 1.1, c + 2.7, -0.3);
-    // a small hanukkiah on a cabinet: same model as the hall, lit by the stage of the game
-    this.box(1.6, 1.1, 0.6, this.wood('#4a2c16'), 4.6, 0.55, c - 6.4);
+    // a small hanukkiah on the sideboard: same model as the hall, lit by the stage of the game
     const h = new Hanukkiah(0.7);
     h.root.position.set(4.6, 1.1, c - 6.4);
     this.scene.add(h.root);
@@ -1171,6 +1188,154 @@ export class HanukkahWorld {
     const key = this.keyMesh('#c9a060', 0.5);
     key.position.set(0, 0.12, 0);
     this.drawerFront.add(key);
+    this.loadLibraryModel(c);
+  }
+
+  /**
+   * The library's furniture and architecture, modelled in Blender (tools/blender/library_build.py → models/library/library.glb):
+   * bookcases full of books, stone pilasters and arches, the stone portal, the desk with its drawer, the sideboard, lectern,
+   * chest, map table, candelabra and the small things on the desk. If the model cannot be loaded the room keeps its classic look.
+   */
+  private loadLibraryModel(c: number) {
+    new GLTFLoader().load(`models/library/library.glb?v=${LIBRARY_MODEL_VERSION}`, (gltf) => {
+      if (this.disposed) return;
+      const root = gltf.scene;
+      root.position.set(0, 0, c);
+      const shadows = this.quality !== 'low';
+      root.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh) return;
+        m.receiveShadow = shadows;
+        m.castShadow = shadows && m.name !== 'Floor';
+      });
+      // the model's drawer replaces the plain front and moves with the existing mechanism (and the key inside it)
+      const drawer = root.getObjectByName('Drawer');
+      if (drawer && this.drawerFront) {
+        drawer.removeFromParent();
+        drawer.position.set(0, 0, 0);
+        drawer.rotation.set(0, 0, 0);
+        this.drawerFront.add(drawer);
+        ((this.drawerFront as THREE.Mesh).material as THREE.Material).visible = false;
+      }
+      this.scene.add(root);
+      this.libraryModel = true;
+      this.libraryAtmosphere(c);
+      if (this.localZone === 'library') this.assignLights('library');
+    }, undefined, () => {
+      if (!this.disposed) this.buildLibraryClassic(c);
+    });
+  }
+
+  /** Flames on the model's lamp, candlesticks and candelabra, light shafts, dust in the light and the warm, darker mood. */
+  private libraryAtmosphere(c: number) {
+    this.flame(1.79, 1.12, c - 1.6, 0.42, '#ffb469', 4);
+    for (const x of [-1.55, 2.45]) this.flame(x, 1.53, c - 1.95, 0.45, '#ffb469', 2.4);
+    for (const cx of [-2.55, 2.55]) {
+      for (const dx of [-0.3, 0, 0.3]) this.flame(cx + dx, 1.9, c - 6.35, 0.8);
+      this.addLight(cx, 2.2, c - 6.0, '#ffb066', 4.5, 7);
+    }
+    // two soft shafts of light falling from high on the right wall onto the desk
+    const shaftMat = new THREE.MeshBasicMaterial({ map: shaftTexture(), color: '#ffd9a0', transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending,
+      depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+    [[5.2, -2.6, 0.62], [4.6, -0.2, 0.55]].forEach(([x, z, tilt], k) => {
+      const shaft = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 7.5), shaftMat);
+      shaft.position.set(x - 2.3, 3.1, c + z);
+      shaft.rotation.set(0, Math.PI / 2 - 0.25, tilt);
+      this.scene.add(shaft);
+      this.animated.push((t) => ((shaft.material as THREE.MeshBasicMaterial).opacity = 0.13 + Math.sin(t * 0.4 + k * 2) * 0.03));
+    });
+    // dust drifting in the warm light
+    const n = this.quality === 'low' ? 90 : 260;
+    const pos = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) pos.set([(Math.random() - 0.5) * 13, 0.4 + Math.random() * 4.6, c + (Math.random() - 0.5) * 11], i * 3);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const dust = new THREE.Points(geo, new THREE.PointsMaterial({ map: glowSpriteTexture('#fff2d0'), color: '#ffe8c0', size: 0.045, transparent: true, opacity: 0.55,
+      depthWrite: false, blending: THREE.AdditiveBlending }));
+    dust.frustumCulled = false;
+    this.scene.add(dust);
+    const base = pos.slice();
+    this.animated.push((t) => {
+      const a = geo.attributes['position'] as THREE.BufferAttribute;
+      for (let i = 0; i < n; i++) {
+        a.array[i * 3] = base[i * 3] + Math.sin(t * 0.13 + i) * 0.35;
+        a.array[i * 3 + 1] = base[i * 3 + 1] + Math.sin(t * 0.09 + i * 1.7) * 0.25;
+        a.array[i * 3 + 2] = base[i * 3 + 2] + Math.cos(t * 0.11 + i * 0.6) * 0.35;
+      }
+      a.needsUpdate = true;
+    });
+  }
+
+  /** A short shower of golden sparks rising from a point (a puzzle opening in front of the players). */
+  private burst(at: THREE.Vector3) {
+    const n = 70;
+    const pos = new Float32Array(n * 3);
+    const vel: THREE.Vector3[] = [];
+    for (let i = 0; i < n; i++) {
+      pos.set([at.x, at.y, at.z], i * 3);
+      vel.push(new THREE.Vector3((Math.random() - 0.5) * 1.6, 1 + Math.random() * 1.8, (Math.random() - 0.2) * 1.6));
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const mat = new THREE.PointsMaterial({ map: glowSpriteTexture('#ffd36b'), color: '#ffd98a', size: 0.09, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+    const pts = new THREE.Points(geo, mat);
+    pts.frustumCulled = false;
+    this.scene.add(pts);
+    let start = -1;
+    let done = false;
+    this.animated.push((t, dt) => {
+      if (done) return;
+      if (start < 0) start = t;
+      const age = t - start;
+      const a = geo.attributes['position'] as THREE.BufferAttribute;
+      for (let i = 0; i < n; i++) {
+        vel[i].y -= dt * 1.4;
+        a.array[i * 3] += vel[i].x * dt;
+        a.array[i * 3 + 1] += vel[i].y * dt;
+        a.array[i * 3 + 2] += vel[i].z * dt;
+      }
+      a.needsUpdate = true;
+      mat.opacity = Math.max(0, 1 - age / 1.8);
+      if (age > 1.8) {
+        done = true;
+        this.scene.remove(pts);
+        geo.dispose();
+        mat.dispose();
+      }
+    });
+  }
+
+  /** A flickering flame (and optionally its light) on a wick of the library's model. */
+  private flame(x: number, y: number, z: number, size: number, lightColor?: string, intensity = 4) {
+    const f = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowSpriteTexture('#ffb84d'), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+    f.position.set(x, y, z);
+    this.scene.add(f);
+    const seed = x * 3.1 + z;
+    this.animated.push((t) => f.scale.set(size * (0.33 + Math.sin(t * 13 + seed) * 0.03), size * (0.48 + Math.sin(t * 17 + seed) * 0.05 + Math.sin(t * 5.3 + seed) * 0.03), 1));
+    if (lightColor) this.addLight(x, y + 0.15, z, lightColor, intensity, 7);
+  }
+
+  /** The library as it was before its model (used only if the model cannot be loaded). */
+  private buildLibraryClassic(c: number) {
+    this.shelfWall(-H_HALF_W + 0.3, c, -2.5, Math.PI / 2, 1);
+    this.shelfWall(-H_HALF_W + 0.3, c, 1.5, Math.PI / 2, 5);
+    this.shelfWall(H_HALF_W - 0.3, c, -2.5, -Math.PI / 2, 9);
+    this.shelfWall(H_HALF_W - 0.3, c, 1.5, -Math.PI / 2, 13);
+    this.desk(c);
+    this.box(1.0, 0.36, 0.5, this.wood('#4a2c16'), 0.4, 0.62, c - 1.2);
+    this.box(0.12, 0.12, 0.04, this.gold(), 0.4, 0.62, c - 0.89);
+    this.oilLamp(1.6, 1.0, c - 1.6, true);
+    const globeStand = this.box(0.08, 0.6, 0.08, this.std('#3a2414'), 3.4, 0.3, c - 3.2);
+    globeStand.castShadow = true;
+    [['#8a1f1f', -2.9], ['#1f5a2a', -2.6], ['#1f3a7a', -2.3]].forEach(([col, x]) => this.box(0.22, 0.32, 0.28, this.std(col as string), x as number, 1.16, c - 1.6));
+    this.box(1.2, 0.08, 0.7, this.wood(), -6.6, 1.0, c + 2.5);
+    this.box(0.08, 1.0, 0.08, this.std('#3a2414'), -6.6, 0.5, c + 2.5);
+    this.scroll(-6.7, 1.08, c + 2.3, 0.5);
+    this.scroll(-6.4, 1.1, c + 2.7, -0.3);
+    this.box(1.6, 1.1, 0.6, this.wood('#4a2c16'), 4.6, 0.55, c - 6.4);
+    // the plain drawer front is seen again
+    ((this.drawerFront as THREE.Mesh | undefined)?.material as THREE.Material | undefined)?.setValues({ visible: true });
+    this.assignLights('library');
   }
 
   private oilLamp(x: number, y: number, z: number, light: boolean) {
@@ -2243,6 +2408,8 @@ export class HanukkahWorld {
     }
     const m = s.mechanisms ?? {};
 
+    if (live && solved('h1-riddle') && !this.drawerBurst && this.drawerFront) this.burst(this.drawerFront.getWorldPosition(new THREE.Vector3()));
+    this.drawerBurst = solved('h1-riddle');
     this.setOpen(this.drawerFront, solved('h1-riddle'));
     // assembly tables: parts on their zones, the rest in the group's bag (laid out on the tray while at the table)
     for (const [pid, a] of this.asm) a.slots = { ...(m[pid]?.slots ?? {}) };

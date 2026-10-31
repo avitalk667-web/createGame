@@ -204,6 +204,9 @@ export const hWorldPos = (d: HInteractable): [number, number, number] => [d.pos[
 /** Furniture the player cannot walk through: [zone, x0, x1, z0, z1] relative to the room centre. */
 const OBSTACLES: [HZone, number, number, number, number][] = [
   ['library', -3.2, 2.2, -2.2, -0.4],
+  // the library's floor-standing furniture: chest, map table, lectern, globe stand, sideboard and the two candelabra
+  ['library', -7.6, -6.5, 0.6, 1.3], ['library', -7.25, -5.95, 2.05, 2.95], ['library', 5.25, 5.95, 3.3, 3.9], ['library', 3.1, 3.7, -3.5, -2.9],
+  ['library', 3.75, 5.45, -7.0, -6.0], ['library', -2.8, -2.3, -6.6, -6.1], ['library', 2.3, 2.8, -6.6, -6.1],
   ['workshop', -2.6, 2.6, -2.2, -0.6],
   ['maze', -2.4, 3.8, -2.7, 0.4],
   ['cipher', -3.0, 3.0, -2.0, -0.2],
