@@ -41,6 +41,7 @@ public class HanukkahEngineTests
 
     private static void Room1(GameEngine e, GameRoom r, List<PlayerSession> ps)
     {
+        LibraryChain.Open(e, r, ps[0].Id, T0);
         Assert.True(e.DiscoverClue(r, ps[0].Id, "r1-letter", T0).Ok);
         Assert.Equal("wrong", e.SubmitAnswer(r, ps[1].Id, "h1-riddle", J("מנורת שמן"), T0).Code);
         Assert.Equal("solved", e.SubmitAnswer(r, ps[1].Id, "h1-riddle", J("פך השמן"), T0).Code);
@@ -50,6 +51,7 @@ public class HanukkahEngineTests
 
     private static void Room2(GameEngine e, GameRoom r, List<PlayerSession> ps)
     {
+        WorkshopChain.Open(e, r, ps[0].Id, T0);
         string[] parts = ["lamp-base", "lamp-tank", "lamp-wick", "lamp-glass", "lamp-cover"];
         foreach (var part in parts) Assert.True(e.PickUp(r, ps[0].Id, part, T0).Ok);
         // a part dropped on the wrong spot is refused with feedback and stays available (spec 7)
@@ -104,6 +106,7 @@ public class HanukkahEngineTests
 
     private static void Room4(GameEngine e, GameRoom r, List<PlayerSession> ps)
     {
+        CipherChain.Open(e, r, ps[0].Id, T0);
         Assert.True(e.DiscoverClue(r, ps[1].Id, "r4-gematria", T0).Ok);
         Assert.Equal("wrong", e.SubmitAnswer(r, ps[0].Id, "h4-wheel", J("רוא"), T0).Code);
         Assert.Equal("solved", e.SubmitAnswer(r, ps[0].Id, "h4-wheel", J(new[] { "א", "ו", "ר" }), T0).Code);
@@ -112,6 +115,7 @@ public class HanukkahEngineTests
 
     private static void Room5(GameEngine e, GameRoom r, List<PlayerSession> ps)
     {
+        DreidelChain.Open(e, r, ps[0].Id, T0);
         foreach (var d in new[] { "dreidel-nun", "dreidel-gimel", "dreidel-he", "dreidel-pe" }) Assert.True(e.PickUp(r, ps[1].Id, d, T0).Ok);
         Assert.Equal(PuzzleStatus.Locked, Status(r, "h5-lock"));
         // נ top-left, ג top-right, פ bottom-left, ה bottom-right — by physical position, not by text order
@@ -143,6 +147,7 @@ public class HanukkahEngineTests
 
     private static void Room6(GameEngine e, GameRoom r, List<PlayerSession> ps)
     {
+        LabChain.Open(e, r, ps[0].Id, T0);
         Assert.Equal("wrong", e.SubmitAnswer(r, ps[0].Id, "h6-jugs", J("ב"), T0).Code);
         Assert.Equal("solved", e.SubmitAnswer(r, ps[1].Id, "h6-jugs", J("א"), T0).Code);
         Assert.Contains("golden-jug", W(r).Inventory);
@@ -269,6 +274,10 @@ public class HanukkahEngineTests
         Assert.Equal(RoomPhase.Completed, r.Phase);
         Assert.Equal(8, e.UnlockedZones(r, Content).Count);
         Assert.Empty(W(r).Inventory); // every journey item ended on its pedestal
+        // the end of the game names the four titles, each with its winners (the 8 rooms give everyone events)
+        var titles = Snapshots.Build(e, r, null, T0).Score!.Titles!;
+        Assert.Equal(4, titles.Count);
+        Assert.All(titles, t => { Assert.NotEmpty(t.Winners); Assert.All(t.Winners, w => Assert.Contains(ps, p => p.Id == w)); });
     }
 
     [Fact]
@@ -287,6 +296,7 @@ public class HanukkahEngineTests
     public void Riddle_answer_is_normalised_but_not_changed()
     {
         var (e, r, ps) = Start();
+        LibraryChain.Open(e, r, ps[0].Id, T0);
         Assert.Equal("wrong", e.SubmitAnswer(r, ps[0].Id, "h1-riddle", J("שמן"), T0).Code);
         Assert.Equal("solved", e.SubmitAnswer(r, ps[0].Id, "h1-riddle", J(" פַּךְ הַשֶּׁמֶן "), T0).Code);
     }
@@ -294,7 +304,9 @@ public class HanukkahEngineTests
     [Fact]
     public void Scores_follow_the_rules_and_are_never_given_twice()
     {
-        var (e, r, ps) = Start();
+        // a third player plays the evidence chain, so the two players below keep the original riddle's points
+        var (e, r, ps) = Start(3);
+        LibraryChain.Open(e, r, ps[2].Id, T0);
         Assert.True(e.DiscoverClue(r, ps[0].Id, "r1-letter", T0).Ok);
         var again = e.DiscoverClue(r, ps[1].Id, "r1-letter", T0);
         Assert.Equal("known", again.Code);
@@ -305,8 +317,8 @@ public class HanukkahEngineTests
         Assert.Equal("solved", e.SubmitAnswer(r, ps[1].Id, "h1-riddle", J("פך השמן"), T0).Code);
         Assert.Equal(25, Personal(r, ps[1]));               // first correct answer
         Assert.Equal(10, Personal(r, ps[0]));               // the hint did not reduce personal points
-        Assert.Equal(100 - 10, W(r).Score!.Rooms["library"]); // easy room minus one hint
-        Assert.Equal(90, W(r).Score!.Group);
+        Assert.Equal(100 - 10 + 3 * 10, W(r).Score!.Rooms["library"]); // easy room minus one hint, plus the three hintless chain steps (not the riddle)
+        Assert.Equal(100 - 10 + 3 * 10, W(r).Score!.Group);
         // the same solve cannot score again
         Assert.Equal("already-solved", e.SubmitAnswer(r, ps[0].Id, "h1-riddle", J("פך השמן"), T0).Code);
         Assert.Equal(25, Personal(r, ps[1]));
@@ -322,7 +334,7 @@ public class HanukkahEngineTests
         var before1 = Personal(r, ps[1]);
         Room2(e, r, ps);
         // each spot scores once, for whoever first placed the right part there (placing it again after "Return parts" does not)
-        Assert.Equal(before0 + 5 * 10 + 10 + 10, Personal(r, ps[0]));     // five pickups, s2, s4
+        Assert.Equal(before0 + WorkshopChain.Points + 5 * 10 + 10 + 10, Personal(r, ps[0]));     // the workshop chain, five pickups, s2, s4
         Assert.Equal(before1 + 10 + 10 + 10 + 20, Personal(r, ps[1]));    // s1, s3, s5 + the lamp lights up
         var p0 = Personal(r, ps[0]);
         Room3(e, r, ps);
@@ -336,7 +348,9 @@ public class HanukkahEngineTests
         Room1(e, r, ps); Room2(e, r, ps); Room3(e, r, ps); Room4(e, r, ps);
         Room5(e, r, ps); Room6(e, r, ps); Room7(e, r, ps); Room8(e, r, ps);
         var board = W(r).Score!;
-        Assert.Equal(100 + 100 + 150 + 250 + 150 + 250 + 200 + 150, board.Group); // no hints used
+        // no hints used: every room's points, plus the no-hint bonus of the 21 puzzles of rooms 1–6 (rooms 7 and 8 are not part of it)
+        Assert.Equal(100 + 100 + 150 + 250 + 150 + 250 + 200 + 150 + 21 * 10, board.Group);
+        Assert.Equal(21, board.Log.Count(x => x.Type == "nohint"));
         Assert.Equal(board.Personal.Values.Sum() + board.Group, board.Log.Sum(x => x.Points));
         var ranking = GameEngine.Ranking(r, W(r));
         Assert.Equal(1, ranking[0].Rank);

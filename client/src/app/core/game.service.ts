@@ -182,6 +182,10 @@ export class GameService {
   getTune = (puzzleId: string) => this.invoke<{ sequence: string[] }>('GetTune', puzzleId);
   getPersonalClues = (puzzleId: string) =>
     this.invoke<{ clues: { index: number; title: string; text: string; visual: string }[] }>('GetPersonalClues', puzzleId);
+  /** The caller's own secret task in the current room (only they receive it). */
+  getPersonalTask = () => this.invoke<{ id?: string; zone?: string; text?: string; done?: boolean; found?: string | null }>('GetPersonalTask');
+  /** The caller found what their secret task asked for; the server checks it is their own task and scores it once. */
+  completeTask = (taskId: string) => this.invoke('CompleteTask', taskId, this.actionId());
   /** Move the group into the room that just opened. */
   continueToNext = () => this.invoke('Continue');
   claimHost = () => this.invoke('ClaimHost');

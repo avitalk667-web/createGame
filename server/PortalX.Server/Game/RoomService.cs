@@ -162,10 +162,13 @@ public sealed class RoomService(PortalDbContext db, GameEngine engine, ILogger<R
         });
     }
 
-    private Task<GameRoom?> LoadAsync(Guid roomId, bool tracking)
+    private async Task<GameRoom?> LoadAsync(Guid roomId, bool tracking)
     {
         var q = db.Rooms.Include(r => r.Players).Include(r => r.Puzzles).AsSplitQuery();
-        return (tracking ? q : q.AsNoTracking()).FirstOrDefaultAsync(r => r.Id == roomId);
+        var room = await (tracking ? q : q.AsNoTracking()).FirstOrDefaultAsync(r => r.Id == roomId);
+        // games saved before puzzles were added to their scenario get them here (saved with the next action)
+        if (room != null) engine.FillMissingPuzzles(room);
+        return room;
     }
 
     private async Task<GameResult?> LatestResultAsync(GameRoom room)

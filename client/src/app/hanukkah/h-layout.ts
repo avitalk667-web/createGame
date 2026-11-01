@@ -41,17 +41,17 @@ export function hWalkable(unlocked: Set<string>): HRect[] {
 export const hInRects = (rects: HRect[], x: number, z: number) => rects.some((r) => x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1);
 
 /** The action word shown on an interactive object (spec §9). */
-export type Verb = 'בדיקה' | 'הרמה' | 'פתיחה' | 'סיבוב' | 'הנחה' | 'הפעלה' | 'קריאה';
+export type Verb = 'בדיקה' | 'הרמה' | 'פתיחה' | 'סיבוב' | 'הנחה' | 'הפעלה' | 'קריאה' | 'משיכה';
 
 /**
  * What opens when an object is used:
  *  clue → reads a clue (first finder scores) · panel → a puzzle panel · item → picks up an item ·
  *  decor → a short description only (never scores, never part of a solution).
  */
-export type HKind = 'clue' | 'panel' | 'item' | 'decor';
+export type HKind = 'clue' | 'panel' | 'item' | 'decor' | 'task';
 
 export type HPanel = 'riddle' | 'lamp' | 'maze' | 'box' | 'wheel' | 'stand' | 'lock' | 'jugs' | 'mosaic' | 'pedestals' | 'final'
-  | 'map' | 'symbols' | 'cabinet' | 'gears' | 'scales';
+  | 'map' | 'symbols' | 'cabinet' | 'gears' | 'scales' | 'evidence' | 'board' | 'book' | 'wicks' | 'lamptest' | 'blueprint' | 'sequence' | 'mirror' | 'spin' | 'memory' | 'corners' | 'shelf' | 'oilscale';
 
 export interface HInteractable {
   id: string;
@@ -65,6 +65,8 @@ export interface HInteractable {
   /** decor text, or the slot a pedestal stands for */
   text?: string;
   ref?: string;
+  /** Shown only once this puzzle is open (not locked): the library's board, glowing book, letter and hidden drawer. */
+  needs?: string;
   /** x, y, z offset from the room centre */
   pos: [number, number, number];
   radius: number;
@@ -72,12 +74,18 @@ export interface HInteractable {
 
 const HANUKKAH_INTERACTABLES: HInteractable[] = [
   // 1 · הספרייה הסודית
-  { id: 'letter', zone: 'library', label: 'מכתב מקופל', verb: 'קריאה', kind: 'clue', clueId: 'r1-letter', panel: 'riddle', pos: [-1.2, 1.05, -1.2], radius: 0.55 },
-  { id: 'drawer', zone: 'library', label: 'מגירה נעולה', verb: 'פתיחה', kind: 'panel', panel: 'riddle', pos: [0.4, 0.62, -0.95], radius: 0.5 },
+  // the four pieces of evidence (examined and turned in their own window), then the board, the glowing book and the hidden cabinet
+  { id: 'ev-book', zone: 'library', label: 'ספר עתיק על הדוכן', verb: 'בדיקה', kind: 'panel', panel: 'evidence', ref: 'book', pos: [5.6, 1.2, 3.6], radius: 0.55 },
+  { id: 'ev-hourglass', zone: 'library', label: 'שעון חול', verb: 'בדיקה', kind: 'panel', panel: 'evidence', ref: 'hourglass', pos: [-7.05, 0.85, 0.95], radius: 0.5 },
+  { id: 'ev-lamp', zone: 'library', label: 'מנורת שמן', verb: 'בדיקה', kind: 'panel', panel: 'evidence', ref: 'lamp', pos: [1.75, 1.1, -1.6], radius: 0.45 },
+  { id: 'ev-scroll', zone: 'library', label: 'מגילה חתומה', verb: 'בדיקה', kind: 'panel', panel: 'evidence', ref: 'scroll', pos: [4.0, 1.15, -6.4], radius: 0.45 },
+  { id: 'evidence-board', zone: 'library', label: 'לוח העדויות וכתובות השומרים', verb: 'הנחה', kind: 'panel', panel: 'board', needs: 'h1-board', pos: [-7.6, 1.9, 3.2], radius: 1.1 },
+  { id: 'glow-book', zone: 'library', label: 'הספר הזוהר', verb: 'משיכה', kind: 'panel', panel: 'book', needs: 'h1-book', pos: [7.0, 1.45, 3.3], radius: 0.45 },
+  { id: 'letter', zone: 'library', label: 'מכתב מקופל', verb: 'קריאה', kind: 'clue', clueId: 'r1-letter', panel: 'riddle', needs: 'h1-riddle', pos: [7.6, 1.32, 3.5], radius: 0.5 },
+  { id: 'drawer', zone: 'library', label: 'מגירה נסתרת נעולה', verb: 'פתיחה', kind: 'panel', panel: 'riddle', needs: 'h1-riddle', pos: [7.45, 0.85, 3.1], radius: 0.45 },
   { id: 'magnifier', zone: 'library', label: 'זכוכית מגדלת', verb: 'בדיקה', kind: 'decor', text: 'זכוכית מגדלת עתיקה. דרכה האותיות במכתב נראות ברורות יותר.', pos: [-0.3, 1.02, -1.5], radius: 0.4 },
   { id: 'globe', zone: 'library', label: 'גלובוס עתיק', verb: 'סיבוב', kind: 'decor', text: 'גלובוס עתיק מסתובב בחריקה. הוא יפה, אבל לא קשור לחידה.', pos: [3.4, 1.0, -3.2], radius: 0.6 },
   { id: 'books3', zone: 'library', label: 'שלושה ספרים', verb: 'בדיקה', kind: 'decor', text: 'שלושה ספרים בכריכות שונות: אדומה, ירוקה וכחולה. ספרי היסטוריה ישנים.', pos: [-2.6, 1.05, -1.6], radius: 0.5 },
-  { id: 'oil-lamp-1', zone: 'library', label: 'מנורת שמן', verb: 'בדיקה', kind: 'decor', text: 'מנורת שמן קטנה מאירה את השולחן באור חם.', pos: [1.6, 1.05, -1.6], radius: 0.4 },
   { id: 'maps', zone: 'library', label: 'מפות ומגילות', verb: 'בדיקה', kind: 'decor', text: 'מפות ישנות של האחוזה ומגילות מגולגלות.', pos: [-6.6, 1.3, 2.5], radius: 0.7 },
 
   // 2 · סדנת מנורת השמן
@@ -86,8 +94,12 @@ const HANUKKAH_INTERACTABLES: HInteractable[] = [
   { id: 'part-wick', zone: 'workshop', label: 'פתיל', verb: 'הרמה', kind: 'item', itemId: 'lamp-wick', pos: [-6.4, 0.95, -4.2], radius: 0.45 },
   { id: 'part-glass', zone: 'workshop', label: 'זכוכית', verb: 'הרמה', kind: 'item', itemId: 'lamp-glass', pos: [4.6, 0.3, 4.4], radius: 0.45 },
   { id: 'part-cover', zone: 'workshop', label: 'מכסה', verb: 'הרמה', kind: 'item', itemId: 'lamp-cover', pos: [2.4, 2.35, -6.4], radius: 0.45 },
-  { id: 'workbench', zone: 'workshop', label: 'שולחן העבודה — אזורי ההרכבה', verb: 'הנחה', kind: 'panel', panel: 'lamp', pos: [0, 1.0, -1.4], radius: 1.1 },
-  { id: 'r2-scroll', zone: 'workshop', label: 'מגילה עם איור המנורה', verb: 'קריאה', kind: 'clue', clueId: 'r2-scroll', pos: [-2.35, 1.05, -1.95], radius: 0.45 },
+  // the preparation: the wick table, the three test lamps and the engraved metal plate (the assembly opens after them)
+  { id: 'wick-table', zone: 'workshop', label: 'שולחן הפתילים וכלי השמן', verb: 'הנחה', kind: 'panel', panel: 'wicks', pos: [-4.5, 1.05, 2.0], radius: 1.1 },
+  { id: 'test-lamps', zone: 'workshop', label: 'שלוש מנורות ניסוי', verb: 'הפעלה', kind: 'panel', panel: 'lamptest', needs: 'h2-test', pos: [5.6, 1.15, 4.2], radius: 0.9 },
+  { id: 'metal-plate', zone: 'workshop', label: 'לוח המתכת החרוט', verb: 'בדיקה', kind: 'panel', panel: 'blueprint', needs: 'h2-blueprint', pos: [7.7, 2.6, 4.2], radius: 0.9 },
+  { id: 'workbench', zone: 'workshop', label: 'שולחן העבודה — אזורי ההרכבה', verb: 'הנחה', kind: 'panel', panel: 'lamp', needs: 'h2-lamp', pos: [0, 1.0, -1.4], radius: 1.1 },
+  { id: 'r2-scroll', zone: 'workshop', label: 'מגילה עם איור המנורה', verb: 'קריאה', kind: 'clue', clueId: 'r2-scroll', needs: 'h2-lamp', pos: [-2.35, 1.05, -1.95], radius: 0.45 },
   { id: 'oil-bottle', zone: 'workshop', label: 'בקבוק שמן', verb: 'בדיקה', kind: 'decor', text: 'בקבוק שמן זית. ריחו חזק.', pos: [2.35, 1.1, -1.95], radius: 0.4 },
   { id: 'tools', zone: 'workshop', label: 'כלי עבודה', verb: 'בדיקה', kind: 'decor', text: 'פטישים, צבתות ומברגים קטנים של אומן מנורות.', pos: [-6.9, 2.0, 0.5], radius: 0.8 },
   { id: 'shelf-2', zone: 'workshop', label: 'מדף עם חפצים', verb: 'בדיקה', kind: 'decor', text: 'כדים, קופסאות וכלים ישנים — רק קישוט.', pos: [6.9, 2.4, 1.5], radius: 0.8 },
@@ -100,9 +112,13 @@ const HANUKKAH_INTERACTABLES: HInteractable[] = [
   { id: 'metal-box', zone: 'maze', label: 'לחצו על התיבה כדי לבדוק את המנעול', verb: 'פתיחה', kind: 'panel', panel: 'box', pos: [3.3, 1.2, -2.25], radius: 0.6 },
 
   // 4 · חדר הכתב המוצפן
+  // the preparation: the number series and its clue box by the door, the old mirror and its stand by the left wall
+  { id: 'number-board', zone: 'cipher', label: 'סדרת המספרים על הקיר', verb: 'קריאה', kind: 'panel', panel: 'sequence', pos: [4.2, 2.4, -6.6], radius: 1.2 },
+  { id: 'clue-box-scroll', zone: 'cipher', label: 'מגילה בתיבת הרמזים', verb: 'הרמה', kind: 'item', itemId: 'mirror-scroll', pos: [4.2, 0.55, -6.1], radius: 0.5 },
+  { id: 'mirror', zone: 'cipher', label: 'המראה העתיקה והכן שמולה', verb: 'הנחה', kind: 'panel', panel: 'mirror', pos: [-6.4, 1.3, 2.5], radius: 1.1 },
   { id: 'tablets', zone: 'cipher', label: 'שלושה לוחות מספרים', verb: 'קריאה', kind: 'decor', text: 'על שלושת הלוחות מופיעים המספרים: 1 — 6 — 200', pos: [-3.8, 2.6, -6.6], radius: 1.6 },
   { id: 'r4-scroll', zone: 'cipher', label: 'מגילה', verb: 'קריאה', kind: 'clue', clueId: 'r4-scroll', pos: [-2.2, 1.05, -1.2], radius: 0.45 },
-  { id: 'gematria', zone: 'cipher', label: 'לוח ערכי גימטריה', verb: 'קריאה', kind: 'clue', clueId: 'r4-gematria', pos: [-6.9, 2.2, -1.5], radius: 0.9 },
+  { id: 'gematria', zone: 'cipher', label: 'לוח ערכי גימטריה', verb: 'קריאה', kind: 'clue', clueId: 'r4-gematria', needs: 'h4-wheel', pos: [-6.9, 2.2, -1.5], radius: 0.9 },
   { id: 'wheel', zone: 'cipher', label: 'גלגל האותיות והמגירה', verb: 'סיבוב', kind: 'panel', panel: 'wheel', pos: [0.6, 1.1, -1.2], radius: 0.7 },
   { id: 'open-book', zone: 'cipher', label: 'ספר פתוח עם סימניות', verb: 'קריאה', kind: 'decor', text: 'ספר עבה עם סימניות רבות. המילה הסודית אינה כתובה בו.', pos: [2.4, 1.05, -1.2], radius: 0.45 },
   { id: 'ink', zone: 'cipher', label: 'דיו וקולמוס', verb: 'בדיקה', kind: 'decor', text: 'קסת דיו וקולמוס נוצה של סופר.', pos: [1.6, 1.05, -0.7], radius: 0.35 },
@@ -114,19 +130,22 @@ const HANUKKAH_INTERACTABLES: HInteractable[] = [
   { id: 'dreidel-he', zone: 'dreidels', label: 'סביבון קטן', verb: 'הרמה', kind: 'item', itemId: 'dreidel-he', pos: [-6.2, 1.15, -3.2], radius: 0.4 },
   { id: 'dreidel-pe', zone: 'dreidels', label: 'סביבון קטן', verb: 'הרמה', kind: 'item', itemId: 'dreidel-pe', pos: [4.2, 0.25, 4.8], radius: 0.4 },
   { id: 'stand', zone: 'dreidels', label: 'מתקן הסביבונים — ארבעה מקומות', verb: 'הנחה', kind: 'panel', panel: 'stand', pos: [2.8, 1.1, -1.4], radius: 0.85 },
-  { id: 'card-1', zone: 'dreidels', label: 'קלף רמז', verb: 'קריאה', kind: 'clue', clueId: 'r5-card-1', pos: [1.45, 1.02, -1.65], radius: 0.3 },
-  { id: 'card-2', zone: 'dreidels', label: 'קלף רמז', verb: 'קריאה', kind: 'clue', clueId: 'r5-card-2', pos: [1.45, 1.02, -1.0], radius: 0.3 },
-  { id: 'card-3', zone: 'dreidels', label: 'קלף רמז', verb: 'קריאה', kind: 'clue', clueId: 'r5-card-3', pos: [4.15, 1.02, -1.65], radius: 0.3 },
-  { id: 'card-4', zone: 'dreidels', label: 'קלף רמז', verb: 'קריאה', kind: 'clue', clueId: 'r5-card-4', pos: [4.15, 1.02, -1.0], radius: 0.3 },
+  { id: 'card-1', zone: 'dreidels', label: 'קלף רמז', verb: 'קריאה', kind: 'clue', clueId: 'r5-card-1', needs: 'h5-stand', pos: [1.45, 1.02, -1.65], radius: 0.3 },
+  { id: 'card-2', zone: 'dreidels', label: 'קלף רמז', verb: 'קריאה', kind: 'clue', clueId: 'r5-card-2', needs: 'h5-stand', pos: [1.45, 1.02, -1.0], radius: 0.3 },
+  { id: 'card-3', zone: 'dreidels', label: 'קלף רמז', verb: 'קריאה', kind: 'clue', clueId: 'r5-card-3', needs: 'h5-stand', pos: [4.15, 1.02, -1.65], radius: 0.3 },
+  { id: 'card-4', zone: 'dreidels', label: 'קלף רמז', verb: 'קריאה', kind: 'clue', clueId: 'r5-card-4', needs: 'h5-stand', pos: [4.15, 1.02, -1.0], radius: 0.3 },
   { id: 'dreidel-box', zone: 'dreidels', label: 'תיבת עץ סגורה', verb: 'בדיקה', kind: 'decor', text: 'תיבת עץ סגורה היטב. נראה שהיא קשורה למנעול הקוד שבדלת החדר.', pos: [-2.8, 0.55, -1.6], radius: 0.6 },
   { id: 'door-lock', zone: 'dreidels', label: 'מנעול הקוד בדלת — לחצו כדי להזין קוד', verb: 'פתיחה', kind: 'panel', panel: 'lock', pos: [0.62, 1.45, -6.95], radius: 0.45 },
-  { id: 'big-dreidel', zone: 'dreidels', label: 'סביבון מוזהב גדול', verb: 'סיבוב', kind: 'decor', text: 'סביבון ענק על בסיס מסתובב. הוא מסתובב לאט ומנצנץ.', pos: [0, 1.6, -3.4], radius: 1.0 },
+  { id: 'big-dreidel', zone: 'dreidels', label: 'הסביבון המוזהב הגדול — לחצו כדי לסובב', verb: 'סיבוב', kind: 'panel', panel: 'spin', pos: [0, 1.6, -3.4], radius: 1.0 },
+  { id: 'memory-board', zone: 'dreidels', label: 'לוח הזיכרון', verb: 'הפעלה', kind: 'panel', panel: 'memory', needs: 'h5-memory', pos: [7.6, 2.0, 2.0], radius: 1.1 },
+  { id: 'corners-board', zone: 'dreidels', label: 'לוח ארבע הפינות', verb: 'בדיקה', kind: 'panel', panel: 'corners', needs: 'h5-corners', pos: [-4.0, 2.1, -6.6], radius: 1.1 },
   { id: 'coins', zone: 'dreidels', label: 'מטבעות עתיקים ופמוטים', verb: 'בדיקה', kind: 'decor', text: 'מטבעות עתיקים ופמוטי נחושת — קישוט בלבד.', pos: [-6.6, 1.2, 1.0], radius: 0.7 },
 
   // 6 · מעבדת השמן
   { id: 'jugs', zone: 'lab', label: 'ארבעה כדי שמן', verb: 'בדיקה', kind: 'panel', panel: 'jugs', pos: [0, 1.3, -2.2], radius: 1.6 },
-  { id: 'r6-sign', zone: 'lab', label: 'הכתובת מעל הכדים', verb: 'קריאה', kind: 'clue', clueId: 'r6-sign', pos: [0, 3.1, -3.6], radius: 0.9 },
-  { id: 'scales', zone: 'lab', label: 'מאזניים עתיקים', verb: 'בדיקה', kind: 'decor', text: 'מאזני נחושת. שני הכפות מאוזנות.', pos: [-4.4, 1.3, -3.0], radius: 0.6 },
+  { id: 'r6-sign', zone: 'lab', label: 'הכתובת מעל הכדים', verb: 'קריאה', kind: 'clue', clueId: 'r6-sign', needs: 'h6-jugs', pos: [0, 3.1, -3.6], radius: 0.9 },
+  { id: 'scales', zone: 'lab', label: 'המאזניים העתיקים ובקבוקי השמן', verb: 'הנחה', kind: 'panel', panel: 'oilscale', needs: 'h6-scales', pos: [-4.4, 1.3, -3.0], radius: 0.8 },
+  { id: 'jar-shelf', zone: 'lab', label: 'המדף הריק והכדים', verb: 'הנחה', kind: 'panel', panel: 'shelf', pos: [4.8, 1.2, -6.3], radius: 1.3 },
   { id: 'tubes', zone: 'lab', label: 'מבחנות', verb: 'בדיקה', kind: 'decor', text: 'מבחנות זכוכית עם שמן בגוונים שונים. צבע השמן לא יעזור לכם.', pos: [4.4, 1.15, -3.0], radius: 0.6 },
   { id: 'lab-book', zone: 'lab', label: 'ספר בדיקות פתוח', verb: 'קריאה', kind: 'decor', text: '„בודקים משפט אחר משפט. מניחים שכד אחד הוא הטהור, וסופרים כמה משפטים אמת.”', pos: [3.0, 1.05, -0.4], radius: 0.45 },
 
@@ -156,6 +175,17 @@ const HANUKKAH_INTERACTABLES: HInteractable[] = [
   { id: 'final-book', zone: 'hall', label: 'ספר פתוח עם החידה האחרונה', verb: 'קריאה', kind: 'panel', panel: 'final', pos: [0, 1.2, 1.4], radius: 0.6 },
   { id: 'hall-jug', zone: 'hall', label: 'פך שמן זוהר', verb: 'בדיקה', kind: 'decor', text: 'פך שמן זוהר על הכן המרכזי.', pos: [0, 1.6, -1.6], radius: 0.6 },
   { id: 'chest', zone: 'hall', label: 'תיבת אוצר', verb: 'פתיחה', kind: 'decor', text: 'תיבת האוצר נעולה. היא תיפתח בסוף המסע.', pos: [5.2, 0.6, 2.4], radius: 0.7 },
+
+  // secret personal tasks: a small hidden mark for each task, seen and usable only by the player it was given to (ref = task id)
+  ...([
+    ['t-lib-1', 'library', 3.95, 0.55, -3.65], ['t-lib-2', 'library', -6.75, 1.08, 2.85], ['t-lib-3', 'library', 4.6, 0.25, -5.85], ['t-lib-4', 'library', 5.6, 0.45, 4.0],
+    ['t-wsh-1', 'workshop', 2.45, 1.06, -1.7], ['t-wsh-2', 'workshop', -7.75, 1.3, 1.6], ['t-wsh-3', 'workshop', 7.2, 0.35, 2.9], ['t-wsh-4', 'workshop', -3.3, 0.35, -2.2],
+    ['t-maz-1', 'maze', -6.8, 0.35, 5.6], ['t-maz-2', 'maze', 2.2, 2.4, -6.85], ['t-maz-3', 'maze', -7.85, 1.5, -2.5], ['t-maz-4', 'maze', 3.9, 0.3, -2.0],
+    ['t-cip-1', 'cipher', 7.55, 1.3, -2.6], ['t-cip-2', 'cipher', -3.8, 1.75, -6.88], ['t-cip-3', 'cipher', 2.75, 1.06, -1.0], ['t-cip-4', 'cipher', -5.5, 0.3, 5.8],
+    ['t-drd-1', 'dreidels', -6.85, 1.35, 1.4], ['t-drd-2', 'dreidels', -2.8, 0.35, -1.2], ['t-drd-3', 'dreidels', 0, 0.52, -2.28], ['t-drd-4', 'dreidels', 6.6, 0.3, 5.6],
+    ['t-lab-1', 'lab', 4.75, 1.08, -2.72], ['t-lab-2', 'lab', 3.7, 0.96, -0.2], ['t-lab-3', 'lab', -4.95, 0.55, -3.0], ['t-lab-4', 'lab', -6.6, 0.3, 5.6],
+  ] as [string, HZone, number, number, number][]).map(([ref, zone, x, y, z]): HInteractable => (
+    { id: 'task-' + ref, zone, label: 'סימן נסתר', verb: 'בדיקה', kind: 'task', ref, pos: [x, y, z], radius: 0.4 })),
 ];
 
 /** The free trial game "שער הסודות": the map room and the mechanism workshop. */
@@ -207,11 +237,16 @@ const OBSTACLES: [HZone, number, number, number, number][] = [
   // the library's floor-standing furniture: chest, map table, lectern, globe stand, sideboard and the two candelabra
   ['library', -7.6, -6.5, 0.6, 1.3], ['library', -7.25, -5.95, 2.05, 2.95], ['library', 5.25, 5.95, 3.3, 3.9], ['library', 3.1, 3.7, -3.5, -2.9],
   ['library', 3.75, 5.45, -7.0, -6.0], ['library', -2.8, -2.3, -6.6, -6.1], ['library', 2.3, 2.8, -6.6, -6.1],
+  // the secret bookcase with the hidden cabinet behind it, on the right wall
+  ['library', 6.85, 8.0, 2.35, 4.25],
   ['workshop', -2.6, 2.6, -2.2, -0.6],
+  ['workshop', -5.75, -3.25, 1.45, 2.55], ['workshop', 5.25, 5.95, 3.35, 5.05],
   ['maze', -2.4, 3.8, -2.7, 0.4],
   ['cipher', -3.0, 3.0, -2.0, -0.2],
+  ['cipher', 3.6, 4.8, -6.6, -5.8], ['cipher', -7.6, -5.85, 1.95, 3.05],
   ['dreidels', -1.2, 1.2, -4.6, -2.2], ['dreidels', 1.0, 4.6, -2.2, -0.2], ['dreidels', -3.4, -2.2, -2.2, -1.0],
   ['lab', -3.4, 3.4, -3.2, -1.2], ['lab', 2.0, 4.0, -1.0, 0.2],
+  ['lab', 3.45, 6.15, -7.0, -5.95],
   ['mosaic', -1.0, 1.0, -0.8, 0.8],
   ['mosaic', -6.0, -3.2, 1.95, 3.25], ['mosaic', 5.2, 6.4, 2.2, 3.4], ['mosaic', 5.0, 5.8, -0.1, 0.5],
   ['hall', -1.0, 1.0, -2.6, -0.6],

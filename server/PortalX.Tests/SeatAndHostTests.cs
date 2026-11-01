@@ -139,6 +139,7 @@ public class SeatAndHostTests
     public void Continue_waits_for_the_host_unless_he_is_away_or_after_a_while()
     {
         var (e, r, ps) = Room(2);
+        LibraryChain.Open(e, r, ps[0].Id, T0);
         Assert.Equal("solved", e.SubmitAnswer(r, ps[1].Id, "h1-riddle", J("פך השמן"), T0).Code);
         Assert.Equal("workshop", GameEngine.World(r).PendingZone);
         Assert.Equal("library", e.CurrentZone(r).Zone);
@@ -148,6 +149,7 @@ public class SeatAndHostTests
 
         // a later room: the host is away, so the others continue at once
         var (e2, r2, q) = Room(2);
+        LibraryChain.Open(e2, r2, q[0].Id, T0);
         Assert.Equal("solved", e2.SubmitAnswer(r2, q[1].Id, "h1-riddle", J("פך השמן"), T0).Code);
         Drop(e2, r2, q[0], T0);
         Assert.True(e2.Continue(r2, q[1].Id, T0.AddSeconds(1)).Ok);
@@ -157,6 +159,7 @@ public class SeatAndHostTests
     public void Picking_up_scores_once()
     {
         var (e, r, ps) = Room(2);
+        LibraryChain.Open(e, r, ps[0].Id, T0);
         Assert.Equal("solved", e.SubmitAnswer(r, ps[0].Id, "h1-riddle", J("פך השמן"), T0).Code);
         var before = GameEngine.World(r).Score!.Personal.GetValueOrDefault(ps[1].Id.ToString());
         var pick = e.PickUp(r, ps[1].Id, "lamp-base", T0);
@@ -164,6 +167,7 @@ public class SeatAndHostTests
         Assert.Equal(before + 10, GameEngine.World(r).Score!.Personal[ps[1].Id.ToString()]);
         Assert.Equal("item-missing", e.PickUp(r, ps[1].Id, "lamp-base", T0).Code);
         // placed and taken back again: no second pickup or placement points
+        WorkshopChain.Open(e, r, ps[0].Id, T0);
         Assert.True(e.Operate(r, ps[1].Id, "h2-lamp", J(new { op = "place", slot = "s1", item = "lamp-base" }), T0).Ok);
         Assert.True(e.Operate(r, ps[1].Id, "h2-lamp", J(new { op = "remove", slot = "s1" }), T0).Ok);
         Assert.True(e.Operate(r, ps[1].Id, "h2-lamp", J(new { op = "place", slot = "s1", item = "lamp-base" }), T0).Ok);

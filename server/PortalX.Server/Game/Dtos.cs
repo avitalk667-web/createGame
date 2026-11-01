@@ -29,7 +29,7 @@ public sealed record RoomSnapshot(
 
 /// <summary>Scores of the current round: personal ranking (with ties), group total, per-room points and hints.</summary>
 public sealed record ScoreDto(int Group, IReadOnlyDictionary<string, int> Rooms, IReadOnlyDictionary<string, int> HintsByZone, int HintsUsed,
-    IReadOnlyList<PlayerScoreDto> Players, bool Tie);
+    IReadOnlyList<PlayerScoreDto> Players, bool Tie, IReadOnlyList<TitleDto>? Titles = null);
 
 public sealed record PlayerScoreDto(Guid PlayerId, string Nickname, int Points, int Solved, int Contributions, int Rank);
 
@@ -102,7 +102,9 @@ public static class Snapshots
         var players = ranking.Select(r => new PlayerScoreDto(r.Player.Id, r.Player.Nickname, r.Points, r.Solved,
             world.Contributions.GetValueOrDefault(r.Player.Id.ToString()), r.Rank)).ToList();
         return new ScoreDto(board.Group, board.Rooms, hintsByZone, hintsByZone.Values.Sum(), players,
-            players.Count(p => p.Rank == 1) > 1);
+            players.Count(p => p.Rank == 1) > 1,
+            // the personal titles are given when the game ends
+            room.Phase == RoomPhase.Completed ? GameEngine.Titles(scenario, room, world) : null);
     }
 
     /// <summary>
@@ -116,6 +118,7 @@ public static class Snapshots
     {
         var node = JsonSerializer.SerializeToNode(s, ScenarioCatalog.JsonOptions)!.AsObject();
         node.Remove("finalWord");
+        node.Remove("personalTasks");   // each player reads only their own task (GetPersonalTask)
         foreach (var p in node["puzzles"]!.AsArray())
         {
             var o = p!.AsObject();

@@ -32,6 +32,20 @@ import { ResultsEmailComponent } from '../ui/results-email.component';
             <div><span>רמזים שנוצלו</span><b>{{ sc.hintsUsed }}</b></div>
           </div>
 
+          @if (titles().length) {
+            <h2 class="titles-head">תארי הכבוד</h2>
+            <ul class="titles" aria-label="תארי הכבוד">
+              @for (t of titles(); track t.id) {
+                <li [class.mine]="t.mine" [class.none]="!t.names.length">
+                  <span class="ic" aria-hidden="true">{{ t.icon }}</span>
+                  <b class="tt">{{ t.title }}</b>
+                  <span class="who">{{ t.names.length ? t.names.join(' · ') : 'לא הוענק הפעם' }}</span>
+                  <small>{{ t.description }}@if (t.names.length) { ({{ t.count }})}</small>
+                </li>
+              }
+            </ul>
+          }
+
           <table>
             <caption class="sr-only">טבלת ניקוד אישית</caption>
             <thead><tr><th>מקום</th><th>שחקן</th><th>נקודות</th><th>חידות ושלבים שפתר</th><th>פעולות בחידות</th></tr></thead>
@@ -78,12 +92,18 @@ import { ResultsEmailComponent } from '../ui/results-email.component';
     .rooms li { display:flex; gap:.5rem; justify-content:space-between; background: rgba(255,255,255,.04); border-radius:8px; padding:.3rem .6rem; }
     .actions { display:flex; gap:.6rem; justify-content:center; margin-top:1.2rem; flex-wrap:wrap; }
     .small { font-size:.85rem; }
+    .titles-head { font-size:1.3rem; margin:.4rem 0 .5rem; color: var(--gold-2); }
+    .titles { list-style:none; padding:0; margin:0 0 1rem; display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:.5rem; }
+    .titles li { display:flex; flex-direction:column; align-items:center; gap:.15rem; background: rgba(255,255,255,.05); border:1px solid rgba(201,162,77,.3); border-radius:14px; padding:.55rem .4rem; }
+    .titles li.mine { background: linear-gradient(180deg, rgba(255,227,154,.22), rgba(224,169,63,.08)); border-color: var(--gold-2); }
+    .titles li.none { opacity:.6; }
+    .titles .ic { font-size:1.7rem; line-height:1; } .titles .tt { color: var(--gold-2); } .titles .who { font-weight:600; overflow-wrap:anywhere; } .titles small { color: var(--muted); font-size:.8rem; }
     .confetti { position:fixed; inset:0; overflow:hidden; pointer-events:none; }
     .confetti i { position:absolute; top:-12px; left: calc(var(--i) * 3.4%); width: 9px; height: 14px; border-radius: 2px;
       background: hsl(calc(40 + var(--i) * 9), 85%, 62%); animation: fall 3.2s linear calc(var(--i) * 70ms) both; }
     @keyframes fall { to { transform: translateY(105vh) rotate(calc(var(--i) * 70deg)); opacity:.2 } }
     @keyframes pop { from { opacity:0; transform: scale(.85) } to { opacity:1; transform:none } }
-    @media (max-width: 560px) { .stats { grid-template-columns: 1fr; } th:nth-child(5), td:nth-child(5) { display:none; } }
+    @media (max-width: 560px) { .stats { grid-template-columns: 1fr; } .titles { grid-template-columns: 1fr 1fr; } th:nth-child(5), td:nth-child(5) { display:none; } }
   `],
 })
 export class HResultComponent {
@@ -95,6 +115,13 @@ export class HResultComponent {
 
   score = computed(() => this.game.snapshot()?.score ?? null);
   zones = computed(() => [...(this.game.scenario()?.zones ?? [])].sort((a, b) => a.order - b.order));
+  /** The end-of-game titles with their winners' names; a title of the player looking is highlighted. */
+  titles = computed(() => {
+    const sc = this.score();
+    const name = new Map((sc?.players ?? []).map((p) => [p.playerId, p.nickname]));
+    const me = this.game.playerId();
+    return (sc?.titles ?? []).map((t) => ({ ...t, names: t.winners.map((w) => name.get(w) ?? '').filter((n) => n), mine: !!me && t.winners.includes(me) }));
+  });
   leaders = computed(() => (this.score()?.players ?? []).filter((p) => p.rank === 1).map((p) => p.nickname).join(' · '));
   duration = computed(() => {
     const s = this.game.snapshot();

@@ -173,9 +173,10 @@ public class UpgradeTests
         Assert.DoesNotContain("פך השמן", options);
         Assert.DoesNotContain("answer", JsonSerializer.Serialize(snap.Questions));
 
+        LibraryChain.Open(engine, room, p.Id, T0);
         Assert.Equal("wrong", engine.SubmitAnswer(room, p.Id, "h1-riddle", J("פך השמן"), T0).Code);
         Assert.Equal("solved", engine.SubmitAnswer(room, p.Id, "h1-riddle", J("סביבונים"), T0).Code);
-        Assert.Equal(40, GameEngine.World(room).Score!.Personal[p.Id.ToString()]);
+        Assert.Equal(40 + LibraryChain.Points, GameEngine.World(room).Score!.Personal[p.Id.ToString()]);
         Assert.Equal(3, GameEngine.World(room).Questions["h1-riddle"].Version);
     }
 
@@ -224,6 +225,7 @@ public class GameQuestionAdminTests(HubIntegrationTests.Factory factory)
         Assert.True((await conn.InvokeAsync<JsonElement>("Connect", join.GetProperty("token").GetString())).GetProperty("ok").GetBoolean());
         Assert.True((await conn.InvokeAsync<JsonElement>("StartGame")).GetProperty("ok").GetBoolean());
         Assert.True((await conn.InvokeAsync<JsonElement>("FinishIntro", true)).GetProperty("ok").GetBoolean());
+        await LibraryChain.OpenAsync(conn);   // the evidence chain opens the riddle these tests answer
         return conn;
     }
 

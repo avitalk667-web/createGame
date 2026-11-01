@@ -155,6 +155,13 @@ public sealed class GameHub(RoomService rooms, RoomRuntime runtime, PortalDbCont
 
     public Task<HubResult> GetPersonalClues(string puzzleId) => Read((room, pid) => rooms.Engine.GetPersonalClues(room, pid, puzzleId, DateTime.UtcNow));
 
+    /// <summary>The caller's own secret task in the current room (never sent to the others).</summary>
+    public Task<HubResult> GetPersonalTask() => Read((room, pid) => rooms.Engine.PersonalTaskView(room, pid));
+
+    /// <summary>The caller found what their secret task asked for; the reply (what they found) goes to them alone.</summary>
+    public Task<HubResult> CompleteTask(string taskId, string clientActionId) =>
+        Run("task", clientActionId, (room, pid) => rooms.Engine.CompleteTask(room, pid, taskId, DateTime.UtcNow), new JsonObject { ["taskId"] = taskId });
+
     /// <summary>Position updates are transient: relayed to the other players, never persisted.</summary>
     public async Task Move(float x, float y, float z, float ry, string zone)
     {
@@ -242,6 +249,7 @@ public sealed class GameHub(RoomService rooms, RoomRuntime runtime, PortalDbCont
         if (PlayerId is not { } pid || RoomId is not { } rid) return NotConnected();
         if (!Allow("read", 20, 10)) return TooFast();
         var room = await db.Rooms.AsNoTracking().Include(r => r.Players).Include(r => r.Puzzles).AsSplitQuery().FirstOrDefaultAsync(r => r.Id == rid);
+        if (room != null) rooms.Engine.FillMissingPuzzles(room);
         if (room == null) return new HubResult(false, "no-room", "החדר לא נמצא.");
         var outcome = action(room, pid);
         return new HubResult(outcome.Ok, outcome.Code, outcome.Message, outcome.Data);

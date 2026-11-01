@@ -148,6 +148,8 @@ public class WorldState
     public Dictionary<string, string> Clues { get; set; } = new();
     /// <summary>Scores of the current round (only for scenarios with scoring).</summary>
     public ScoreBoard? Score { get; set; }
+    /// <summary>Secret personal tasks completed, as "taskId:playerId" (kept private: never part of the shared state).</summary>
+    public List<string> TasksDone { get; set; } = new();
     /// <summary>
     /// The admin's questions this round uses, by puzzle — copied when the game started, so later edits never change it.
     /// The answers stay on the server.
@@ -194,6 +196,16 @@ public sealed class MechanismState
     /// the server's check and cleared when that place changes; a right item stays where it is.
     /// </summary>
     public Dictionary<string, bool> Verdict { get; set; } = new();
+    /// <summary>Inspection: objects already examined, and those whose hidden symbol was uncovered (target ids).</summary>
+    public List<string> Found { get; set; } = new();
+    public List<string> Symbols { get; set; } = new();
+    /// <summary>
+    /// Maze: the player moving the key and until when (a short hold, renewed by each step and ended on release); while it
+    /// lasts, the others cannot move the key. The spinning dreidel uses ControlUntil for the moment it stops (no new spin
+    /// before), so everyone sees each letter it stops on.
+    /// </summary>
+    public string? Controller { get; set; }
+    public DateTime? ControlUntil { get; set; }
 }
 
 /// <summary>Personal and group score of a round. The server is the only authority (spec Part G §19).</summary>

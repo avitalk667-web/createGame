@@ -65,8 +65,12 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
 
     private sealed record RoomRow(GameRoom Room, Entitlement? Ent, Order? Order, int Players, GameResult? Result);
 
-    /// <summary>Rooms opened through purchases or admin free games (plus legacy rooms only when no product filter is set).</summary>
-    private async Task<List<RoomRow>> RoomsAsync(AdminFilter f)
+    /// <summary>
+    /// Rooms opened through purchases or admin free games (plus legacy rooms only when no product filter is set), newest
+    /// first. The games table shows at most <paramref name="limit"/> rows; the dashboard passes null so its totals count every
+    /// room in the chosen range, not only the newest ones.
+    /// </summary>
+    private async Task<List<RoomRow>> RoomsAsync(AdminFilter f, int? limit = 1000)
     {
         var q = db.Rooms.AsNoTracking();
         if (f.From is { } from) q = q.Where(r => r.CreatedAt >= from);
@@ -74,7 +78,8 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
         if (f.ProductId != null) q = q.Where(r => r.ProductId == f.ProductId);
         if (f.Access != null) q = q.Where(r => r.AccessSource == f.Access);
         if (f.Search != null) q = q.Where(r => r.Code == RoomService.NormalizeCode(f.Search));
-        var list = await q.OrderByDescending(r => r.CreatedAt).Take(1000).ToListAsync();
+        var ordered = q.OrderByDescending(r => r.CreatedAt);
+        var list = await (limit is { } n ? ordered.Take(n) : ordered).ToListAsync();
         var ids = list.Select(r => r.Id).ToList();
         var entIds = list.Where(r => r.EntitlementId != null).Select(r => r.EntitlementId!.Value).ToList();
         var ents = await db.Entitlements.AsNoTracking().Where(e => entIds.Contains(e.Id)).ToDictionaryAsync(e => e.Id);
@@ -103,7 +108,7 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
         var orders = await Orders(f with { Status = null, Search = null }).ToListAsync();
         var confirmed = orders.Where(o => o.Status is OrderStatus.Paid or OrderStatus.Refunded).ToList();
         var refunded = orders.Where(o => o.Status == OrderStatus.Refunded).ToList();
-        var roomRows = await RoomsAsync(f with { Status = null, Search = null, Access = null });
+        var roomRows = await RoomsAsync(f with { Status = null, Search = null, Access = null }, limit: null);
         var managed = roomRows.Where(r => r.Room.AccessSource is "purchase" or "admin-free").ToList();
         var paidRooms = managed.Where(r => r.Room.AccessSource == "purchase").ToList();
         var freeRooms = managed.Where(r => r.Room.AccessSource == "admin-free").ToList();
@@ -111,7 +116,7 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
         var sampleRooms = roomRows.Where(r => r.Room.AccessSource == "free-sample").ToList();
         var paidWithRoom = paidRooms.Where(r => r.Order != null).Select(r => r.Order!.Id).ToHashSet();
         // demo-mode games (opened without payment): their own figures, never sales, revenue or paid games
-        var demoRooms = await RoomsAsync(f with { Status = null, Search = null, Access = TestCheckout.AccessSource, IncludeTest = true });
+        var demoRooms = await RoomsAsync(f with { Status = null, Search = null, Access = TestCheckout.AccessSource, IncludeTest = true }, limit: null);
         var products = await db.Products.AsNoTracking().OrderBy(p => p.SortOrder).ToListAsync();
 
         object Money(IEnumerable<Order> conf, IEnumerable<Order> refs)

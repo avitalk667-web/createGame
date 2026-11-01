@@ -12,7 +12,7 @@ namespace PortalX.Server.Game;
 /// </summary>
 public sealed partial class GameEngine
 {
-    public static readonly string[] MechanismTypes = ["slots", "maze", "mosaic", "balance"];
+    public static readonly string[] MechanismTypes = ["slots", "maze", "mosaic", "balance", "inspect", "spinner"];
 
     // ---------------------------------------------------------------- clues
 
@@ -25,6 +25,8 @@ public sealed partial class GameEngine
         var clue = scenario.Clues.FirstOrDefault(c => c.Id == clueId);
         if (clue == null) return ActionOutcome.Fail("unknown-clue", "הרמז לא נמצא.");
         if (!UnlockedZones(room, scenario).Contains(clue.Zone)) return ActionOutcome.Fail("zone-locked", "האזור הזה עדיין נעול.");
+        if (clue.RequiresPuzzle is { } needed && room.Puzzles.FirstOrDefault(s => s.PuzzleId == needed)?.Status != PuzzleStatus.Solved)
+            return ActionOutcome.Fail("locked", "הרמז הזה עדיין לא נחשף.");
         var world = World(room);
         if (world.Clues.ContainsKey(clue.Id)) return new ActionOutcome(true, "known", clue.Text, [], false);
 
@@ -63,7 +65,9 @@ public sealed partial class GameEngine
                 "maze" => OperateMaze(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
                 "mosaic" => OperateMosaic(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
                 "balance" => OperateBalance(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
-                _ => ActionOutcome.Fail("wrong-action", "פעולה לא מוכרת."),
+                "inspect" => OperateInspect(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
+                "spinner" => OperateSpinner(room, scenario!, puzzle, state!, player!, world, mech, op, now),
+                _ =>ActionOutcome.Fail("wrong-action", "פעולה לא מוכרת."),
             };
         }
         catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException or FormatException)
@@ -116,7 +120,9 @@ public sealed partial class GameEngine
                 var itemId = action.GetProperty("item").GetString() ?? "";
                 if (!slotIds.Contains(slot)) return ActionOutcome.Fail("bad-slot", "המקום הזה לא קיים.");
                 if (mech.Slots.ContainsKey(slot)) return ActionOutcome.Fail("slot-taken", "המקום הזה כבר תפוס. הרימו קודם את מה שמונח בו.");
-                if (!world.Inventory.Contains(itemId)) return ActionOutcome.Fail("item-missing", "החפץ הזה אינו בתיק. הרימו אותו קודם.");
+                // some tables take their pieces straight from the room (the wicks lying by the oil vessels)
+                var fromRoom = puzzle.PublicData["fromRoom"]?.GetValue<bool>() == true && world.WorldItems.Contains(itemId);
+                if (!world.Inventory.Contains(itemId) && !fromRoom) return ActionOutcome.Fail("item-missing", "החפץ הזה אינו בתיק. הרימו אותו קודם.");
                 if (!accepts.Contains(itemId)) return ActionOutcome.Fail("not-fitting", "החפץ הזה לא שייך למתקן הזה.");
                 var item = scenario.Item(itemId)!;
                 var notices = new List<GameNotice>();
@@ -127,11 +133,11 @@ public sealed partial class GameEngine
                     if (solution[slot]!.GetValue<string>() != itemId)
                         return ActionOutcome.Fail("wrong-place", $"זה לא המקום של {item.Name}. הרימו אותו ונסו מקום אחר.");
                     notices.Add(new("item-placed", $"{player.Nickname} הניח את {item.Name} במקום הנכון", player.Id.ToString(), puzzle.Id, ItemId: itemId));
-                    Award(world, scenario, $"placement:{puzzle.Id}:{slot}", player, scenario.Scoring?.Placement ?? 0, "placement",
+                    Award(world, scenario, $"placement:{puzzle.Id}:{slot}", player, puzzle.Score?.Placement ?? scenario.Scoring?.Placement ?? 0, "placement",
                         $"{item.Name} הונח במקום הנכון", puzzle.Zone, puzzle.Id, now, notices);
                 }
                 else notices.Add(new("item-placed", $"{player.Nickname} הניח {item.Name}", player.Id.ToString(), puzzle.Id, ItemId: itemId));
-                world.Inventory.Remove(itemId);
+                if (!world.Inventory.Remove(itemId)) world.WorldItems.Remove(itemId);
                 mech.Slots[slot] = itemId;
                 mech.SlotBy[slot] = player.Id.ToString();
                 mech.Verdict.Remove(slot);
@@ -174,9 +180,9 @@ public sealed partial class GameEngine
                 mech.Verdict.Remove(slot);
                 mech.Ready = false;
                 mech.Backs.Clear();
-                world.Inventory.Add(itemId);
+                ReturnPiece(world, puzzle, itemId);
                 SaveWorld(room, world, now);
-                return ActionOutcome.Done($"{scenario.Item(itemId)?.Name} חזר לתיק");
+                return ActionOutcome.Done($"{scenario.Item(itemId)?.Name} {(FromRoom(puzzle) ? "חזר לשולחן" : "חזר לתיק")}");
             }
             case "activate":
             {
@@ -220,7 +226,7 @@ public sealed partial class GameEngine
                     if (back.Count == 0) return new ActionOutcome(true, "noop", "כל הפריטים שעל הכנים במקום הנכון.", [], false);
                     foreach (var id in back)
                     {
-                        world.Inventory.Add(mech.Slots[id]);
+                        ReturnPiece(world, puzzle, mech.Slots[id]);
                         mech.Slots.Remove(id);
                         mech.SlotBy.Remove(id);
                         mech.Verdict.Remove(id);
@@ -228,7 +234,7 @@ public sealed partial class GameEngine
                     SaveWorld(room, world, now);
                     return ActionOutcome.Done("הפריטים שלא במקומם חזרו לתיק");
                 }
-                foreach (var it in mech.Slots.Values) world.Inventory.Add(it);
+                foreach (var it in mech.Slots.Values) ReturnPiece(world, puzzle, it);
                 mech.Slots.Clear();
                 mech.SlotBy.Clear();
                 mech.Ready = false;
@@ -241,9 +247,21 @@ public sealed partial class GameEngine
         }
     }
 
+    private static bool FromRoom(PuzzleContent puzzle) => puzzle.PublicData["fromRoom"]?.GetValue<bool>() == true;
+
+    /// <summary>A piece taken off a mechanism goes back where it came from: the room's table, or the group's bag.</summary>
+    private static void ReturnPiece(WorldState world, PuzzleContent puzzle, string item)
+    {
+        if (FromRoom(puzzle)) { if (!world.WorldItems.Contains(item)) world.WorldItems.Add(item); }
+        else world.Inventory.Add(item);
+    }
+
     // ---- maze
 
     private static string[] MazeGrid(PuzzleContent puzzle) => puzzle.PublicData["grid"]!.AsArray().Select(n => n!.GetValue<string>()).ToArray();
+
+    /// <summary>How long the key stays with the player who moved it last (each step renews it; letting go ends it).</summary>
+    public static readonly TimeSpan MazeControlHold = TimeSpan.FromSeconds(1.2);
 
     private static readonly Dictionary<string, (int dr, int dc)> Steps = new() { ["N"] = (-1, 0), ["E"] = (0, 1), ["S"] = (1, 0), ["W"] = (0, -1) };
 
@@ -274,11 +292,32 @@ public sealed partial class GameEngine
             var label = puzzle.PublicData["levers"]![i]!["label"]!.GetValue<string>();
             return ActionOutcome.Done($"{label} {(mech.Levers[i] ? "הופעל — שער נפתח" : "הוחזר — שער נסגר")}");
         }
+        var pid = player.Id.ToString();
+        if (op == "release")
+        {
+            // the player let go of the controls: anyone may move the key at once
+            if (mech.Controller != pid) return new ActionOutcome(true, "noop", "", [], false);
+            mech.Controller = null;
+            mech.ControlUntil = null;
+            SaveWorld(room, world, now);
+            return new ActionOutcome(true, "released", "", [], true);
+        }
         if (op != "move") return ActionOutcome.Fail("bad-action", "פעולה לא מוכרת.");
         if (!Steps.TryGetValue(action.GetProperty("dir").GetString() ?? "", out var step)) return ActionOutcome.Fail("bad-action", "כיוון לא מוכר.");
+        // one hand on the magnet at a time: commands from another player wait until the current one lets go or pauses
+        if (mech.Controller is { } holder && holder != pid && mech.ControlUntil > now)
+        {
+            var name = FindPlayer(room, Guid.Parse(holder))?.Nickname ?? "שחקן אחר";
+            return new ActionOutcome(false, "maze-busy", $"{name} מזיז כרגע את המפתח — המתינו רגע ונסו שוב.", [], false);
+        }
+        mech.Controller = pid;
+        mech.ControlUntil = now + MazeControlHold;
         var (r, c) = (mech.Key[0] + step.dr, mech.Key[1] + step.dc);
         if (!MazeOpen(puzzle, mech, r, c))
-            return new ActionOutcome(false, "blocked", grid[r][c] == '#' ? "קיר — המפתח לא יכול לעבור." : "שער סגור חוסם את הדרך.", [], false);
+        {
+            SaveWorld(room, world, now);
+            return new ActionOutcome(false, "blocked", grid[r][c] == '#' ? "קיר — המפתח לא יכול לעבור." : "שער סגור חוסם את הדרך.", [], true);
+        }
         mech.Key = [r, c];
         var cell = grid[r][c].ToString();
         var order = puzzle.Solution["order"]!.AsArray().Select(n => n!.GetValue<string>()).ToList();
@@ -325,6 +364,91 @@ public sealed partial class GameEngine
         }
         SaveWorld(room, world, now);
         return new ActionOutcome(true, "moved", "", notices, true);
+    }
+
+    // ---- spinner: the giant dreidel of room 5
+
+    /// <summary>
+    /// Each "spin" turns the giant dreidel once; it stops on the next letter of the scenario's fixed sequence, the same for
+    /// every player. A new spin waits until it has stopped and the letter has been shown (showSeconds), so nobody races
+    /// through the sequence while the others watch. The last letter completes the puzzle.
+    /// </summary>
+    private ActionOutcome OperateSpinner(GameRoom room, ScenarioContent scenario, PuzzleContent puzzle, PuzzleState state,
+        PlayerSession player, WorldState world, MechanismState mech, string op, DateTime now)
+    {
+        if (op != "spin") return ActionOutcome.Fail("bad-action", "פעולה לא מוכרת.");
+        var sequence = puzzle.PublicData["sequence"]!.AsArray().Select(n => n!.GetValue<string>()).ToList();
+        if (mech.ControlUntil > now) return ActionOutcome.Fail("spinning", "הסביבון עדיין מסתובב — חכו שייעצר ותראו על איזו אות.");
+        var letter = sequence[Math.Min(mech.Progress, sequence.Count - 1)];
+        mech.Progress++;
+        mech.ControlUntil = now + TimeSpan.FromSeconds(puzzle.PublicData["showSeconds"]?.GetValue<double>() ?? 3);
+        Contribute(world, player.Id);
+        var notices = new List<GameNotice> { new("dreidel-spun", $"{player.Nickname} סובב את הסביבון הגדול — הוא נעצר על {letter}", player.Id.ToString(), puzzle.Id) };
+        if (mech.Progress >= sequence.Count)
+        {
+            state.Attempts++;
+            SaveWorld(room, world, now);
+            return Solve(room, scenario, puzzle, state, player, now, notices);
+        }
+        SaveWorld(room, world, now);
+        return new ActionOutcome(true, "spun", letter, notices, true);
+    }
+
+    // ---- inspect: objects examined one by one (the library's evidence, the glowing book)
+
+    /// <summary>
+    /// "inspect" examines an object (first time scores); an object that hides a symbol must then be turned until it
+    /// shows ("reveal"), which puts the symbol into the shared bag. The puzzle is solved once every object is examined
+    /// and every hidden symbol uncovered. Each step counts once per object, however often it is sent.
+    /// </summary>
+    private ActionOutcome OperateInspect(GameRoom room, ScenarioContent scenario, PuzzleContent puzzle, PuzzleState state,
+        PlayerSession player, WorldState world, MechanismState mech, string op, JsonElement action, DateTime now)
+    {
+        var targets = puzzle.PublicData["targets"]!.AsArray();
+        var id = action.GetProperty("target").GetString() ?? "";
+        var target = targets.FirstOrDefault(t => t!["id"]!.GetValue<string>() == id);
+        if (target == null) return ActionOutcome.Fail("bad-target", "החפץ הזה לא שייך לחידה.");
+        var label = target["label"]!.GetValue<string>();
+        var item = target["item"]?.GetValue<string>();
+        var notices = new List<GameNotice>();
+        switch (op)
+        {
+            case "inspect":
+                if (mech.Found.Contains(id)) return new ActionOutcome(true, "known", "", [], false);
+                mech.Found.Add(id);
+                Contribute(world, player.Id);
+                notices.Add(new("object-inspected", $"{player.Nickname} בדק את {label}", player.Id.ToString(), puzzle.Id));
+                // finding counts for objects that hide evidence; pulling the glowing book is the puzzle itself
+                if (item != null)
+                    Award(world, scenario, $"found:{puzzle.Id}:{id}", player, scenario.Scoring?.Found ?? 0, "found", $"נבדק: {label}", puzzle.Zone, puzzle.Id, now, notices);
+                break;
+            case "reveal":
+                if (item == null) return ActionOutcome.Fail("nothing-hidden", "בחפץ הזה אין סמל נסתר.");
+                if (!mech.Found.Contains(id)) return ActionOutcome.Fail("not-inspected", "בדקו קודם את החפץ מקרוב.");
+                if (mech.Symbols.Contains(id)) return new ActionOutcome(true, "known", "", [], false);
+                mech.Symbols.Add(id);
+                if (!world.Inventory.Contains(item)) world.Inventory.Add(item);
+                Contribute(world, player.Id);
+                var name = scenario.Item(item)?.Name ?? item;
+                notices.Add(new("symbol-found", $"{player.Nickname} גילה סמל נסתר — {name}", player.Id.ToString(), puzzle.Id, ItemId: item));
+                Award(world, scenario, $"symbol:{puzzle.Id}:{id}", player, scenario.Scoring?.Symbol ?? 0, "symbol", $"התגלה סמל נסתר: {name}", puzzle.Zone, puzzle.Id, now, notices);
+                break;
+            default:
+                return ActionOutcome.Fail("bad-action", "פעולה לא מוכרת.");
+        }
+        var done = targets.All(t =>
+        {
+            var tid = t!["id"]!.GetValue<string>();
+            return mech.Found.Contains(tid) && (t["item"] == null || mech.Symbols.Contains(tid));
+        });
+        if (done)
+        {
+            state.Attempts++;
+            SaveWorld(room, world, now);
+            return Solve(room, scenario, puzzle, state, player, now, notices);
+        }
+        SaveWorld(room, world, now);
+        return new ActionOutcome(true, op == "reveal" ? "revealed" : "inspected", "", notices, true);
     }
 
     // ---- mosaic
@@ -432,7 +556,7 @@ public sealed partial class GameEngine
                 if (!mech.Slots.TryGetValue(slot, out var itemId)) return ActionOutcome.Fail("slot-empty", "המקום הזה ריק.");
                 mech.Slots.Remove(slot);
                 mech.SlotBy.Remove(slot);
-                world.Inventory.Add(itemId);
+                ReturnPiece(world, puzzle, itemId);
                 Weigh();
                 SaveWorld(room, world, now);
                 return ActionOutcome.Done($"{scenario.Item(itemId)?.Name} חזר לתיק");
@@ -502,10 +626,10 @@ public sealed partial class GameEngine
         if (MechanismTypes.Contains(puzzle.Type) || puzzle.Type == "items")
         {
             notices.Add(new("mechanism", $"{player.Nickname} הפעיל את המנגנון בהצלחה!", pid, puzzle.Id));
-            Award(world, scenario, $"mechanism:{puzzle.Id}", player, rules.Mechanism, "mechanism", "המנגנון הופעל בהצלחה", puzzle.Zone, puzzle.Id, now, notices);
+            Award(world, scenario, $"mechanism:{puzzle.Id}", player, puzzle.Score?.Solve ?? rules.Mechanism, "mechanism", "המנגנון הופעל בהצלחה", puzzle.Zone, puzzle.Id, now, notices);
         }
         else
-            Award(world, scenario, $"answer:{puzzle.Id}", player, world.Questions.GetValueOrDefault(puzzle.Id)?.Points ?? rules.Answer,
+            Award(world, scenario, $"answer:{puzzle.Id}", player, world.Questions.GetValueOrDefault(puzzle.Id)?.Points ?? puzzle.Score?.Solve ?? rules.Answer,
                 "answer", "תשובה נכונה ראשונה", puzzle.Zone, puzzle.Id, now, notices);
 
         // each correctly placed part counts for the player who placed it (given only now, so it never reveals a right spot early)
@@ -514,10 +638,15 @@ public sealed partial class GameEngine
             {
                 var placer = FindPlayer(room, Guid.Parse(by));
                 if (placer != null)
-                    Award(world, scenario, $"placement:{puzzle.Id}:{slot}", placer, rules.Placement, "placement", "פריט הונח במקום הנכון", puzzle.Zone, puzzle.Id, now, notices);
+                    Award(world, scenario, $"placement:{puzzle.Id}:{slot}", placer, puzzle.Score?.Placement ?? rules.Placement, "placement", "פריט הונח במקום הנכון", puzzle.Zone, puzzle.Id, now, notices);
             }
 
         notices.Add(new("team-solved", "הקבוצה פתרה את החידה!", PuzzleId: puzzle.Id));
+
+        // solved without a single hint: a group bonus, once per puzzle (its key keeps it from ever counting twice)
+        if (rules.NoHint > 0 && !puzzle.Bonus && !rules.NoHintSkipZones.Contains(puzzle.Zone)
+            && room.Puzzles.FirstOrDefault(s => s.PuzzleId == puzzle.Id)?.HintsRevealed == 0)
+            Award(world, scenario, $"nohint:{puzzle.Id}", null, rules.NoHint, "nohint", $"„{puzzle.Title}” נפתרה בלי רמז", puzzle.Zone, puzzle.Id, now, notices);
 
         // the room is complete when all its puzzles are solved (a bonus puzzle is not needed): group points minus the hints used in it
         var zonePuzzles = scenario.Puzzles.Where(p => p.Zone == puzzle.Zone).ToList();

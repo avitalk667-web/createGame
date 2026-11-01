@@ -30,6 +30,10 @@ public sealed class ScenarioContent
     public Dictionary<string, string> ZoneDifficulty { get; init; } = new();
     /// <summary>Scoring values. When null the scenario has no scoring (the original game).</summary>
     public ScoringRules? Scoring { get; init; }
+    /// <summary>Secret personal tasks: in each listed room every player gets one of them, shown to that player only.</summary>
+    public List<PersonalTaskContent> PersonalTasks { get; init; } = new();
+    /// <summary>Personal titles given at the end of the game to the players with the most verified events of a kind.</summary>
+    public List<PersonalTitleContent> Titles { get; init; } = new();
     /// <summary>Length of this scenario's opening scene; null = the server default.</summary>
     public int? IntroSeconds { get; init; }
 
@@ -39,6 +43,16 @@ public sealed class ScenarioContent
     public ItemContent? Item(string id) => Items.FirstOrDefault(i => i.Id == id);
 }
 
+/// <summary>A secret personal task: what the player is asked to find, and what they read when they find it.</summary>
+public sealed record PersonalTaskContent(string Id, string Zone, string Text, string Found);
+
+/// <summary>
+/// An end-of-game personal title. Rule: "discoveries" (objects, hidden symbols, clues and items found), "puzzles" (puzzles the
+/// player helped solve), "mechanisms" (meaningful mechanism steps: a solve, a correct placement, a maze stage) or "hintless"
+/// (puzzles the player helped solve with no hint revealed).
+/// </summary>
+public sealed record PersonalTitleContent(string Id, string Title, string Description, string Icon, string Rule);
+
 public sealed record ZoneContent(string Id, string Name, int Order, string Icon, string EntryLine, string? Story = null);
 
 public sealed record ItemContent(string Id, string Name, string Description, string Zone, bool SpawnedAtStart);
@@ -47,8 +61,11 @@ public sealed record RecipeContent(List<string> Inputs, string Output, string Me
 
 public sealed record AchievementContent(string Id, string Title, string Description);
 
-/// <summary>A clue; reading it first may reveal an item hidden in the room (e.g. a drawer that opens).</summary>
-public sealed record ClueContent(string Id, string Zone, string Title, string Text, string? RevealsItem = null);
+/// <summary>
+/// A clue; reading it first may reveal an item hidden in the room (e.g. a drawer that opens). With RequiresPuzzle it can be
+/// read only once that puzzle is solved (the workshop scroll appears with the engraved blueprint).
+/// </summary>
+public sealed record ClueContent(string Id, string Zone, string Title, string Text, string? RevealsItem = null, string? RequiresPuzzle = null);
 
 /// <summary>All score values in one place (spec Part G §18), so they can be changed without touching the puzzles.</summary>
 public sealed class ScoringRules
@@ -63,7 +80,25 @@ public sealed class ScoringRules
     public int Stage { get; init; } = 5;
     public Dictionary<string, int> Room { get; init; } = new() { ["easy"] = 100, ["medium"] = 150, ["hard"] = 250 };
     public int HintPenalty { get; init; } = 10;
+    /// <summary>First inspection of an object that hides evidence (the library's four objects).</summary>
+    public int Found { get; init; } = 10;
+    /// <summary>
+    /// Group bonus for a puzzle solved without any hint, once per puzzle (0 = none: the default, so other scenarios are
+    /// unchanged). Rooms listed in NoHintSkipZones keep their scoring exactly as it was.
+    /// </summary>
+    /// <summary>A secret personal task completed (personal, once per player and task).</summary>
+    public int Task { get; init; }
+    public int NoHint { get; init; }
+    public List<string> NoHintSkipZones { get; init; } = new();
+    /// <summary>A hidden symbol uncovered while inspecting an object.</summary>
+    public int Symbol { get; init; } = 15;
 }
+
+/// <summary>
+/// A puzzle's own points, over the scenario's general values: what solving it gives the solver, and what each correct
+/// placement gives (0 = none). Absent values keep the general rules, so existing puzzles score exactly as before.
+/// </summary>
+public sealed record PuzzleScore(int? Solve = null, int? Placement = null);
 
 public sealed record PersonalClue(int Index, string Title, string Text, string Visual, int Value);
 
@@ -89,6 +124,8 @@ public sealed class PuzzleContent
     public required string Failure { get; init; }
     public string? RewardLetter { get; init; }
     public string? RewardItem { get; init; }
+    /// <summary>Solving lays this item out in the room (the clue box opens on the scroll), to be picked up — not a trophy.</summary>
+    public string? RevealsItem { get; init; }
     public string? UnlocksZone { get; init; }
     /// <summary>Stays locked until this puzzle (in the same room) is solved.</summary>
     public string? RequiresPuzzle { get; init; }
@@ -97,6 +134,7 @@ public sealed class PuzzleContent
     /// of the game (the scales beside the mosaic).
     /// </summary>
     public bool Bonus { get; init; }
+    public PuzzleScore? Score { get; init; }
 }
 
 /// <summary>Loads game scenarios from the content folder. Content is kept separate from code (spec §13).</summary>
@@ -140,17 +178,32 @@ public sealed class ScenarioCatalog
     {
         foreach (var c in s.Clues)
             if (s.Zones.All(z => z.Id != c.Zone)) throw new InvalidDataException($"clue {c.Id}: unknown zone {c.Zone}");
+        foreach (var c in s.Clues.Where(c => c.RequiresPuzzle != null))
+            if (s.Puzzles.All(p => p.Id != c.RequiresPuzzle)) throw new InvalidDataException($"clue {c.Id}: unknown puzzle {c.RequiresPuzzle}");
         if (s.Scoring != null)
             foreach (var z in s.Zones)
                 if (!s.ZoneDifficulty.TryGetValue(z.Id, out var d) || !s.Scoring.Room.ContainsKey(d))
                     throw new InvalidDataException($"{s.Id}: zone {z.Id} has no scored difficulty");
         if (s.Puzzles.Count == 0) throw new InvalidDataException($"{s.Id}: no puzzles");
+        foreach (var t in s.PersonalTasks)
+            if (s.Zones.All(z => z.Id != t.Zone)) throw new InvalidDataException($"task {t.Id}: unknown zone {t.Zone}");
+        if (s.PersonalTasks.Select(t => t.Id).Distinct().Count() != s.PersonalTasks.Count) throw new InvalidDataException($"{s.Id}: duplicate task id");
+        foreach (var t in s.Titles)
+            if (!Game.GameEngine.TitleRules.Contains(t.Rule)) throw new InvalidDataException($"title {t.Id}: unknown rule {t.Rule}");
         foreach (var p in s.Puzzles)
         {
             if (p.Hints.Count is < 1 or > 3) throw new InvalidDataException($"{p.Id}: expected 1–3 hint levels");
             if (p.RequiresPuzzle != null && s.Puzzles.All(x => x.Id != p.RequiresPuzzle)) throw new InvalidDataException($"{p.Id}: unknown required puzzle");
             if (s.Zones.All(z => z.Id != p.Zone)) throw new InvalidDataException($"{p.Id}: unknown zone {p.Zone}");
             if (p.RewardItem != null && s.Item(p.RewardItem) == null) throw new InvalidDataException($"{p.Id}: unknown item");
+            if (p.RevealsItem != null && s.Item(p.RevealsItem) == null) throw new InvalidDataException($"{p.Id}: unknown revealed item");
+            if (p.Type == "inspect")
+            {
+                if (p.PublicData["targets"] is not System.Text.Json.Nodes.JsonArray { Count: > 0 } targets)
+                    throw new InvalidDataException($"{p.Id}: an inspection needs targets");
+                foreach (var t in targets)
+                    if (t!["item"]?.GetValue<string>() is { } item && s.Item(item) == null) throw new InvalidDataException($"{p.Id}: unknown item {item}");
+            }
             if (p.Bonus && (p.UnlocksZone != null || s.Puzzles.Any(x => x.RequiresPuzzle == p.Id)))
                 throw new InvalidDataException($"{p.Id}: a bonus puzzle may not open a room or be required by another puzzle");
             if (p.PersonalKey.Count > 0 && p.PublicData["message"] is System.Text.Json.Nodes.JsonArray msg)

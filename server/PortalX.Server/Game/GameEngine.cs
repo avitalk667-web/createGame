@@ -548,8 +548,9 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
         }
         if (puzzle.UnlocksZone != null)
         {
-            // what belongs only to a bonus puzzle of this room stays in the room
-            var bonusItems = scenario.Puzzles.Where(p => p.Bonus && p.Zone == puzzle.Zone)
+            // what belongs only to a bonus puzzle of this room stays in the room, and so do the pieces of a table that takes
+            // them from the room (the bottles that were not the answer stay by the scales instead of filling the bag)
+            var bonusItems = scenario.Puzzles.Where(p => p.Zone == puzzle.Zone && (p.Bonus || p.PublicData["fromRoom"]?.GetValue<bool>() == true))
                 .SelectMany(p => p.PublicData["accepts"]?.AsArray().Select(n => n!.GetValue<string>()) ?? []).ToHashSet();
             foreach (var left in scenario.Items.Where(i => i.Zone == puzzle.Zone && world.WorldItems.Contains(i.Id) && !bonusItems.Contains(i.Id)).ToList())
             {
@@ -562,6 +563,13 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
         {
             new("puzzle-solved", $"{player.Nickname} פתר את „{puzzle.Title}”! {puzzle.Success}", player.Id.ToString(), puzzle.Id, VoiceLine: $"{puzzle.Id}_success"),
         };
+        // a hiding place opens: its item waits in the room for anyone to pick up
+        if (puzzle.RevealsItem is { } shown && !world.WorldItems.Contains(shown) && !world.Inventory.Contains(shown)
+            && !world.Mechanisms.Values.Any(m => m.Slots.ContainsValue(shown)))
+        {
+            world.WorldItems.Add(shown);
+            notices.Add(new("item-revealed", $"נפתח מקום מסתור — {scenario.Item(shown)?.Name ?? shown} מחכה בחדר", player.Id.ToString(), puzzle.Id, Zone: puzzle.Zone, ItemId: shown));
+        }
         if (puzzle.RewardLetter != null)
             notices.Add(new("letter", $"קיבלתם אות זהב: {puzzle.RewardLetter}", PuzzleId: puzzle.Id, Zone: puzzle.Zone));
         if (collected.Count > 0)
@@ -619,6 +627,49 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
         if (!ignoreCooldown && state.CooldownUntil is { } until && until > now)
             return ActionOutcome.Fail("cooldown", $"המנגנון נעול עוד {Math.Ceiling((until - now).TotalSeconds)} שניות.");
         return null;
+    }
+
+    /// <summary>
+    /// A game that started before puzzles were added to its scenario has no state for them. They are filled in here,
+    /// quietly: a new puzzle that leads to one the group already reached counts as behind them (solved, without points,
+    /// rewards or opened rooms), so nothing the group has — rooms, bag, score — changes; one still ahead of the group
+    /// starts locked or open exactly as in a new game. Lobby rooms are skipped: starting a game sets every puzzle.
+    /// </summary>
+    public void FillMissingPuzzles(GameRoom room)
+    {
+        if (room.Phase == RoomPhase.Lobby) return;
+        var scenario = catalog.Find(room.ScenarioId);
+        if (scenario == null || scenario.Puzzles.All(p => room.Puzzles.Any(s => s.PuzzleId == p.Id))) return;
+        var unlocked = UnlockedZones(room, scenario);
+
+        bool Reached(PuzzleContent p) => scenario.Puzzles.Where(q => q.RequiresPuzzle == p.Id).Any(q =>
+            room.Puzzles.FirstOrDefault(s => s.PuzzleId == q.Id) is { } qs ? qs.Status != PuzzleStatus.Locked : Reached(q));
+
+        // in chain order, so a puzzle that needs another new one sees that one's state
+        var missing = scenario.Puzzles.Where(p => room.Puzzles.All(s => s.PuzzleId != p.Id)).ToList();
+        var ahead = new List<PuzzleContent>();
+        while (missing.Count > 0)
+        {
+            var p = missing.FirstOrDefault(x => x.RequiresPuzzle == null || missing.All(m => m.Id != x.RequiresPuzzle)) ?? missing[0];
+            missing.Remove(p);
+            PuzzleStatus status;
+            if (room.Phase == RoomPhase.Completed || Reached(p)) status = PuzzleStatus.Solved;
+            else if (p.RequiresPuzzle != null)
+                status = room.Puzzles.FirstOrDefault(s => s.PuzzleId == p.RequiresPuzzle)?.Status == PuzzleStatus.Solved ? PuzzleStatus.Active : PuzzleStatus.Locked;
+            else status = unlocked.Contains(p.Zone) ? PuzzleStatus.Active : PuzzleStatus.Locked;
+            room.Puzzles.Add(new PuzzleState { RoomId = room.Id, PuzzleId = p.Id, Status = status, SolvedAt = status == PuzzleStatus.Solved ? room.StartedAt : null });
+            if (status != PuzzleStatus.Solved) ahead.Add(p);
+        }
+
+        // the pieces a puzzle still ahead of the group needs were not in the room when the game started: they are laid out now
+        var world = World(room);
+        var pieces = ahead.SelectMany(p => p.PublicData["accepts"]?.AsArray().Select(n => n!.GetValue<string>()) ?? [])
+            .Where(id => scenario.Item(id)?.SpawnedAtStart == true && !world.WorldItems.Contains(id) && !world.Inventory.Contains(id)
+                && !world.Mechanisms.Values.Any(m => m.Slots.ContainsValue(id)))
+            .Distinct().ToList();
+        if (pieces.Count == 0) return;
+        world.WorldItems.AddRange(pieces);
+        SaveWorld(room, world, DateTime.UtcNow);
     }
 
     private void ResetProgress(GameRoom room, ScenarioContent scenario)

@@ -14,12 +14,14 @@ import { LeaveDialogComponent } from '../ui/leave-dialog.component';
 import { RoomOverlaysComponent } from '../ui/room-overlays.component';
 import { H_INTERACTABLES, H_ZONES, HInteractable, HPanel, HZone, useLayout } from './h-layout';
 import { HPanelComponent, ITEM_EMOJI } from './h-panel.component';
+import { MazePadComponent } from './maze-pad.component';
 import { HResultComponent } from './h-result.component';
 import { HanukkahWorld } from './h-world';
 
 interface Toast { id: number; text: string; kind: string }
 
 const PUZZLE_PANEL: Record<string, HPanel> = {
+  'h1-board': 'board', 'h1-book': 'book', 'h2-wicks': 'wicks', 'h2-test': 'lamptest', 'h2-blueprint': 'blueprint', 'h4-sequence': 'sequence', 'h4-mirror': 'mirror', 'h5-spin': 'spin', 'h5-memory': 'memory', 'h5-corners': 'corners', 'h6-shelf': 'shelf', 'h6-scales': 'oilscale',
   'h1-riddle': 'riddle', 'h2-lamp': 'lamp', 'h3-maze': 'maze', 'h3-box': 'box', 'h4-wheel': 'wheel', 'h5-stand': 'stand',
   'g1-cabinet': 'cabinet',
   'h5-lock': 'lock', 'h6-jugs': 'jugs', 'h7-mosaic': 'mosaic', 'h8-pedestals': 'pedestals', 'h8-final': 'final',
@@ -55,7 +57,7 @@ function pickupSound(item: string): Sfx {
 
 @Component({
   selector: 'px-h-play',
-  imports: [RouterLink, ChatComponent, JoystickComponent, SettingsPanelComponent, HPanelComponent, HResultComponent, RoomOverlaysComponent, LeaveDialogComponent],
+  imports: [RouterLink, ChatComponent, JoystickComponent, SettingsPanelComponent, HPanelComponent, HResultComponent, RoomOverlaysComponent, LeaveDialogComponent, MazePadComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="stage">
@@ -127,6 +129,13 @@ function pickupSound(item: string): Sfx {
               </li>
             }
           </ul>
+          @if (myTask(); as t) {
+            <div class="mytask" [class.done]="t.done" aria-label="המשימה האישית הסודית שלכם">
+              <b>🎯 משימה אישית סודית</b>
+              <span>{{ t.done ? (t.found || 'הושלמה') : t.text }}</span>
+              <small>{{ t.done ? '✓ הושלמה — 20 נקודות אישיות' : 'רק אתם רואים אותה · 20 נקודות אישיות' }}</small>
+            </div>
+          }
           <p class="players-line">
             @for (pl of game.snapshot()!.players; track pl.id) { <span [class.off]="!pl.isConnected">● {{ pl.nickname }}</span> }
           </p>
@@ -141,7 +150,7 @@ function pickupSound(item: string): Sfx {
             <button class="btn small" (click)="exitBench()">↩ חזרה לחדר</button>
           </div>
         } @else {
-        <section #benchEl class="bench card" role="region" [attr.aria-label]="focusPuzzle()?.title" [class.min]="benchMin()" [class.moved]="!!benchPos()"
+        <section #benchEl class="bench card" role="region" [attr.aria-label]="focusPuzzle()?.title" [class.maze]="f === 'h3-maze'" [class.min]="benchMin()" [class.moved]="!!benchPos()"
           [style.left.px]="benchPos()?.x" [style.top.px]="benchPos()?.y"
           (pointerdown)="$event.stopPropagation()" (pointermove)="$event.stopPropagation()" (pointerup)="$event.stopPropagation()" (wheel)="$event.stopPropagation()">
           <header class="b-drag" (pointerdown)="benchDragStart($event, benchEl)" title="גררו כדי להזיז את החלונית">
@@ -160,12 +169,15 @@ function pickupSound(item: string): Sfx {
           @if (focusState()?.status === 'solved') {
             <p class="b-ok">{{ FOCUS_DONE[f] }}</p>
           } @else {
+            @if (f === 'h3-maze') {
+              <p class="muted small">סמלים שהמפתח עבר לפי הסדר: {{ game.snapshot()?.mechanisms?.['h3-maze']?.progress ?? 0 }} מתוך 3</p>
+              <px-maze-pad (blocked)="world?.shakeMazeKey()" />
+            }
             <p class="b-ins">{{ FOCUS_HELP[f] || focusPuzzle()?.instructions }}</p>
             @if (f !== 'h3-maze' && !benchHasParts()) { <p class="muted small">{{ EMPTY_LABEL[f] }}</p> }
             @if (f === 'h7-scales' && scaleNotes().length) {
               <ul class="b-notes" aria-label="החריטות שמצאתם">@for (n of scaleNotes(); track n) { <li>📜 {{ n }}</li> }</ul>
             }
-            @if (f === 'h3-maze') { <p class="muted small">סמלים שהמפתח עבר לפי הסדר: {{ game.snapshot()?.mechanisms?.['h3-maze']?.progress ?? 0 }} מתוך 3</p> }
             @if (benchMsg(); as m) { <p class="b-msg" [class.bad]="!m.ok" role="status">{{ m.text }}</p> }
             @for (h of focusState()?.hints ?? []; track $index) { <p class="b-hint">💡 {{ h }}</p> }
             <div class="b-actions">
@@ -259,7 +271,7 @@ function pickupSound(item: string): Sfx {
       @for (t of toasts(); track t.id) { <div class="toast" [class]="t.kind">{{ t.text }}</div> }
     </div>
 
-    @if (panel(); as p) { <px-h-panel [panel]="p.id" [ref]="p.ref" (close)="closePanel()" (wheelChange)="world?.setWheel($event)" /> }
+    @if (panel(); as p) { <px-h-panel [panel]="p.id" [ref]="p.ref" (close)="closePanel()" (wheelChange)="world?.setWheel($event)" (testLamp)="world?.setTestLamp($event)" /> }
     @if (showSettings()) { <px-settings (close)="showSettings.set(false)" /> }
 
     @if (phase() === 'completed') {
@@ -294,6 +306,12 @@ function pickupSound(item: string): Sfx {
     .b-exit { align-self:flex-start; }
     .bench-closed { position:fixed; z-index:20; bottom:84px; left:50%; transform:translateX(-50%); display:flex; gap:.4rem; }
     @media (max-height: 560px) { .b-body { max-height:30vh; } .bench { bottom:6px; } }
+    /* the maze on a phone held sideways: the panel stands at the side, tall enough for the whole control pad, beside the board */
+    @media (max-height: 560px) and (orientation: landscape) {
+      .bench.maze:not(.moved) { inset-inline-start:auto; inset-inline-end:8px; margin:0; top:48px; bottom:6px; width:min(320px, 42vw); padding:.45rem .6rem; }
+      .bench.maze .b-body { gap:.2rem; }
+      .bench.maze .b-body { max-height:none; flex:1; }
+    }
     .b-ins { margin:0; line-height:1.6; } .b-msg { margin:0; color:#9be3b4; } .b-msg.bad { color:#ffb4a3; } .b-ok { margin:0; color:#9be3b4; font-size:1.1rem; }
     .b-hint { margin:0; color:#cfe2ff; }
     .b-notes { margin:0; padding:0; list-style:none; display:grid; gap:.2rem; color:#f3e2b8; font-size:.92rem; } .b-actions { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; }
@@ -329,6 +347,9 @@ function pickupSound(item: string): Sfx {
     .obj-head { all: unset; cursor:pointer; display:flex; justify-content:space-between; width:100%; color: var(--gold-2); }
     .objectives ul { list-style:none; padding:0; margin:.5rem 0; display:flex; flex-direction:column; gap:.35rem; font-size:.92rem; }
     .objectives li { display:flex; gap:.45rem; align-items:center; } .objectives li.done { color: var(--muted); text-decoration: line-through; } .objectives li.locked { opacity:.55; }
+    .mytask { display:flex; flex-direction:column; gap:.15rem; margin:.3rem 0 .4rem; padding:.45rem .6rem; border-radius:10px; font-size:.86rem;
+      background: rgba(224,185,92,.1); border:1px dashed var(--gold); }
+    .mytask b { color: var(--gold-2); } .mytask small { color: var(--muted); } .mytask.done { border-style:solid; border-color: var(--ok); background: rgba(63,191,106,.1); }
     .box { width:18px; height:18px; border:1px solid var(--gold); border-radius:4px; display:grid; place-items:center; flex-shrink:0; color: var(--ok); font-size:.75rem; }
     /* the task to do now: a soft gold-and-blue frame; right after a task is done the box glows and the next task blinks gently three times */
     .objectives li.current { border:1px solid rgba(246,215,141,.8); border-radius:8px; padding:.2rem .4rem; background: rgba(224,185,92,.1); box-shadow: 0 0 10px rgba(110,160,255,.35); }
@@ -414,6 +435,9 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
 
   loading = signal(true);
   zone = signal<HZone>('library');
+  /** This player's secret task in the current room (read from the server for them alone). */
+  myTask = signal<{ id: string; text: string; done: boolean; found?: string | null } | null>(null);
+  private taskZone: string | null = null;
   isSample = computed(() => this.game.snapshot()?.scenarioId === 'gate-of-secrets');
   zoneCount = computed(() => this.game.scenario()?.zones.length ?? 8);
   texts = computed(() => this.isSample()
@@ -473,7 +497,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     'g1-symbols': 'גררו את ארבעת הסמלים אל ארבעת המקומות הממוספרים, לפי ההוראה שעל המפה. כשסיימתם — לחצו „בדוק סידור”.',
     'g2-gears': 'גררו כל גלגל שיניים אל הציר המתאים לפי האיור שעל הקיר, ואז לחצו על הידית האדומה (או על „הפעלת הידית”).',
     'h7-scales': 'גררו כל חפץ אל אחת מכפות המאזניים — או הקישו על חפץ ואחר כך על מקום פנוי בכף. אפשר להעביר חפץ בין הכפות או להחזיר אותו לשולחן. היעזרו בשלוש החריטות שעל הקיר, וכשכל החפצים על המאזניים — לחצו „בדיקת האיזון”.',
-    'h3-maze': 'גררו את המפתח על הלוח לאורך המסלול — הוא לא עובר דרך קירות. לחצו על ידית כדי להזיז אותה ולפתוח או לסגור שער. התיבה שבצד נפתחת בקוד שיתגלה ביציאה.',
+    'h3-maze': 'הזיזו את המפתח בעזרת לוח החיצים — הוא לא עובר דרך קירות. לחצו על ידית כדי להזיז אותה ולפתוח או לסגור שער. התיבה שבצד נפתחת בקוד שיתגלה ביציאה.',
   };
   readonly FOCUS_DONE: Record<string, string> = {
     'h2-lamp': 'המנורה הורכבה ונדלקה! מאחורי לוח הקיר נחשף המפתח.',
@@ -534,6 +558,19 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
 
   constructor() {
     this.ticker = setInterval(() => this.tick.update((t) => t + 1), 500);
+
+    // the secret personal task: read again whenever the group enters another room (or the connection comes back)
+    effect(() => {
+      const s = this.game.snapshot();
+      const key = s?.phase === 'playing' && this.game.connection() === 'connected' ? s.activeZone : null;
+      untracked(() => {
+        if (!key) return this.myTask.set(null);
+        if (key !== this.taskZone) {
+          this.taskZone = key;
+          void this.refreshTask();
+        }
+      });
+    });
 
     effect(() => {
       const s = this.game.snapshot();
@@ -645,6 +682,8 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     this.zone.set(H_ZONES[0]);
     this.ngZone.runOutsideAngular(() => {
       this.world!.build(this.game.scenario());
+      // the secret task may have arrived before the room was built
+      this.world!.setMyTask(this.myTask()?.id ?? null, !!this.myTask()?.done);
       this.world!.start();
     });
     this.loading.set(false);
@@ -779,6 +818,14 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
       case 'item-collected':
         // the player who acted already heard it; items that join the bag with a solve sound with the celebration
         this.toast(n.message, n.kind);
+        break;
+      case 'symbol-found':
+        // a hidden symbol joins the group's evidence
+        if (mine) this.audio.cue('find', 30);
+        this.systemLine(n.message, 'clue');
+        break;
+      case 'object-inspected':
+        if (!mine) this.toast(n.message, 'info');
         break;
       case 'maze-symbol':
         this.audio.sfx('letter');
@@ -931,6 +978,9 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
         }
         return;
       }
+      case 'task':
+        await this.completeTask(def.ref!);
+        return;
       case 'decor':
         this.audio.sfx(def.id === 'big-dreidel' ? 'spin' : 'select');
         this.note.set({ title: def.label, text: def.text ?? '' });
@@ -946,9 +996,39 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
         else if (def.panel === 'gears') this.openBench('g2-gears');
         else if (def.panel === 'cabinet') this.openBox('g1-cabinet', 'cabinet');
         else if (def.panel === 'scales') this.openScales();
+        else if (def.panel === 'book') this.pullBook();
         else this.panel.set({ id: def.panel!, ref: def.ref });
         return;
     }
+  }
+
+  /** Reads this player's secret task for the current room; its hidden mark then shows in the room for them alone. */
+  async refreshTask() {
+    const r = await this.game.getPersonalTask();
+    const d = r.ok ? r.data : null;
+    const task = d?.id ? { id: d.id, text: d.text ?? '', done: !!d.done, found: d.found } : null;
+    this.myTask.set(task);
+    this.world?.setMyTask(task?.id ?? null, !!task?.done);
+  }
+
+  /** The player found their task's mark: the server checks it is their own task and gives the points once. */
+  async completeTask(taskId: string) {
+    const r = await this.game.completeTask(taskId);
+    if (!r.ok) {
+      this.toast(r.message, 'info');
+      return;
+    }
+    // a private message: only this player learns what they found
+    this.audio.cue('find', 30);
+    this.toast(`🎯 ${r.message}`, 'clue');
+    await this.refreshTask();
+  }
+
+  /** Pulling the glowing book (the server checks that the board is solved; the bookcase then swings open for everyone). */
+  async pullBook() {
+    const r = await this.game.operate('h1-book', { op: 'inspect', target: 'glow-book' });
+    if (!r.ok) this.toast(r.message, 'info');
+    else this.audio.sfx('drawer');
   }
 
   interactNearest() {
@@ -969,6 +1049,12 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
       .find((x) => s?.puzzles.find((y) => y.id === x.id)?.status === 'active');
     if (p && ['h2-lamp', 'h5-stand', 'g1-map', 'g1-symbols', 'g2-gears', 'h7-scales'].includes(p.id)) this.openBench(p.id);
     else if (p?.id === 'h3-maze') this.openMaze();
+    else if (p?.id === 'h1-evidence') {
+      // the first object whose symbol is still hidden
+      const ev = s?.mechanisms?.['h1-evidence'];
+      const t = (p.publicData?.targets ?? []).find((x: { id: string }) => !ev?.symbols?.includes(x.id));
+      this.panel.set({ id: 'evidence', ref: t?.id ?? 'book' });
+    }
     else if (p && PUZZLE_PANEL[p.id]) this.panel.set({ id: PUZZLE_PANEL[p.id] });
     else this.toast('אין בחדר הזה חידה פתוחה.', 'info');
   }

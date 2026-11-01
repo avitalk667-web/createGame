@@ -646,7 +646,7 @@ export class HanukkahWorld {
   private hemi = new THREE.HemisphereLight('#a8b4e6', '#4a3620', 1.35);
   private ambient = new THREE.AmbientLight('#b0b6d0', 0.45);
   private libraryModel = false;
-  private drawerBurst = false;
+
   private resizeObs: ResizeObserver;
   private mode: HMode = 'intro';
   private modeTime = 0;
@@ -753,6 +753,56 @@ export class HanukkahWorld {
   private mazeOrigin = new THREE.Vector3();
   private metalBoxLid?: THREE.Object3D;
   private drawerFront?: THREE.Object3D;
+  // the library's evidence chain: halos on the four objects, the guards' board, the beam, the secret bookcase and its drawer
+  private evidenceHalos = new Map<string, THREE.Sprite>();
+  private evBoard?: THREE.Group;
+  private evSockets = new Map<string, THREE.Mesh>();
+  private evBeam?: THREE.Mesh;
+  private glowBook?: THREE.Mesh;
+  private secretCase?: THREE.Object3D;
+  private hiddenDrawer?: THREE.Object3D;
+  private hiddenDrawerBurst = false;
+  // the workshop's preparation: wicks standing in their vessels, the test lamps and their shadows, the engraved plate
+  private vesselWicks = new Map<string, THREE.Object3D>();
+  private wickTableGlow?: THREE.Sprite;
+  private testLamps?: THREE.Group;
+  private testFlames: THREE.Sprite[] = [];
+  private testShadows: THREE.Mesh[] = [];
+  private testBeam?: THREE.Mesh;
+  private plateEngraving?: THREE.Mesh;
+  /** The test lamp this player lit in the light-test window (local; the solved third lamp stays lit for everyone). */
+  private testLit: number | null = null;
+  // the cipher room's preparation: the number board, the clue box, the mirror and its stand
+  private gematriaBoard?: THREE.Object3D;
+  private seriesBoard?: THREE.Mesh;
+  private seriesSolvedMap?: THREE.Texture;
+  private clueBoxLid?: THREE.Object3D;
+  private standScroll?: THREE.Object3D;
+  private mirrorText?: THREE.Mesh;
+  // the dreidel room's preparation: the giant dreidel's spins, the letter it shows, the memory and corner boards, the cards
+  private bigDreidel?: THREE.Object3D;
+  private dreidelLetter?: THREE.Sprite;
+  private dreidelSpin = { seen: -1, until: 0, letter: '' };
+  private hintCards: THREE.Object3D[] = [];
+  private memoryBoard?: THREE.Mesh;
+  private memorySolvedMap?: THREE.Texture;
+  private cornersBoard?: THREE.Group;
+  private spinSequence: string[] = [];
+  // the oil lab's preparation: the jar shelf and its bench, the scales with their counterweight and the bottle on the pan
+  private labScaleBar?: THREE.Object3D;
+  private labPans: THREE.Object3D[] = [];
+  private labTilt: number | null = null;
+  private bottleOnPan?: THREE.Group;
+  private shelfHolders = new Map<string, THREE.Group>();
+  private labModels = new Map<string, () => THREE.Object3D>();
+  // the player's own secret task: its id, whether it is done, and the small marks (one per task, only the own one shown)
+  private myTask: string | null = null;
+  private myTaskDone = false;
+  private taskMarks = new Map<string, THREE.Object3D>();
+  /** Objects that open without the key turning in a lock first (a bookcase swings, a book is pulled). */
+  private plainOpen = new Set<THREE.Object3D>();
+  /** Puzzle statuses from the last state, for objects that appear only once their puzzle is open. */
+  private puzzleStatus = new Map<string, string>();
   private wheelRings: THREE.Object3D[] = [];
   private woodBoxLid?: THREE.Object3D;
   private jugGlow?: THREE.Mesh;
@@ -812,8 +862,8 @@ export class HanukkahWorld {
     H_ZONES.forEach((z, i) => this.buildShell(z, i));
     // only the rooms of the game being played
     const rooms: Partial<Record<HZone, () => void>> = {
-      library: () => this.buildLibrary(), workshop: () => this.buildWorkshop(), maze: () => this.buildMaze(scenario),
-      cipher: () => this.buildCipher(), dreidels: () => this.buildDreidels(), lab: () => this.buildLab(scenario),
+      library: () => this.buildLibrary(scenario), workshop: () => this.buildWorkshop(scenario), maze: () => this.buildMaze(scenario),
+      cipher: () => this.buildCipher(scenario), dreidels: () => this.buildDreidels(scenario), lab: () => this.buildLab(scenario),
       mosaic: () => this.buildMosaic(scenario), hall: () => this.buildHall(),
       maproom: () => this.buildMapRoom(), gearworks: () => this.buildGearworks(),
     };
@@ -824,6 +874,7 @@ export class HanukkahWorld {
       m.userData['def'] = def;
       this.scene.add(m);
       this.hitTargets.set(def.id, m);
+      if (def.kind === 'task') this.taskMarks.set(def.ref!, this.taskMark(hWorldPos(def)));
     }
     // brighter but still mysterious: a soft sky/ground fill, no near-black corners (spec 10)
     this.scene.add(this.hemi, this.ambient);
@@ -1148,13 +1199,14 @@ export class HanukkahWorld {
 
   // ---------------------------------------------------------------------- 1 · library
 
-  private buildLibrary() {
+  private buildLibrary(scenario: ScenarioContent | null) {
     const c = hCenter('library');
     // the folded letter
     const letter = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.3), this.std('#ffffff', { map: parchmentTexture() }));
     letter.rotation.x = -Math.PI / 2;
     letter.rotation.z = 0.25;
-    letter.position.set(-1.2, 1.01, c - 1.2);
+    // it waits on the hidden cabinet behind the secret bookcase (found at the end of the evidence chain)
+    letter.position.set(7.72, 1.315, c + 3.5);
     this.scene.add(letter);
     this.halo(letter, '#fff1c0', 0.6).position.z = 0.1;
     // the locked drawer's mechanism: it slides open when the riddle is solved (the model's drawer rides on it)
@@ -1184,11 +1236,163 @@ export class HanukkahWorld {
     rug.rotation.x = -Math.PI / 2;
     rug.position.set(0, 0.012, c + 1.8);
     this.scene.add(rug);
-    // the antique key lies in the drawer; it shows when the drawer slides open (it also goes straight to the bag)
-    const key = this.keyMesh('#c9a060', 0.5);
-    key.position.set(0, 0.12, 0);
-    this.drawerFront.add(key);
+    this.buildLibraryEvidence(c, scenario);
     this.loadLibraryModel(c);
+  }
+
+  /**
+   * The evidence chain before the riddle (built in code, the model stays as it is): an hourglass on the chest and a
+   * sealed scroll on the sideboard join the lectern's book and the desk lamp; a board with four places and the guards'
+   * inscriptions on the left wall; a beam from the board to a glowing book in a secret bookcase on the right wall, which
+   * swings open on a cabinet whose drawer holds the antique key.
+   */
+  private buildLibraryEvidence(c: number, scenario: ScenarioContent | null) {
+    const brass = this.std('#b8873a', { metalness: 0.8, roughness: 0.35 });
+    const hg = new THREE.Group();
+    for (const y of [0, 0.36]) {
+      const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.03, 20), this.wood('#4a2c14'));
+      plate.position.y = y;
+      hg.add(plate);
+    }
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2;
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.36, 6), brass);
+      post.position.set(Math.cos(a) * 0.11, 0.18, Math.sin(a) * 0.11);
+      hg.add(post);
+    }
+    const glass = new THREE.MeshStandardMaterial({ color: '#dfefff', transparent: true, opacity: 0.35, roughness: 0.05 });
+    const bulbTop = new THREE.Mesh(new THREE.ConeGeometry(0.085, 0.16, 20, 1, true), glass);
+    bulbTop.position.y = 0.26;
+    bulbTop.rotation.x = Math.PI;
+    const bulbBottom = new THREE.Mesh(new THREE.ConeGeometry(0.085, 0.16, 20, 1, true), glass);
+    bulbBottom.position.y = 0.1;
+    const sand = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.08, 16), this.std('#d9b36a'));
+    sand.position.y = 0.06;
+    hg.add(bulbTop, bulbBottom, sand);
+    hg.position.set(-7.05, 0.65, c + 0.95);
+    const scroll = new THREE.Group();
+    const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.36, 18), this.std('#e8d6a8', { map: parchmentTexture() }));
+    roll.rotation.z = Math.PI / 2;
+    const ribbon = new THREE.Mesh(new THREE.TorusGeometry(0.052, 0.008, 6, 20), this.std('#8a1c1c'));
+    ribbon.rotation.y = Math.PI / 2;
+    const seal = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.012, 16), this.std('#a3201f', { roughness: 0.5 }));
+    seal.rotation.x = Math.PI / 2;
+    seal.position.z = 0.055;
+    scroll.add(roll, ribbon, seal);
+    scroll.position.set(4.0, 1.155, c - 6.4);
+    this.scene.add(hg, scroll);
+    // a soft glow on each object until its hidden symbol is found
+    const spots: [string, number, number, number][] = [['book', 5.6, 1.35, 3.6], ['hourglass', -7.05, 1.0, 0.95], ['lamp', 1.79, 1.25, -1.6], ['scroll', 4.0, 1.3, -6.4]];
+    for (const [id, x, y, z] of spots) {
+      const o = new THREE.Object3D();
+      o.position.set(x, y, c + z);
+      this.scene.add(o);
+      const h = this.halo(o, '#ffe6a0', 0.75);
+      h.visible = false;
+      this.evidenceHalos.set(id, h);
+    }
+
+    // the guards' board on the left wall, facing into the room: places 1–4 run from the viewer's left to right
+    const board = new THREE.Group();
+    board.position.set(-7.86, 0, c + 3.2);
+    board.rotation.y = Math.PI / 2;
+    this.box(2.3, 1.0, 0.06, this.wood('#3a2212'), 0, 1.7, 0, board);
+    this.box(2.42, 0.08, 0.1, brass, 0, 2.22, 0.02, board);
+    this.box(2.42, 0.08, 0.1, brass, 0, 1.18, 0.02, board);
+    for (let i = 0; i < 4; i++) {
+      const x = -0.84 + i * 0.56;
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.022, 8, 28), brass);
+      ring.position.set(x, 1.75, 0.05);
+      const icon = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.3), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }));
+      icon.position.set(x, 1.75, 0.07);
+      icon.visible = false;
+      const num = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.13), new THREE.MeshBasicMaterial({
+        map: labelTexture(String(i + 1), { color: '#ffe6a0', width: 128, height: 64 }), transparent: true, depthWrite: false,
+      }));
+      num.position.set(x, 1.36, 0.05);
+      board.add(ring, icon, num);
+      this.evSockets.set(`p${i + 1}`, icon);
+    }
+    const plaque = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 1.05), this.std('#ffffff', { map: inscriptionsTexture(scenario?.puzzles.find((p) => p.id === 'h1-board')?.publicData?.['inscriptions'] ?? []), roughness: 0.9 }));
+    plaque.position.set(0, 2.9, 0.02);
+    board.add(plaque);
+    board.visible = false;
+    this.scene.add(board);
+    this.evBoard = board;
+
+    // the secret bookcase on the right wall, hinged at its far edge; it swings into the room when the book is pulled
+    const pivot = new THREE.Group();
+    pivot.position.set(7.42, 0, c + 4.0);
+    const bc = new THREE.Group();
+    bc.position.set(-0.22, 0, -0.8);
+    pivot.add(bc);
+    const dark = this.wood('#3e2412');
+    for (const z of [-0.77, 0.77]) this.box(0.44, 3.0, 0.06, dark, 0, 1.5, z, bc);
+    for (const y of [0.03, 2.97]) this.box(0.44, 0.06, 1.6, dark, 0, y, 0, bc);
+    this.box(0.04, 3.0, 1.6, dark, 0.2, 1.5, 0, bc);
+    const shelves = [0.06, 0.66, 1.21, 1.81, 2.41];
+    for (const y of shelves.slice(1)) this.box(0.4, 0.04, 1.5, dark, 0, y, 0, bc);
+    const colors = ['#5a1d1d', '#1d3a5a', '#2c4a22', '#6a4a1a', '#3a1d4a', '#4a2c14', '#7a2a1a'];
+    const books: { x: number; y: number; z: number; w: number; h: number }[] = [];
+    shelves.slice(0, 4).forEach((base, si) => {
+      let z = -0.72;
+      while (z < 0.7) {
+        const w = 0.05 + Math.random() * 0.04;
+        const h = 0.3 + Math.random() * 0.18;
+        // a gap on the second shelf for the glowing book
+        if (!(si === 2 && Math.abs(z + w / 2 - 0.1) < 0.08)) books.push({ x: -0.02, y: base + (si === 0 ? 0 : 0.02) + h / 2, z: z + w / 2, w, h });
+        z += w + 0.005;
+      }
+    });
+    const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), this.std('#ffffff', { roughness: 0.8 }), books.length);
+    const mtx = new THREE.Matrix4();
+    books.forEach((b, i) => {
+      mtx.compose(new THREE.Vector3(b.x, b.y, b.z), new THREE.Quaternion(), new THREE.Vector3(0.3, b.h, b.w));
+      inst.setMatrixAt(i, mtx);
+      inst.setColorAt(i, new THREE.Color(colors[i % colors.length]));
+    });
+    bc.add(inst);
+    this.glowBook = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.44, 0.08), this.std('#7a5a1a', { emissive: '#ffb347', emissiveIntensity: 0, metalness: 0.3 }));
+    this.glowBook.position.set(-0.04, 1.45, 0.1);
+    bc.add(this.glowBook);
+    this.openTargets.set(this.glowBook, { axis: 'x', kind: 'pos', from: -0.04, to: -0.2, on: false });
+    this.openTargets.set(pivot, { axis: 'y', kind: 'rot', from: 0, to: 1.4, on: false });
+    this.plainOpen.add(this.glowBook).add(pivot);
+    this.scene.add(pivot);
+    this.secretCase = pivot;
+
+    // the beam from the board to the glowing book
+    const from = new THREE.Vector3(-7.75, 1.75, c + 3.2);
+    const to = new THREE.Vector3(7.0, 1.45, c + 3.3);
+    const len = from.distanceTo(to);
+    this.evBeam = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, len, 10, 1, true),
+      new THREE.MeshBasicMaterial({ color: '#ffe9a8', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+    this.evBeam.position.copy(from).lerp(to, 0.5);
+    this.evBeam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize());
+    this.evBeam.visible = false;
+    this.scene.add(this.evBeam);
+
+    // the hidden cabinet against the wall and its drawer with the antique key
+    this.box(0.45, 1.3, 1.2, this.wood('#4a2c14'), 7.73, 0.65, c + 3.2);
+    const drawer = new THREE.Group();
+    drawer.position.set(7.48, 0.85, c + 3.2);
+    this.box(0.04, 0.22, 0.62, this.wood('#5e3a1e'), 0, 0, 0, drawer);
+    this.box(0.4, 0.1, 0.56, this.wood('#5e3a1e'), 0.2, -0.04, 0, drawer);
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.025, 10, 8), brass);
+    knob.position.set(-0.03, 0, 0);
+    drawer.add(knob);
+    const key = this.keyMesh('#c9a060', 0.5);
+    key.rotation.x = -Math.PI / 2;
+    key.position.set(0.18, 0.02, -0.08);
+    drawer.add(key);
+    this.scene.add(drawer);
+    this.openTargets.set(drawer, { axis: 'x', kind: 'pos', from: 7.48, to: 7.1, on: false });
+    this.hiddenDrawer = drawer;
+    this.animated.push((t) => {
+      if (this.glowBook && this.puzzleStatus.get('h1-book') === 'active')
+        (this.glowBook.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.9 + Math.sin(t * 4) * 0.4;
+      if (this.evBeam?.visible) (this.evBeam.material as THREE.MeshBasicMaterial).opacity = 0.32 + Math.sin(t * 3) * 0.08;
+    });
   }
 
   /**
@@ -1567,7 +1771,7 @@ export class HanukkahWorld {
     this.asm.set(puzzle, { def, pads, parts, slots: {}, flash: -10 });
   }
 
-  private buildWorkshop() {
+  private buildWorkshop(scenario: ScenarioContent | null) {
     const c = hCenter('workshop');
     this.desk(c, 5.2, 1.6, -1.4, '#6a4a2a');
     // five separate assembly zones on the bench (1 = the bottom of the lamp); parts are dragged onto them
@@ -1638,6 +1842,174 @@ export class HanukkahWorld {
       this.addItem(id, m);
     }
     this.addLight(0, 2.4, c - 2.5, '#ffb46a', 4, 7);
+    this.buildWorkshopPrep(c, scenario);
+  }
+
+  /**
+   * Before the lamp is assembled: a table with four oil vessels (each marked) and four wicks lying beside them, with the
+   * illustrated scroll; three small test lamps by the right wall whose shadows fall on it; above them a metal plate whose
+   * engraved blueprint shows once the third lamp's light reaches it.
+   */
+  private buildWorkshopPrep(c: number, scenario: ScenarioContent | null) {
+    const data = scenario?.puzzles.find((p) => p.id === 'h2-wicks')?.publicData ?? {};
+    const slots: { id: string; mark: string; size: number }[] = data.slots ?? [];
+    const clay = this.std('#a5602e', { roughness: 0.6 });
+    // the wick table
+    this.box(2.4, 0.06, 1.0, this.wood('#5a3a20'), -4.5, 1.0, c + 2.0);
+    for (const [dx, dz] of [[-1.1, -0.42], [1.1, -0.42], [-1.1, 0.42], [1.1, 0.42]]) this.box(0.07, 1.0, 0.07, this.std('#3a2414'), -4.5 + dx, 0.5, c + 2.0 + dz);
+    const wickLen: Record<string, number> = { 'w-short': 0.12, 'w-medium': 0.2, 'w-long': 0.3, 'w-star': 0.2 };
+    const wickMesh = (id: string, standing: boolean) => {
+      const g = new THREE.Group();
+      const len = wickLen[id] ?? 0.2;
+      const w = new THREE.Mesh(new THREE.CylinderGeometry(id === 'w-star' ? 0.016 : 0.01, id === 'w-star' ? 0.016 : 0.01, len, 8), this.std(id === 'w-star' ? '#e8d6a8' : '#f2ecd8'));
+      if (!standing) w.rotation.z = Math.PI / 2;
+      w.position.y = standing ? len / 2 : 0.012;
+      g.add(w);
+      if (id === 'w-star') {
+        const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.03, 0), this.gold());
+        star.position.set(standing ? 0 : len / 2 + 0.02, standing ? len + 0.02 : 0.02, 0);
+        g.add(star);
+      }
+      return g;
+    };
+    slots.forEach((s, i) => {
+      const x = -5.4 + i * 0.6;
+      const r = 0.07 + s.size * 0.035;
+      const vessel = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.75, r, 0.08 + s.size * 0.05, 18), clay);
+      vessel.position.set(x, 1.03 + (0.08 + s.size * 0.05) / 2, c + 2.2);
+      const mark = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.11), new THREE.MeshBasicMaterial({
+        map: labelTexture(s.mark, { color: '#ffe6a0', bg: 'rgba(40,24,10,0.85)', width: 128, height: 64 }), transparent: true, depthWrite: false,
+      }));
+      mark.position.set(x, 1.03 + 0.12 + s.size * 0.05 + 0.08, c + 2.2);
+      const sw = new THREE.Group();   // holds the wick placed in this vessel
+      sw.position.set(x, 1.03 + 0.08 + s.size * 0.05 - 0.02, c + 2.2);
+      sw.userData['wickModel'] = wickMesh;
+      this.scene.add(vessel, mark, sw);
+      this.vesselWicks.set(s.id, sw);
+    });
+    ['w-short', 'w-medium', 'w-long', 'w-star'].forEach((id, i) => {
+      const m = wickMesh(id, false);
+      m.position.set(-5.3 + i * 0.55, 1.03, c + 1.72);
+      this.addItem(id, m, false);
+    });
+    const scroll = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.42), this.std('#ffffff', { map: wickScrollTexture(data.scroll ?? []), roughness: 0.9 }));
+    scroll.rotation.x = -Math.PI / 2;
+    scroll.position.set(-3.85, 1.035, c + 2.25);
+    this.scene.add(scroll);
+    const tableGlow = new THREE.Object3D();
+    tableGlow.position.set(-4.5, 1.4, c + 2.0);
+    this.scene.add(tableGlow);
+    this.wickTableGlow = this.halo(tableGlow, '#ffd27a', 2.6);
+    this.wickTableGlow.visible = false;
+
+    // the test table by the right wall and its three small lamps (they appear once the wicks are matched)
+    const tg = new THREE.Group();
+    this.box(0.6, 0.06, 1.6, this.wood('#5a3a20'), 5.6, 1.0, c + 4.2, tg);
+    for (const dz of [-0.7, 0.7]) this.box(0.07, 1.0, 0.07, this.std('#3a2414'), 5.6, 0.5, c + 4.2 + dz, tg);
+    const wallX = H_HALF_W - 0.06;
+    [3.7, 4.2, 4.7].forEach((z, i) => {
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 10), clay);
+      body.scale.set(1, 0.45, 0.75);
+      body.position.set(5.6, 1.08, c + z);
+      const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.028, 0.1, 10), clay);
+      spout.rotation.z = Math.PI / 2;
+      spout.position.set(5.72, 1.09, c + z);
+      const n = new THREE.Mesh(new THREE.PlaneGeometry(0.14, 0.08), new THREE.MeshBasicMaterial({
+        map: labelTexture(String(i + 1), { color: '#ffe6a0', bg: 'rgba(40,24,10,0.85)', width: 128, height: 64 }), transparent: true, depthWrite: false,
+      }));
+      n.position.set(5.6, 1.2, c + z);
+      n.rotation.y = -Math.PI / 2;
+      const flame = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowSpriteTexture('#ffb84d'), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+      flame.scale.set(0.16, 0.22, 1);
+      flame.position.set(5.79, 1.14, c + z);
+      flame.visible = false;
+      tg.add(body, spout, n, flame);
+      this.testFlames.push(flame);
+      const shadow = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.62), new THREE.MeshBasicMaterial({
+        map: flameShadowTexture((['distorted', 'partial', 'full'] as const)[i]), transparent: true, depthWrite: false,
+      }));
+      shadow.position.set(wallX, 1.75, c + z);
+      shadow.rotation.y = -Math.PI / 2;
+      shadow.visible = false;
+      this.scene.add(shadow);
+      this.testShadows.push(shadow);
+    });
+    tg.visible = false;
+    this.scene.add(tg);
+    this.testLamps = tg;
+
+    // the metal plate and its engraving, lit by the third lamp
+    this.box(0.05, 0.95, 1.45, this.std('#6f6a62', { metalness: 0.85, roughness: 0.35 }), wallX + 0.02, 2.6, c + 4.2);
+    this.plateEngraving = new THREE.Mesh(new THREE.PlaneGeometry(1.36, 0.88), new THREE.MeshBasicMaterial({
+      map: blueprintTexture(), transparent: true, opacity: 0, depthWrite: false,
+    }));
+    this.plateEngraving.position.set(wallX - 0.01, 2.6, c + 4.2);
+    this.plateEngraving.rotation.y = -Math.PI / 2;
+    this.scene.add(this.plateEngraving);
+    const from = new THREE.Vector3(5.8, 1.16, c + 4.7);
+    const to = new THREE.Vector3(wallX, 2.6, c + 4.2);
+    this.testBeam = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.3, from.distanceTo(to), 16, 1, true), new THREE.MeshBasicMaterial({
+      color: '#ffd98a', transparent: true, opacity: 0.28, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    }));
+    this.testBeam.position.copy(from).lerp(to, 0.5);
+    this.testBeam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize());
+    this.testBeam.visible = false;
+    this.scene.add(this.testBeam);
+    this.animated.push((t) => {
+      if (this.plateEngraving) {
+        const m = this.plateEngraving.material as THREE.MeshBasicMaterial;
+        m.opacity = THREE.MathUtils.lerp(m.opacity, this.puzzleStatus.get('h2-test') === 'solved' ? 1 : 0, 0.03);
+      }
+      for (const f of this.testFlames) if (f.visible) f.scale.y = 0.22 + Math.sin(t * 9 + f.position.z) * 0.02;
+    });
+  }
+
+  /** A small, faint golden mark — hidden until it is this player's own task. */
+  private taskMark(at: [number, number, number]) {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glyphTexture('✦', '#ffd36b', 128), transparent: true, depthWrite: false, opacity: 0.85 }));
+    s.scale.set(0.2, 0.2, 1);
+    s.position.set(...at);
+    s.visible = false;
+    this.scene.add(s);
+    this.halo(s, '#ffe6a0', 2.2);
+    this.animated.push((t) => s.visible && (s.material.opacity = 0.55 + Math.sin(t * 3) * 0.3));
+    return s;
+  }
+
+  /** The player's secret task (from the server, for them alone): its mark shows in the room until it is found. */
+  setMyTask(id: string | null, done: boolean) {
+    this.myTask = id;
+    this.myTaskDone = done;
+    for (const [task, mark] of this.taskMarks) mark.visible = task === id && !done;
+  }
+
+  /** The light-test window lit a lamp (or none): its flame and the shadow it casts show for this player. */
+  setTestLamp(index: number | null) {
+    this.testLit = index;
+    this.applyTestLamps();
+  }
+
+  private applyTestLamps() {
+    const solved = this.puzzleStatus.get('h2-test') === 'solved';
+    this.testFlames.forEach((f, i) => (f.visible = this.testLit === i || (solved && i === 2)));
+    this.testShadows.forEach((s, i) => (s.visible = this.testLit === i || (solved && i === 2)));
+    if (this.testBeam) this.testBeam.visible = solved;
+  }
+
+  /** The workshop's preparation as the server reports it. */
+  private applyWorkshopPrep(s: RoomSnapshot) {
+    const slots = s.mechanisms?.['h2-wicks']?.slots ?? {};
+    for (const [slot, holder] of this.vesselWicks) {
+      const item = slots[slot];
+      if (holder.userData['item'] !== item) {
+        holder.clear();
+        if (item) holder.add((holder.userData['wickModel'] as (id: string, standing: boolean) => THREE.Object3D)(item, true));
+        holder.userData['item'] = item;
+      }
+    }
+    if (this.wickTableGlow) this.wickTableGlow.visible = this.puzzleStatus.get('h2-wicks') === 'solved';
+    if (this.testLamps) this.testLamps.visible = (this.puzzleStatus.get('h2-test') ?? 'locked') !== 'locked';
+    this.applyTestLamps();
   }
 
   // ---------------------------------------------------------------------- 3 · magnetic maze
@@ -1739,7 +2111,7 @@ export class HanukkahWorld {
     this.addLight(0, 2.6, c - 1, '#9ab8ff', 5, 8);
     // short instructions next to the mechanism, and the code plate of the collection compartment
     const leverHint = this.label('לחצו על ידית כדי להזיז אותה', 1.3, 0.26, 3.75, 1.6, c - 0.55, -0.7, { bg: '#2a2016', color: '#ffd36b' });
-    const keyHint = this.label('גררו את המפתח על הלוח לאורך המסלול', 2.0, 0.3, 0, 1.5, c - 2.4, 0, { bg: '#2a2016', color: '#ffd36b' });
+    const keyHint = this.label('הזיזו את המפתח בעזרת לוח החיצים', 2.0, 0.3, 0, 1.5, c - 2.4, 0, { bg: '#2a2016', color: '#ffd36b' });
     this.mazeHints.push(leverHint, keyHint);
     this.mazeCodePlate = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.32), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 }));
     this.mazeCodePlate.position.set(this.mazeOrigin.x + (cols - 1) * MAZE_CELL + 0.45, 1.3, this.mazeOrigin.z + 5 * MAZE_CELL);
@@ -1749,7 +2121,7 @@ export class HanukkahWorld {
 
   // ---------------------------------------------------------------------- 4 · cipher room
 
-  private buildCipher() {
+  private buildCipher(scenario: ScenarioContent | null) {
     const c = hCenter('cipher');
     this.desk(c, 6.0, 1.8, -1.1);
     // three number tablets on the back wall: 1 — 6 — 200, read from left to right
@@ -1764,6 +2136,7 @@ export class HanukkahWorld {
     const gb = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.9), this.std('#ffffff', { map: sheetTexture(rows, { title: 'לוח ערכי גימטריה', w: 640, h: 480, size: 34 }) }));
     gb.rotation.y = Math.PI / 2;
     gb.position.set(-H_HALF_W + 0.06, 2.2, c - 1.5);
+    this.gematriaBoard = gb;   // revealed by the mirror's message
     this.scene.add(gb);
     // the letter wheel: a large mechanism on the desk — three engraved gilded rings on one axle between carved posts,
     // with a dark wooden base, gold rims between the rings and a blue light under it
@@ -1831,11 +2204,83 @@ export class HanukkahWorld {
     this.scene.add(blue);
     this.halo(blue, '#8fc4ff', 1.4);
     this.shelfWall(H_HALF_W - 0.3, c, -1.0, -Math.PI / 2, 21);
+    this.buildCipherPrep(c, scenario);
+  }
+
+  /**
+   * Before the letter wheel: a board with the series 2, 4, 8, 16, ? right of the door and a clue box under it that opens
+   * on a scroll written backwards; an old mirror by the left wall with a stand before it, where the scroll reads true.
+   */
+  private buildCipherPrep(c: number, scenario: ScenarioContent | null) {
+    const nums: number[] = scenario?.puzzles.find((p) => p.id === 'h4-sequence')?.publicData?.numbers ?? [2, 4, 8, 16];
+    const message: string = scenario?.puzzles.find((p) => p.id === 'h4-mirror')?.publicData?.message ?? '';
+    const wallZ = c - H_HALF_D + 0.06;
+    const line = (last: string) => seriesTexture([...nums.map(String), last]);
+    this.seriesBoard = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.9), this.std('#ffffff', { map: line('?'), emissive: '#0a1430' }));
+    this.seriesBoard.position.set(4.2, 2.5, wallZ);
+    this.scene.add(this.seriesBoard);
+    this.seriesSolvedMap = line(String(nums[nums.length - 1] * 2));
+    // the clue box under it: its lid swings open once the series is complete
+    this.box(0.8, 0.36, 0.5, this.wood('#4a2c16'), 4.2, 0.18, c - 6.15);
+    const hinge = new THREE.Group();
+    hinge.position.set(4.2, 0.36, c - 6.4);
+    this.box(0.82, 0.06, 0.52, this.wood('#5e3a1e'), 0, 0.03, 0.25, hinge);
+    this.scene.add(hinge);
+    this.openTargets.set(hinge, { axis: 'x', kind: 'rot', from: 0, to: -1.7, on: false });
+    this.clueBoxLid = hinge;
+    const scroll = new THREE.Group();
+    const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.34, 16), this.std('#e8d6a8', { map: parchmentTexture() }));
+    roll.rotation.z = Math.PI / 2;
+    scroll.add(roll);
+    scroll.position.set(4.2, 0.45, c - 6.1);
+    this.addItem('mirror-scroll', scroll);
+
+    // the old mirror by the left wall and the stand before it
+    const mx = -H_HALF_W + 0.35;
+    this.box(0.1, 2.0, 1.15, this.wood('#3a2212'), mx, 1.45, c + 2.5);
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 1.75), this.std('#c8d4dc', { metalness: 0.95, roughness: 0.08, emissive: '#1a2028' }));
+    glass.rotation.y = Math.PI / 2;
+    glass.position.set(mx + 0.06, 1.45, c + 2.5);
+    this.scene.add(glass);
+    this.mirrorText = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.6), new THREE.MeshBasicMaterial({ map: messageTexture(message, false), transparent: true, opacity: 0, depthWrite: false }));
+    this.mirrorText.rotation.y = Math.PI / 2;
+    this.mirrorText.position.set(mx + 0.07, 1.55, c + 2.5);
+    this.scene.add(this.mirrorText);
+    this.box(0.45, 0.95, 0.45, this.wood('#4a2c16'), -6.35, 0.475, c + 2.5);
+    this.box(0.55, 0.05, 0.5, this.wood('#5e3a1e'), -6.35, 0.97, c + 2.5).rotation.z = -0.35;
+    // the scroll laid on the stand, open, its writing backwards (what the mirror turns around)
+    const open = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.36), this.std('#ffffff', { map: messageTexture(message, true), roughness: 0.9 }));
+    open.rotation.set(-Math.PI / 2, 0, Math.PI / 2);
+    open.rotateX(-0.35);
+    open.position.set(-6.35, 1.02, c + 2.5);
+    open.visible = false;
+    this.scene.add(open);
+    this.standScroll = open;
+    this.animated.push(() => {
+      if (!this.mirrorText) return;
+      const m = this.mirrorText.material as THREE.MeshBasicMaterial;
+      m.opacity = THREE.MathUtils.lerp(m.opacity, this.puzzleStatus.get('h4-mirror') === 'solved' ? 1 : 0, 0.04);
+    });
+  }
+
+  /** The cipher room's preparation as the server reports it. */
+  private applyCipherPrep(s: RoomSnapshot) {
+    const solved = (id: string) => this.puzzleStatus.get(id) === 'solved';
+    if (this.seriesBoard && solved('h4-sequence') && this.seriesSolvedMap) {
+      const m = this.seriesBoard.material as THREE.MeshStandardMaterial;
+      if (m.map !== this.seriesSolvedMap) {
+        m.map = this.seriesSolvedMap;
+        m.needsUpdate = true;
+      }
+    }
+    this.setOpen(this.clueBoxLid, solved('h4-sequence'));
+    if (this.standScroll) this.standScroll.visible = !!s.mechanisms?.['h4-mirror']?.slots?.['mirror'] || solved('h4-mirror');
+    if (this.gematriaBoard) this.gematriaBoard.visible = (this.puzzleStatus.get('h4-wheel') ?? 'locked') !== 'locked';
   }
 
   // ---------------------------------------------------------------------- 5 · dreidels
 
-  private buildDreidels() {
+  private buildDreidels(scenario: ScenarioContent | null) {
     const c = hCenter('dreidels');
     // the giant golden dreidel on a rotating base
     const base = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.1, 0.5, 32), this.wood('#4a2c16'));
@@ -1853,7 +2298,7 @@ export class HanukkahWorld {
     big.add(cube, tip, handle);
     big.position.set(0, 0.0, c - 3.4);
     this.scene.add(big);
-    this.animated.push((t) => (big.rotation.y = t * 0.35));
+    this.bigDreidel = big;   // turned by the spinner puzzle (buildDreidelPrep)
     this.addLight(0, 3.2, c - 2.4, '#ffcf80', 7, 8);
     // the table with the dreidel stand: a large gilded 2×2 board, softly lit, and four hint cards beside it
     this.box(3.6, 0.08, 1.9, this.wood(), 2.8, 0.95, c - 1.2);
@@ -1871,6 +2316,7 @@ export class HanukkahWorld {
       const card = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.24), this.std('#ffffff', { map: parchmentTexture() }));
       card.rotation.x = -Math.PI / 2;
       card.position.set(x, 1.0, c + z);
+      this.hintCards.push(card);   // they appear with the right corner
       this.scene.add(card);
     }
     // wooden box with a numeric lock
@@ -1911,6 +2357,91 @@ export class HanukkahWorld {
       m.position.set(x, y, c + z);
       this.addItem(id, m);
     }
+    this.buildDreidelPrep(c, scenario);
+  }
+
+  /**
+   * Before the stand: the giant dreidel spins when a player turns it and stops showing the sequence's next letter to the
+   * front (the same letter for everyone, from the server's count), the letter floating above it while it is shown; a
+   * memory board on the right wall and a board of four corners on the back wall; the hint cards appear with the corner.
+   */
+  private buildDreidelPrep(c: number, scenario: ScenarioContent | null) {
+    const spin = scenario?.puzzles.find((p) => p.id === 'h5-spin')?.publicData ?? {};
+    const seq: string[] = spin.sequence ?? [];
+    this.spinSequence = seq;
+    const corners: { id: string; letter: string }[] = scenario?.puzzles.find((p) => p.id === 'h5-corners')?.publicData?.corners ?? [];
+    // the face of the cube that shows each letter to the front (+z): נ on +x, ג on −x, ה on +z, פ on −z
+    const faceAngle: Record<string, number> = { 'נ': -Math.PI / 2, 'ג': Math.PI / 2, 'ה': 0, 'פ': Math.PI };
+    this.dreidelLetter = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false }));
+    this.dreidelLetter.scale.set(0.9, 0.9, 1);
+    this.dreidelLetter.position.set(0, 3.2, c - 3.4);
+    this.dreidelLetter.visible = false;
+    this.scene.add(this.dreidelLetter);
+    this.animated.push((t, dt) => {
+      const big = this.bigDreidel;
+      if (!big) return;
+      const s = this.dreidelSpin;
+      const now = performance.now();
+      if (now < s.until - 1200) big.rotation.y += dt * 14;               // spinning fast
+      else if (s.letter && now < s.until) {
+        // settling on the letter, facing the players
+        let goal = faceAngle[s.letter] ?? 0;
+        while (goal - big.rotation.y > Math.PI) goal -= Math.PI * 2;
+        while (big.rotation.y - goal > Math.PI) goal += Math.PI * 2;
+        big.rotation.y = THREE.MathUtils.lerp(big.rotation.y, goal, Math.min(1, dt * 6));
+      } else big.rotation.y += dt * 0.35;                                 // idle, as before
+      if (this.dreidelLetter) this.dreidelLetter.visible = !!s.letter && now > s.until - 1000 && now < s.until;
+    });
+
+    // the memory board on the right wall
+    const wx = H_HALF_W - 0.06;
+    this.memoryBoard = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 1.0), this.std('#ffffff', { map: lettersBoardTexture('לוח הזיכרון', ['?', '?', '?', '?']), emissive: '#14100a' }));
+    this.memoryBoard.rotation.y = -Math.PI / 2;
+    this.memoryBoard.position.set(wx, 2.0, c + 2.0);
+    this.memoryBoard.visible = false;
+    this.scene.add(this.memoryBoard);
+    this.memorySolvedMap = lettersBoardTexture('לוח הזיכרון', seq);
+    // the board of four corners on the back wall, left of the door
+    const cb = new THREE.Group();
+    cb.position.set(-4.0, 2.1, c - H_HALF_D + 0.06);
+    const plate = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.4), this.std('#ffffff', { map: cornersTexture(corners), emissive: '#14100a' }));
+    cb.add(plate);
+    cb.visible = false;
+    this.scene.add(cb);
+    this.cornersBoard = cb;
+  }
+
+  /** The dreidel room's preparation as the server reports it; a new spin seen live turns the dreidel for everyone. */
+  private applyDreidelPrep(s: RoomSnapshot, live: boolean) {
+    const status = (id: string) => this.puzzleStatus.get(id) ?? 'locked';
+    const m = s.mechanisms?.['h5-spin'];
+    const seq = this.spinSequence;
+    const progress = m?.progress ?? 0;
+    if (progress !== this.dreidelSpin.seen) {
+      const letter = progress > 0 ? seq[progress - 1] ?? '' : '';
+      // the server's stop time, on this browser's clock
+      const offset = s.serverNow ? Date.parse(s.serverNow) - Date.now() : 0;
+      const until = m?.controlUntil ? performance.now() + (Date.parse(m.controlUntil) - offset - Date.now()) : 0;
+      if (live && progress > this.dreidelSpin.seen && this.dreidelSpin.seen >= 0 && letter && this.dreidelLetter) {
+        const mat = this.dreidelLetter.material as THREE.SpriteMaterial;
+        mat.map?.dispose();
+        mat.map = glyphTexture(letter, '#ffd36b', 256, 'Frank Ruhl Libre, serif');
+        mat.needsUpdate = true;
+        this.dreidelSpin = { seen: progress, until: Math.max(until, performance.now() + 2500), letter };
+      } else this.dreidelSpin = { seen: progress, until: 0, letter: '' };
+    }
+    if (this.memoryBoard) {
+      this.memoryBoard.visible = status('h5-memory') !== 'locked';
+      if (status('h5-memory') === 'solved' && this.memorySolvedMap) {
+        const mat = this.memoryBoard.material as THREE.MeshStandardMaterial;
+        if (mat.map !== this.memorySolvedMap) {
+          mat.map = this.memorySolvedMap;
+          mat.needsUpdate = true;
+        }
+      }
+    }
+    if (this.cornersBoard) this.cornersBoard.visible = status('h5-corners') !== 'locked';
+    for (const card of this.hintCards) card.visible = status('h5-stand') !== 'locked';
   }
 
   // ---------------------------------------------------------------------- 6 · oil lab
@@ -1940,13 +2471,15 @@ export class HanukkahWorld {
     this.scene.add(this.jugGlow);
     // scales, test tubes, shelves, book, lab lamp
     const scaleBar = this.box(0.9, 0.04, 0.04, this.gold(), -4.4, 1.6, c - 3.0);
+    this.labScaleBar = scaleBar;
     this.box(0.04, 0.7, 0.04, this.gold(), -4.4, 1.25, c - 3.0);
     for (const sx of [-1, 1]) {
       const pan = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.12, 0.04, 16), this.gold());
       pan.position.set(-4.4 + sx * 0.4, 1.35, c - 3.0);
+      this.labPans.push(pan);   // [left, right]: the counterweight, then the pan for a bottle
       this.scene.add(pan);
     }
-    this.animated.push((t) => (scaleBar.rotation.z = Math.sin(t * 0.8) * 0.04));
+    this.animated.push((t, dt) => this.updateLabScale(t, dt));
     this.box(1.0, 0.9, 0.7, this.std('#5a5660', { map: stoneTexture([1, 1]) }), -4.4, 0.45, c - 3.0);
     this.box(1.2, 0.9, 0.7, this.std('#5a5660', { map: stoneTexture([1, 1]) }), 4.4, 0.45, c - 3.0);
     for (let k = 0; k < 5; k++) {
@@ -1965,6 +2498,119 @@ export class HanukkahWorld {
     this.addLight(0, 4.2, c - 2.0, '#fff0c0', 8, 8);
     // locking mechanism on the gate
     this.box(0.6, 0.6, 0.12, this.std('#7a7a82', { metalness: 0.85 }), 1.6, 2.0, c - H_HALF_D + 0.1);
+    this.buildLabPrep(c);
+  }
+
+  /**
+   * Before the four jugs: an empty shelf on the back wall with four numbered places (1 at the left end) and a bench
+   * under it where the four jars stand; three stoppered bottles by the scales, a 300 g weight on the left pan, and the
+   * right pan for a bottle — the beam leans toward the heavier side and levels at 300 g.
+   */
+  private buildLabPrep(c: number) {
+    const clay = this.std('#a5602e', { roughness: 0.6 });
+    const jar = (id: string) => () => {
+      const g = new THREE.Group();
+      const small = id === 'jar-small';
+      const mat = id === 'jar-blue' ? this.std('#1f4f9a', { roughness: 0.35 }) : id === 'jar-gold' ? this.gold() : clay;
+      const body = new THREE.Mesh(new THREE.SphereGeometry(small ? 0.09 : 0.14, 16, 12), mat);
+      body.scale.y = 1.25;
+      body.position.y = small ? 0.11 : 0.17;
+      const neck = new THREE.Mesh(new THREE.CylinderGeometry(small ? 0.035 : 0.05, small ? 0.05 : 0.07, small ? 0.06 : 0.09, 12), mat);
+      neck.position.y = small ? 0.24 : 0.37;
+      g.add(body, neck);
+      if (id === 'jar-flame') {
+        const mark = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.16), new THREE.MeshBasicMaterial({ map: glyphTexture('🔥'), transparent: true, depthWrite: false }));
+        mark.position.set(0, 0.18, 0.15);
+        g.add(mark);
+      }
+      return g;
+    };
+    const bottle = (id: string) => () => {
+      const g = new THREE.Group();
+      const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.055, 0.2, 14), new THREE.MeshStandardMaterial({ color: '#c9c27a', transparent: true, opacity: 0.6, roughness: 0.1 }));
+      glass.position.y = 0.1;
+      const cork = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.05, 10), this.std({ 'bottle-red': '#b02a2a', 'bottle-green': '#2a8a3a', 'bottle-blue': '#2a4ab0' }[id] ?? '#888'));
+      cork.position.y = 0.24;
+      g.add(glass, cork);
+      return g;
+    };
+    for (const id of ['jar-blue', 'jar-gold', 'jar-flame', 'jar-small']) this.labModels.set(id, jar(id));
+    for (const id of ['bottle-red', 'bottle-green', 'bottle-blue']) this.labModels.set(id, bottle(id));
+
+    // the shelf on the back wall, right of the gate, read from left to right as the players face it
+    const wz = c - H_HALF_D + 0.25;
+    this.box(2.6, 0.06, 0.4, this.wood('#5a3a20'), 4.8, 1.5, wz);
+    for (const dx of [-1.2, 1.2]) this.box(0.06, 0.3, 0.3, this.wood('#3a2414'), 4.8 + dx, 1.35, wz);
+    ['p1', 'p2', 'p3', 'p4'].forEach((slot, i) => {
+      const x = 3.9 + i * 0.6;
+      const n = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.12), new THREE.MeshBasicMaterial({
+        map: labelTexture(String(i + 1), { color: '#ffe6a0', bg: 'rgba(40,24,10,0.85)', width: 128, height: 64 }), transparent: true, depthWrite: false,
+      }));
+      n.position.set(x, 1.42, wz + 0.21);
+      const holder = new THREE.Group();
+      holder.position.set(x, 1.53, wz);
+      this.scene.add(n, holder);
+      this.shelfHolders.set(slot, holder);
+    });
+    // the bench under it, where the jars stand at first
+    this.box(2.6, 0.45, 0.5, this.wood('#4a2c16'), 4.8, 0.225, c - 6.25);
+    ['jar-blue', 'jar-gold', 'jar-flame', 'jar-small'].forEach((id, i) => {
+      const m = this.labModels.get(id)!();
+      m.position.set(3.95 + i * 0.58, 0.45, c - 6.25);
+      this.addItem(id, m, false);
+    });
+    // three bottles at the front of the scales' stone, a 300 g weight on the left pan, a holder on the right one
+    ['bottle-red', 'bottle-green', 'bottle-blue'].forEach((id, i) => {
+      const m = this.labModels.get(id)!();
+      m.position.set(-4.75 + i * 0.35, 0.9, c - 2.72);
+      this.addItem(id, m, false);
+    });
+    const [left, right] = this.labPans;
+    if (left) {
+      const weight = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.1, 14), this.std('#4a4a52', { metalness: 0.8, roughness: 0.4 }));
+      weight.position.y = 0.07;
+      const tag = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.1), new THREE.MeshBasicMaterial({
+        map: labelTexture('300 גרם', { color: '#ffe6a0', bg: 'rgba(30,30,36,0.9)', width: 256, height: 112 }), transparent: true, depthWrite: false,
+      }));
+      tag.position.set(0, 0.2, 0.1);
+      left.add(weight, tag);
+    }
+    if (right) {
+      this.bottleOnPan = new THREE.Group();
+      this.bottleOnPan.position.y = 0.02;
+      right.add(this.bottleOnPan);
+    }
+  }
+
+  /** The beam leans toward the heavier pan (or sways a little when the right pan is empty); the pans hang from its ends. */
+  private updateLabScale(t: number, dt: number) {
+    const bar = this.labScaleBar;
+    if (!bar) return;
+    const goal = this.labTilt ?? Math.sin(t * 0.8) * 0.04;
+    bar.rotation.z = THREE.MathUtils.lerp(bar.rotation.z, goal, Math.min(1, dt * 3));
+    this.labPans.forEach((pan, i) => (pan.position.y = 1.35 + (i === 0 ? -1 : 1) * 0.4 * Math.sin(bar.rotation.z)));
+  }
+
+  /** The oil lab's preparation as the server reports it. */
+  private applyLabPrep(s: RoomSnapshot, scenario: ScenarioContent | null) {
+    const shelf = s.mechanisms?.['h6-shelf']?.slots ?? {};
+    for (const [slot, holder] of this.shelfHolders) {
+      const item = shelf[slot];
+      if (holder.userData['item'] === item) continue;
+      holder.clear();
+      if (item) holder.add(this.labModels.get(item)?.() ?? new THREE.Group());
+      holder.userData['item'] = item;
+    }
+    const onPan = s.mechanisms?.['h6-scales']?.slots?.['pan'];
+    if (this.bottleOnPan && this.bottleOnPan.userData['item'] !== onPan) {
+      this.bottleOnPan.clear();
+      if (onPan) this.bottleOnPan.add(this.labModels.get(onPan)?.() ?? new THREE.Group());
+      this.bottleOnPan.userData['item'] = onPan;
+    }
+    const data = scenario?.puzzles.find((p) => p.id === 'h6-scales')?.publicData;
+    const weight: number | undefined = onPan ? data?.weights?.[onPan] : undefined;
+    const counter: number = data?.counterweight ?? 300;
+    this.labTilt = weight === undefined ? null : -THREE.MathUtils.clamp((weight - counter) / 400, -1, 1) * 0.28;
   }
 
   // ---------------------------------------------------------------------- 7 · mosaic and mirrors
@@ -2379,6 +3025,41 @@ export class HanukkahWorld {
     }
   }
 
+  /** The library's evidence chain as the server reports it: glows, the board and its symbols, the beam, bookcase and drawer. */
+  private applyLibraryEvidence(s: RoomSnapshot, live: boolean) {
+    const status = (id: string) => this.puzzleStatus.get(id);
+    const solved = (id: string) => status(id) === 'solved';
+    const ev = s.mechanisms?.['h1-evidence'];
+    for (const [id, h] of this.evidenceHalos) h.visible = status('h1-evidence') === 'active' && !ev?.symbols?.includes(id);
+
+    const boardOpen = !!status('h1-board') && status('h1-board') !== 'locked';
+    if (this.evBoard) {
+      if (live && boardOpen && !this.evBoard.visible) this.burst(new THREE.Vector3(-7.7, 1.8, this.evBoard.position.z));
+      this.evBoard.visible = boardOpen;
+    }
+    const slots = s.mechanisms?.['h1-board']?.slots ?? {};
+    for (const [slot, icon] of this.evSockets) {
+      const item = slots[slot];
+      const mat = icon.material as THREE.MeshBasicMaterial;
+      if (item && icon.userData['item'] !== item) {
+        mat.map?.dispose();
+        mat.map = sealTexture(EVIDENCE_EMOJI[item] ?? '◆');
+        mat.needsUpdate = true;
+      }
+      icon.userData['item'] = item;
+      icon.visible = !!item;
+      // all four light up once the arrangement is right
+      mat.color.set(solved('h1-board') ? '#ffffff' : '#b8b0a0');
+    }
+    if (this.evBeam) this.evBeam.visible = solved('h1-board') && !solved('h1-book');
+    if (this.glowBook && status('h1-book') !== 'active') (this.glowBook.material as THREE.MeshStandardMaterial).emissiveIntensity = 0;
+    this.setOpen(this.glowBook, solved('h1-book'));
+    this.setOpen(this.secretCase, solved('h1-book'));
+    if (live && solved('h1-riddle') && !this.hiddenDrawerBurst && this.hiddenDrawer) this.burst(this.hiddenDrawer.getWorldPosition(new THREE.Vector3()));
+    this.hiddenDrawerBurst = solved('h1-riddle');
+    this.setOpen(this.hiddenDrawer, solved('h1-riddle'));
+  }
+
   private chestLid?: THREE.Object3D;
 
   // ======================================================================= state
@@ -2408,9 +3089,12 @@ export class HanukkahWorld {
     }
     const m = s.mechanisms ?? {};
 
-    if (live && solved('h1-riddle') && !this.drawerBurst && this.drawerFront) this.burst(this.drawerFront.getWorldPosition(new THREE.Vector3()));
-    this.drawerBurst = solved('h1-riddle');
-    this.setOpen(this.drawerFront, solved('h1-riddle'));
+    this.puzzleStatus = new Map(s.puzzles.map((p) => [p.id, p.status]));
+    this.applyLibraryEvidence(s, live);
+    this.applyWorkshopPrep(s);
+    this.applyCipherPrep(s);
+    this.applyDreidelPrep(s, live);
+    this.applyLabPrep(s, scenario);
     // assembly tables: parts on their zones, the rest in the group's bag (laid out on the tray while at the table)
     for (const [pid, a] of this.asm) a.slots = { ...(m[pid]?.slots ?? {}) };
     this.benchInv = new Set(s.inventory);
@@ -2512,7 +3196,7 @@ export class HanukkahWorld {
   private setOpen(obj: THREE.Object3D | undefined, on: boolean) {
     const t = obj && this.openTargets.get(obj);
     if (!t || !obj || t.on === on || obj.userData['opening']) return;
-    if (!on || this.firstApply || obj === this.wallPanel || obj === this.chestLid || obj === this.mapDrawer) {
+    if (!on || this.firstApply || obj === this.wallPanel || obj === this.chestLid || obj === this.mapDrawer || this.plainOpen.has(obj)) {
       t.on = on;
       return;
     }
@@ -3041,6 +3725,11 @@ export class HanukkahWorld {
     this.canvas.style.cursor = 'grab';
   }
 
+  /** The key bumped into a wall or a closed gate (told by the server): it shakes in place. */
+  shakeMazeKey() {
+    this.mazeShake = this.time;
+  }
+
   private setMazeKey([r, col]: [number, number]) {
     this.mazeKeyCell = [r, col];
     this.mazeKeyTarget.set(this.mazeOrigin.x + col * MAZE_CELL, this.mazeOrigin.y + 0.05, this.mazeOrigin.z + r * MAZE_CELL);
@@ -3144,9 +3833,9 @@ export class HanukkahWorld {
   private mazeDown(e: PointerEvent) {
     this.benchPointer(e);
     const what = this.mazePick();
+    // the key moves with the control pad only (one player at a time, checked by the server); clicking it says so
     if (what === 'key') {
-      this.mazeDrag = { pointerId: e.pointerId };
-      this.canvas.style.cursor = 'grabbing';
+      this.cb.onMazeBlocked?.('הזיזו את המפתח בעזרת לוח החיצים שבחלונית.');
       this.local?.reach(this.time);
     } else if (what?.startsWith('lever')) {
       this.local?.reach(this.time);
@@ -3158,7 +3847,7 @@ export class HanukkahWorld {
     this.benchPointer(e);
     if (!this.mazeDrag || this.mazeDrag.pointerId !== e.pointerId) {
       this.mazeHover = this.mazePick();
-      this.canvas.style.cursor = this.mazeHover ? (this.mazeHover === 'key' ? 'grab' : 'pointer') : 'default';
+      this.canvas.style.cursor = this.mazeHover ? 'pointer' : 'default';
       return;
     }
     this.raycaster.setFromCamera(this.pointer, this.camera);
@@ -3632,7 +4321,10 @@ export class HanukkahWorld {
   }
 
   private available(def: HInteractable) {
-    return this.unlocked.has(def.zone) && (!def.itemId || this.worldItems.has(def.itemId));
+    return this.unlocked.has(def.zone) && (!def.itemId || this.worldItems.has(def.itemId))
+      && (!def.needs || (this.puzzleStatus.get(def.needs) ?? 'locked') !== 'locked')
+      // a secret task's mark exists only for the player it was given to, until they find it
+      && (def.kind !== 'task' || (def.ref === this.myTask && !this.myTaskDone));
   }
 
   private pick(): HInteractable | null {
@@ -3715,4 +4407,260 @@ export class HanukkahWorld {
     this.composer?.dispose();
     this.renderer.dispose();
   }
+}
+
+/** The symbol of each piece of library evidence, as drawn in its place on the guards' board. */
+export const EVIDENCE_EMOJI: Record<string, string> = { 'ev-book': '📖', 'ev-hourglass': '⏳', 'ev-lamp': '🪔', 'ev-scroll': '📜' };
+
+/** A round golden seal with a symbol, for the board's places. */
+export function sealTexture(emoji: string) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d')!;
+  const grad = g.createRadialGradient(128, 110, 20, 128, 128, 124);
+  grad.addColorStop(0, '#fff1c4');
+  grad.addColorStop(0.7, '#e0b25a');
+  grad.addColorStop(1, '#8a6420');
+  g.fillStyle = grad;
+  g.beginPath();
+  g.arc(128, 128, 120, 0, Math.PI * 2);
+  g.fill();
+  g.font = '140px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(emoji, 128, 140);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** The guards' inscriptions above the board: one line each, right to left, on old parchment. */
+function inscriptionsTexture(lines: string[]) {
+  const c = document.createElement('canvas');
+  c.width = 1024;
+  c.height = 468;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#e6d3a3';
+  g.fillRect(0, 0, c.width, c.height);
+  g.strokeStyle = '#7a5a2a';
+  g.lineWidth = 10;
+  g.strokeRect(10, 10, c.width - 20, c.height - 20);
+  g.direction = 'rtl';
+  g.textAlign = 'right';
+  g.textBaseline = 'middle';
+  g.fillStyle = '#3a2410';
+  const step = (c.height - 60) / Math.max(1, lines.length);
+  lines.forEach((l, i) => {
+    let size = 40;
+    g.font = `bold ${size}px "Frank Ruhl Libre", Heebo, serif`;
+    while (size > 20 && g.measureText(l).width > c.width - 80) g.font = `bold ${(size -= 2)}px "Frank Ruhl Libre", Heebo, serif`;
+    g.fillText(l, c.width - 40, 30 + step * (i + 0.5));
+  });
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function parchmentCanvas(w: number, h: number) {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#e6d3a3';
+  g.fillRect(0, 0, w, h);
+  g.strokeStyle = '#7a5a2a';
+  g.lineWidth = 8;
+  g.strokeRect(8, 8, w - 16, h - 16);
+  return [c, g] as const;
+}
+
+function canvasTexture(c: HTMLCanvasElement) {
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** The workshop's wick scroll: each wick drawn at its length beside the mark of its vessel (the star wick with its star). */
+function wickScrollTexture(rows: { length: number; mark: string; star?: boolean }[]) {
+  const [c, g] = parchmentCanvas(768, 520);
+  const step = (c.height - 60) / Math.max(1, rows.length);
+  rows.forEach((r, i) => {
+    const y = 30 + step * (i + 0.5);
+    // the mark on the right (read first), an arrow, then the wick drawn to scale
+    g.fillStyle = '#3a2410';
+    g.font = 'bold 64px "Frank Ruhl Libre", Heebo, serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(r.mark, 640, y);
+    g.font = 'bold 48px Heebo, sans-serif';
+    g.fillText('←', 520, y);
+    const len = 90 + r.length * 110;
+    g.strokeStyle = r.star ? '#a07a2a' : '#5a4430';
+    g.lineWidth = r.star ? 16 : 10;
+    g.lineCap = 'round';
+    g.beginPath();
+    g.moveTo(450, y);
+    g.lineTo(450 - len, y);
+    g.stroke();
+    if (r.star) {
+      g.fillStyle = '#c99a2e';
+      g.font = 'bold 56px sans-serif';
+      g.fillText('★', 450 - len - 34, y);
+    }
+  });
+  return canvasTexture(c);
+}
+
+/** The shadow a test lamp casts on the wall: smeared and distorted, half a flame, or a whole clear flame. */
+export function flameShadowTexture(kind: 'distorted' | 'partial' | 'full') {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 320;
+  const g = c.getContext('2d')!;
+  const flame = () => {
+    g.beginPath();
+    g.moveTo(128, 30);
+    g.bezierCurveTo(200, 120, 210, 200, 128, 290);
+    g.bezierCurveTo(46, 200, 56, 120, 128, 30);
+    g.closePath();
+  };
+  g.fillStyle = 'rgba(20,12,6,0.85)';
+  if (kind === 'full') {
+    flame();
+    g.fill();
+  } else if (kind === 'partial') {
+    g.save();
+    g.beginPath();
+    g.rect(0, 160, 256, 160);
+    g.clip();
+    flame();
+    g.fill();
+    g.restore();
+  } else {
+    g.filter = 'blur(10px)';
+    g.translate(128, 170);
+    g.rotate(0.5);
+    g.scale(1.7, 0.6);
+    g.translate(-128, -170);
+    flame();
+    g.fill();
+  }
+  return canvasTexture(c);
+}
+
+/** The engraving on the workshop's metal plate: the five parts of the lamp from the bottom up. */
+function blueprintTexture() {
+  const c = document.createElement('canvas');
+  c.width = 1024;
+  c.height = 660;
+  const g = c.getContext('2d')!;
+  g.fillStyle = 'rgba(255,230,160,0.12)';
+  g.fillRect(0, 0, c.width, c.height);
+  g.strokeStyle = '#ffd98a';
+  g.lineWidth = 6;
+  g.strokeRect(12, 12, c.width - 24, c.height - 24);
+  const parts = [['⚱️', 'בסיס'], ['🫙', 'מכל שמן'], ['🧵', 'פתיל'], ['🔮', 'זכוכית'], ['🔔', 'מכסה']];
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  // bottom to top, as the lamp is built
+  parts.forEach(([icon, name], i) => {
+    const y = c.height - 80 - i * 118;
+    g.font = '72px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
+    g.fillText(icon, 420, y);
+    g.fillStyle = '#ffe6a0';
+    g.font = 'bold 54px Heebo, sans-serif';
+    g.fillText(`${i + 1}. ${name}`, 640, y);
+    if (i < parts.length - 1) {
+      g.font = 'bold 40px sans-serif';
+      g.fillText('▲', 420, y - 60);
+    }
+  });
+  return canvasTexture(c);
+}
+
+/** The mirror scroll's message on parchment; `mirrored` writes it backwards, as on the scroll itself. */
+function messageTexture(text: string, mirrored: boolean) {
+  const [c, g] = parchmentCanvas(640, 440);
+  g.direction = 'rtl';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = '#3a2410';
+  g.font = 'bold 46px "Frank Ruhl Libre", Heebo, serif';
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let cur = '';
+  for (const w of words) {
+    const test = cur ? cur + ' ' + w : w;
+    if (g.measureText(test).width > 560) {
+      lines.push(cur);
+      cur = w;
+    } else cur = test;
+  }
+  if (cur) lines.push(cur);
+  lines.forEach((l, i) => g.fillText(l, 320, 220 + (i - (lines.length - 1) / 2) * 64));
+  const t = canvasTexture(c);
+  if (mirrored) {
+    t.wrapS = THREE.RepeatWrapping;
+    t.repeat.x = -1;
+  }
+  return t;
+}
+
+/** The number series on the cipher room's wall, read from left to right (numbers, so never right to left). */
+function seriesTexture(items: string[]) {
+  const [c, g] = parchmentCanvas(640, 240);
+  g.fillStyle = '#3a2410';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.direction = 'rtl';
+  g.font = 'bold 34px "Frank Ruhl Libre", Heebo, serif';
+  g.fillText('השלימו את הסדרה', 320, 46);
+  g.direction = 'ltr';
+  g.font = 'bold 68px Heebo, sans-serif';
+  const step = 560 / items.length;
+  items.forEach((t, i) => {
+    g.fillStyle = t === '?' ? '#a0522d' : '#3a2410';
+    g.fillText(t, 40 + step * (i + 0.5), 150);
+  });
+  return canvasTexture(c);
+}
+
+/** A wall board with a title and four letters in a row (the memory board: hidden as ?, shown once the order is right). */
+function lettersBoardTexture(title: string, letters: string[]) {
+  const [c, g] = parchmentCanvas(640, 320);
+  g.fillStyle = '#3a2410';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.direction = 'rtl';
+  g.font = 'bold 40px "Frank Ruhl Libre", Heebo, serif';
+  g.fillText(title, 320, 60);
+  // the order is read from right to left, as Hebrew is
+  const step = 560 / Math.max(1, letters.length);
+  letters.forEach((l, i) => {
+    g.font = 'bold 96px "Frank Ruhl Libre", Heebo, serif';
+    g.fillText(l, 600 - step * (i + 0.5), 190);
+  });
+  return canvasTexture(c);
+}
+
+/** The board of four corners, one letter in each, and the line written in its middle. */
+function cornersTexture(corners: { id: string; letter: string }[]) {
+  const [c, g] = parchmentCanvas(560, 490);
+  const at: Record<string, [number, number]> = { tl: [90, 90], tr: [470, 90], bl: [90, 400], br: [470, 400] };
+  g.fillStyle = '#3a2410';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  for (const k of corners) {
+    const [x, y] = at[k.id] ?? [280, 245];
+    g.strokeStyle = '#7a5a2a';
+    g.lineWidth = 5;
+    g.strokeRect(x - 60, y - 60, 120, 120);
+    g.font = 'bold 84px "Frank Ruhl Libre", Heebo, serif';
+    g.fillText(k.letter, x, y + 4);
+  }
+  g.direction = 'rtl';
+  g.font = 'bold 26px "Frank Ruhl Libre", Heebo, serif';
+  g.fillText('הרמז מסתתר בפינה', 280, 225);
+  g.fillText('של האות שסגרה את הרצף', 280, 265);
+  return canvasTexture(c);
 }

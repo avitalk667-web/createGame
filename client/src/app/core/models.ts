@@ -135,6 +135,12 @@ export interface MechanismState {
   reached?: boolean;
   /** "Check the arrangement": for each checked place, whether its item is right (kept until the place changes). */
   verdict?: Record<string, boolean>;
+  /** Maze: the player moving the key, and until when (the server's short hold). */
+  controller?: string | null;
+  controlUntil?: string | null;
+  /** Inspection: objects examined, and those whose hidden symbol was uncovered. */
+  found?: string[];
+  symbols?: string[];
 }
 
 export interface PlayerScore {
@@ -146,6 +152,15 @@ export interface PlayerScore {
   rank: number;
 }
 
+export interface TitleDto {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  count: number;
+  winners: string[];
+}
+
 export interface ScoreDto {
   group: number;
   rooms: Record<string, number>;
@@ -153,6 +168,8 @@ export interface ScoreDto {
   hintsUsed: number;
   players: PlayerScore[];
   tie: boolean;
+  /** The personal titles, sent once the game has ended (several winners on a tie, none when nobody earned it). */
+  titles?: TitleDto[] | null;
 }
 
 export interface ClueContent {
@@ -236,7 +253,8 @@ export interface ScenarioContent {
   achievements: Achievement[];
   clues?: ClueContent[];
   zoneDifficulty?: Record<string, string>;
-  scoring?: { room: Record<string, number>; hintPenalty: number } | null;
+  /** noHint: the group bonus for a puzzle solved without a hint (none in the rooms listed in noHintSkipZones). */
+  scoring?: { room: Record<string, number>; hintPenalty: number; noHint?: number; noHintSkipZones?: string[] } | null;
 }
 
 export interface ScenarioSummary {

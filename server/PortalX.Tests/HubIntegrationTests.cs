@@ -260,6 +260,7 @@ public class HubIntegrationTests
         await guest.Conn.InvokeAsync<JsonElement>("DiscoverClue", "r1-letter", "a2");
         Assert.Contains("חידה", clue.GetProperty("message").GetString());
 
+        await LibraryChain.OpenAsync(host.Conn);   // the evidence chain comes before the riddle
         var solved = await Ok(host.Conn.InvokeAsync<JsonElement>("SubmitAnswer", "h1-riddle", JsonSerializer.SerializeToElement("פך השמן"), "a3"));
         Assert.Equal("solved", solved.GetProperty("code").GetString());
 
@@ -273,9 +274,9 @@ public class HubIntegrationTests
         var state = guest.LastState!.Value;
         Assert.Contains("workshop", state.GetProperty("unlockedZones").EnumerateArray().Select(z => z.GetString()));
         var score = state.GetProperty("score");
-        Assert.Equal(100, score.GetProperty("group").GetInt32());
+        Assert.Equal(100 + 4 * 10, score.GetProperty("group").GetInt32());   // the library, and its four puzzles solved without hints
         int Points(JsonElement s, string id) => s.GetProperty("players").EnumerateArray().First(p => p.GetProperty("playerId").GetString() == id).GetProperty("points").GetInt32();
-        Assert.Equal(25, Points(score, host.PlayerId));
+        Assert.Equal(25 + LibraryChain.Points, Points(score, host.PlayerId));
         Assert.Equal(10, Points(score, guest.PlayerId));
 
         // stored once each in the database
@@ -375,6 +376,7 @@ public class HubIntegrationTests
         var host = await JoinAsync(http, code, "ישראל", "explorer", hostClaim);
         await Ok(host.Conn.InvokeAsync<JsonElement>("StartGame"));
         await Ok(host.Conn.InvokeAsync<JsonElement>("FinishIntro", true));
+        await LibraryChain.OpenAsync(host.Conn);
         await Ok(host.Conn.InvokeAsync<JsonElement>("SubmitAnswer", "h1-riddle", JsonSerializer.SerializeToElement("פך השמן"), "j1"));
         await Ok(host.Conn.InvokeAsync<JsonElement>("Continue"));
 
