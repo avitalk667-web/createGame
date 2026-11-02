@@ -137,4 +137,45 @@ public class ProductCatalogTests
             await admin.Database.ExecuteSqlRawAsync($"DROP DATABASE IF EXISTS {name} WITH (FORCE)");
         }
     }
+
+    [Fact]
+    public async Task The_last_portal_card_shows_its_scoring_instead_of_its_length_and_admin_texts_stay()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PortalDbContext>();
+        var p = await db.Products.FirstAsync(x => x.Id == "last-portal");
+        var original = p.FeaturesJson;
+        try
+        {
+            // a database seeded before the change: the old line is replaced in its place, the others stay
+            p.FeaturesJson = "[\"25–35 דקות\",\"2–4 משתתפים\"]";
+            await db.SaveChangesAsync();
+            await ProductSeed.ApplyFeatureFixesAsync(db);
+            await db.Entry(p).ReloadAsync();
+            Assert.Equal(["ניקוד אישי וקבוצתי", "2–4 משתתפים"], JsonSerializer.Deserialize<List<string>>(p.FeaturesJson));
+            // running again changes nothing
+            await ProductSeed.ApplyFeatureFixesAsync(db);
+            await db.Entry(p).ReloadAsync();
+            Assert.Equal(["ניקוד אישי וקבוצתי", "2–4 משתתפים"], JsonSerializer.Deserialize<List<string>>(p.FeaturesJson));
+            // a text the admin wrote is never touched
+            p.FeaturesJson = "[\"משחק של חצי שעה\"]";
+            await db.SaveChangesAsync();
+            await ProductSeed.ApplyFeatureFixesAsync(db);
+            await db.Entry(p).ReloadAsync();
+            Assert.Equal(["משחק של חצי שעה"], JsonSerializer.Deserialize<List<string>>(p.FeaturesJson));
+        }
+        finally
+        {
+            p.FeaturesJson = original;
+            await db.SaveChangesAsync();
+        }
+        // the site's catalog (seeded at startup, with the fix applied) shows the new line and not the length
+        var list = await _factory.CreateClient().GetFromJsonAsync<JsonElement>("/api/products");
+        var features = list.EnumerateArray().First(x => x.GetProperty("id").GetString() == "last-portal").GetProperty("features").ToString();
+        Assert.Contains("ניקוד אישי וקבוצתי", features);
+        Assert.DoesNotContain("25–35", features);
+        // the other games keep their own lines
+        var hanukkah = list.EnumerateArray().First(x => x.GetProperty("id").GetString() == "hanukkah-oil").GetProperty("features").ToString();
+        Assert.Contains("ניקוד אישי וקבוצתי", hanukkah);
+    }
 }

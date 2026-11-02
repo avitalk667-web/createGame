@@ -55,6 +55,32 @@ public sealed class ProductSeed
         }
         await db.SaveChangesAsync();
     }
+
+    /// <summary>
+    /// Text corrections for rows that already exist: each one replaces one exact old line with the new one, only while the old
+    /// line is still there, so it runs once and never touches anything the admin wrote. Nothing is deleted.
+    /// </summary>
+    public static readonly (string ProductId, string Old, string New)[] FeatureFixes =
+    [
+        // the last portal's card shows its scoring instead of its length
+        ("last-portal", "25–35 דקות", "ניקוד אישי וקבוצתי"),
+    ];
+
+    public static async Task ApplyFeatureFixesAsync(PortalDbContext db)
+    {
+        foreach (var (id, oldText, newText) in FeatureFixes)
+        {
+            var p = await db.Products.FindAsync(id);
+            if (p == null) continue;
+            var features = JsonSerializer.Deserialize<List<string>>(p.FeaturesJson, ScenarioCatalog.JsonOptions) ?? [];
+            var i = features.IndexOf(oldText);
+            if (i < 0) continue;
+            features[i] = newText;
+            p.FeaturesJson = JsonSerializer.Serialize(features, ScenarioCatalog.JsonOptions);
+            p.UpdatedAt = DateTime.UtcNow;
+        }
+        await db.SaveChangesAsync();
+    }
 }
 
 /// <summary>Public view of a product for the catalog pages.</summary>

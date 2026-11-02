@@ -4,7 +4,7 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AudioService, ThemeId } from '../core/audio.service';
 import { GameService } from '../core/game.service';
-import { ChatMessage, GameNotice, RoomSnapshot } from '../core/models';
+import { ChatMessage, GameNotice, RoomSnapshot, characterInfo } from '../core/models';
 import { SettingsService } from '../core/settings.service';
 import { ChatComponent } from '../ui/chat.component';
 import { IconComponent } from '../ui/icon.component';
@@ -83,6 +83,32 @@ const ROOM_MUSIC: Record<ZoneId, ThemeId> = {
           <button class="btn small" (click)="showSettings.set(true)">הגדרות</button>
           <button class="btn small ghost" (click)="confirmLeave()">יציאה</button>
         </div>
+        <!-- personal and group points from the server (shown to everyone, updated with each award): fixed in the corner on a
+             computer, the last row of this bar on a phone (so it never covers the rows above it), folded there -->
+        @if (game.snapshot()!.score; as sc) {
+          @if (!showMap()) {
+            <aside class="score card" [class.collapsed]="!showScore()" aria-label="לוח ניקוד">
+              <button class="score-head" (click)="showScore.set(!showScore())" [attr.aria-expanded]="showScore()">
+                <b>ניקוד</b>
+                <span class="sc-sum"><span>אני <b>{{ myPoints() }}</b></span><span>קבוצה <b>{{ sc.group }}</b></span></span>
+                <span aria-hidden="true">{{ showScore() ? '−' : '+' }}</span>
+              </button>
+              @if (showScore()) {
+                <ol>
+                  @for (p of sc.players; track p.playerId) {
+                    <li [class.me]="p.playerId === game.playerId()">
+                      <span class="rank">{{ p.rank === 1 ? '🏆' : p.rank }}</span>
+                      <img class="av" [src]="charOf(p.playerId).image" [alt]="charOf(p.playerId).name" width="28" height="28" />
+                      <span class="nm">{{ p.nickname }}<small>{{ charOf(p.playerId).name }}</small></span>
+                      <b>{{ p.points }}</b>
+                      @for (f of floatsFor(p.playerId); track f.id) { <span class="float">{{ f.text }}</span> }
+                    </li>
+                  }
+                </ol>
+              }
+            </aside>
+          }
+        }
       </header>
 
       <aside class="objectives card" [class.collapsed]="!showObjectives()" [class.glow]="objFlash()">
@@ -255,6 +281,21 @@ const ROOM_MUSIC: Record<ZoneId, ThemeId> = {
     @media (prefers-reduced-motion: reduce) { .objectives.glow, .objectives li.flash { animation:none; } }
     .players-line { display:flex; flex-wrap:wrap; gap:.5rem; font-size:.82rem; margin:0; } .players-line span { color: var(--ok); } .players-line .off { color: var(--muted); }
     .map { position:fixed; top: 70px; inset-inline-end: 10px; z-index: 9; display:flex; flex-direction:column; gap:.3rem; padding:.6rem; }
+    .score { position:fixed; top: 70px; inset-inline-end: 10px; width: 250px; z-index: 9; padding: .55rem .75rem; }
+    .score.collapsed { width:auto; }
+    .score-head { all: unset; cursor:pointer; display:flex; align-items:center; gap:.6rem; width:100%; color: var(--gold-2); }
+    .score-head:focus-visible { outline:2px solid var(--gold-2); outline-offset:3px; border-radius:6px; }
+    .sc-sum { display:flex; gap:.6rem; margin-inline-start:auto; font-size:.85rem; color: var(--muted); } .sc-sum b { color: var(--gold-2); font-size:1.05rem; }
+    .score ol { list-style:none; padding:0; margin:.5rem 0 0; display:flex; flex-direction:column; gap:.3rem; }
+    .score li { display:flex; gap:.45rem; align-items:center; position:relative; font-size:.92rem; } .score li.me { color: var(--gold-2); }
+    .score li > b { font-size:1.05rem; }
+    .score .rank { width:20px; text-align:center; color: var(--muted); }
+    .score .av { width:28px; height:28px; border-radius:50%; object-fit:cover; border:1px solid var(--line); flex-shrink:0; }
+    .score .nm { flex:1; min-width:0; display:flex; flex-direction:column; line-height:1.2; overflow:hidden; } .score .nm small { color: var(--muted); font-size:.74rem; }
+    .float { position:absolute; inset-inline-end:-6px; top:-4px; transform: translateX(-100%); white-space:nowrap; background: rgba(63,191,106,.9); color:#06240f; font-weight:700;
+      border-radius:999px; padding:0 .5rem; font-size:.78rem; animation: floatUp 2.6s ease forwards; pointer-events:none; }
+    @keyframes floatUp { 0% { opacity:0; transform: translate(-100%, 6px) } 15% { opacity:1 } 80% { opacity:1 } 100% { opacity:0; transform: translate(-100%, -18px) } }
+    @media (prefers-reduced-motion: reduce) { .float { animation:none; } }
     .mz { display:flex; gap:.4rem; align-items:center; padding:.3rem .6rem; border-radius: 8px; } .mz.here { background: rgba(224,185,92,.25); color: var(--gold-2); } .mz.locked { opacity:.45; }
     .hover-label { position:fixed; top: 46%; left: 50%; transform: translate(-50%, -140%); background: rgba(0,0,0,.75); padding:.35rem .8rem; border-radius: 999px; border:1px solid var(--line); pointer-events:none; z-index: 8; white-space:nowrap; }
     .hover-label small { color: var(--gold-2); }
@@ -316,6 +357,9 @@ const ROOM_MUSIC: Record<ZoneId, ThemeId> = {
     @media (max-width: 760px) {
       .objectives { top: auto; bottom: 150px; width: calc(100% - 20px); max-height: 32vh; overflow:auto; }
       .objectives.collapsed { width: auto; }
+      .score { position: static; flex-basis: 100%; width: auto; max-width: none; }
+      .score.collapsed { flex-basis: auto; }
+      .score:not(.collapsed) { width: min(270px, 100%); }
       .tools .btn { padding: .4em .7em; }
       .hover-label { display:none; }
     }
@@ -345,6 +389,11 @@ export class PlayComponent implements AfterViewInit, OnDestroy {
   showMap = signal(false);
   showSettings = signal(false);
   showObjectives = signal(!matchMedia('(max-width: 760px)').matches);
+  /** The score card: open on a computer, folded to "me / group" on a phone. */
+  showScore = signal(!matchMedia('(max-width: 760px)').matches);
+  /** "+points" badges that float by a player's name in the score card for a moment. */
+  floats = signal<{ id: number; playerId: string; text: string }[]>([]);
+  myPoints = computed(() => this.game.snapshot()?.score?.players.find((p) => p.playerId === this.game.playerId())?.points ?? 0);
   showResult = signal(false);
   pingText = signal<string | null>(null);
   cutscene = signal<{ title: string; letter?: string; puzzle?: string } | null>(null);
@@ -605,6 +654,21 @@ export class PlayComponent implements AfterViewInit, OnDestroy {
     setTimeout(() => this.flash.set(false), 1700);
   }
 
+  /** The character a player chose (picture and name), for the score card. */
+  charOf(playerId: string) {
+    return characterInfo(this.game.snapshot()?.players.find((p) => p.id === playerId)?.characterId);
+  }
+
+  private addFloat(playerId: string, text: string) {
+    const id = ++this.toastId;
+    this.floats.update((f) => [...f, { id, playerId, text }]);
+    setTimeout(() => this.floats.update((f) => f.filter((x) => x.id !== id)), 2700);
+  }
+
+  floatsFor(playerId: string) {
+    return this.floats().filter((f) => f.playerId === playerId);
+  }
+
   private onNotice(n: GameNotice) {
     const mine = n.playerId === this.game.playerId();
     switch (n.kind) {
@@ -637,6 +701,14 @@ export class PlayComponent implements AfterViewInit, OnDestroy {
       case 'item-combined':
       case 'item-placed':
         this.audio.sfx('pickup');
+        this.toast(n.message, n.kind);
+        break;
+      case 'score':
+        // a player's points: a badge by their name for everyone, the full line only for the player who earned them
+        if (n.playerId) this.addFloat(n.playerId, '+' + (n.points ?? 0));
+        if (mine) this.toast(n.message, 'score');
+        break;
+      case 'score-group':
         this.toast(n.message, n.kind);
         break;
       case 'game-started':

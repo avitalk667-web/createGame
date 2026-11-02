@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, output } from '@angular/core';
 import { GameService } from '../core/game.service';
+import { characterInfo } from '../core/models';
 import { IconComponent } from '../ui/icon.component';
 import { ResultsEmailComponent } from '../ui/results-email.component';
 
@@ -28,11 +29,13 @@ import { ResultsEmailComponent } from '../ui/results-email.component';
               </div>
               <table class="rank">
                 <caption class="sr-only">דירוג אישי</caption>
-                <thead><tr><th>מקום</th><th>שחקן</th><th>ניקוד אישי</th></tr></thead>
+                <thead><tr><th>מקום</th><th>שחקן</th><th>דמות</th><th>ניקוד אישי</th></tr></thead>
                 <tbody>
                   @for (p of sc.players; track p.playerId) {
                     <tr [class.me]="p.playerId === game.playerId()" [class.first]="p.rank === 1">
-                      <td>{{ p.rank === 1 ? '🏆' : p.rank }}</td><td>{{ p.nickname }}</td><td><b>{{ p.points }}</b></td>
+                      <td>{{ p.rank === 1 ? '🏆' : p.rank }}</td><td>{{ p.nickname }}</td>
+                      <td class="char"><img [src]="charOf(p.playerId).image" alt="" width="30" height="30" /><span>{{ charOf(p.playerId).name }}</span></td>
+                      <td><b>{{ p.points }}</b></td>
                     </tr>
                   }
                 </tbody>
@@ -76,6 +79,8 @@ import { ResultsEmailComponent } from '../ui/results-email.component';
       border:1px solid var(--gold-2); border-radius:14px; padding:.5rem 1rem; } .winner b { font-size:1.6rem; color: var(--gold-2); }
     .rank { width:100%; border-collapse:collapse; text-align:center; } .rank th, .rank td { padding:.4rem; border-bottom:1px solid rgba(201,162,77,.2); } .rank th { color: var(--gold-2); }
     .rank tr.me td { background: rgba(224,185,92,.1); } .rank tr.first td b { color: var(--gold-2); }
+    .rank td.char { display:flex; align-items:center; justify-content:center; gap:.35rem; } .rank td.char img { width:30px; height:30px; border-radius:50%; object-fit:cover; border:1px solid var(--line); }
+    @media (max-width: 420px) { .rank td.char span { display:none; } }
     .small { font-size:.85rem; }
     .actions { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; }
     .photo { margin:0; background:#f4ecd8; padding: 12px 12px 6px; transform: rotate(-3deg); box-shadow: var(--shadow); max-width: 340px; }
@@ -87,6 +92,10 @@ export class ResultComponent {
   game = inject(GameService);
   home = output<void>();
   score = computed(() => this.game.snapshot()?.score ?? null);
+  /** The character a player chose (picture and name). */
+  charOf(playerId: string) {
+    return characterInfo(this.game.snapshot()?.players.find((p) => p.id === playerId)?.characterId);
+  }
   leaders = computed(() => (this.score()?.players ?? []).filter((p) => p.rank === 1).map((p) => p.nickname).join(' · '));
   time = computed(() => {
     const s = this.game.snapshot()?.result?.durationSeconds ?? 0;

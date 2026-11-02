@@ -337,6 +337,7 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
     {
         await MigrationBaseline.ApplyAsync(db);
         await ProductSeed.SeedAsync(db, products);
+        await ProductSeed.ApplyFeatureFixesAsync(db);
         foreach (var s in catalog.All)
         {
             var row = await db.Scenarios.FindAsync(s.Id) ?? db.Scenarios.Add(new GameScenario { Id = s.Id }).Entity;

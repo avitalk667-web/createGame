@@ -42,7 +42,7 @@ import { SKIN_TONES, HAIR_COLORS, BAG_COLORS } from '../world/avatar';
         <header>
           <span class="chip">חדר {{ room()!.code }} · {{ room()!.scenarioName }}</span>
           <h1>בחרו דמות</h1>
-          <p class="muted">כל הדמויות לובשות כיפה, חולצה לבנה ומכנסיים שחורים. אפשר לגוון בגוון הפנים, בשיער, במשקפיים ובתיק.</p>
+          <p class="muted">בחרו את הדמות אליה אתם הכי מתחברים.</p>
         </header>
         @if (!room()!.canJoin) {
           <p class="error">{{ room()!.phase === 'completed' ? 'המשחק הזה כבר הסתיים. אי אפשר להצטרף אליו.' : 'המשחק מלא — כל ' + room()!.maxPlayers + ' המקומות תפוסים או שמורים לשחקנים שהתנתקו.' }}</p>
