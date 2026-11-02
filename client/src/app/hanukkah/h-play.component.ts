@@ -171,7 +171,6 @@ function pickupSound(item: string): Sfx {
           } @else {
             @if (f === 'h3-maze') {
               <p class="muted small">סמלים שהמפתח עבר לפי הסדר: {{ game.snapshot()?.mechanisms?.['h3-maze']?.progress ?? 0 }} מתוך 3</p>
-              <px-maze-pad (blocked)="world?.shakeMazeKey()" />
             }
             <p class="b-ins">{{ FOCUS_HELP[f] || focusPuzzle()?.instructions }}</p>
             @if (f !== 'h3-maze' && !benchHasParts()) { <p class="muted small">{{ EMPTY_LABEL[f] }}</p> }
@@ -194,6 +193,19 @@ function pickupSound(item: string): Sfx {
           </div>
           }
         </section>
+        }
+        @if (f === 'h3-maze' && focusState()?.status !== 'solved') {
+          <!-- the arrows live in their own small dock, apart from the instructions: closing or folding the instructions never
+               hides them, and folded arrows leave a button that always brings them back -->
+          @if (padHidden()) {
+            <button class="btn primary pad-show" (click)="padHidden.set(false)" aria-label="הצגת לוח החיצים">🎮 חיצים</button>
+          } @else {
+            <aside class="maze-dock card" aria-label="לוח החיצים להזזת המפתח"
+              (pointerdown)="$event.stopPropagation()" (pointermove)="$event.stopPropagation()" (pointerup)="$event.stopPropagation()" (wheel)="$event.stopPropagation()">
+              <button class="btn small ghost dock-hide" (click)="padHidden.set(true)" aria-label="הסתרת לוח החיצים">▾ הסתרה</button>
+              <px-maze-pad compact (blocked)="world?.shakeMazeKey()" />
+            </aside>
+          }
         }
       }
 
@@ -312,6 +324,13 @@ function pickupSound(item: string): Sfx {
       .bench.maze .b-body { gap:.2rem; }
       .bench.maze .b-body { max-height:none; flex:1; }
     }
+    /* the maze: its instructions stand at the top, the arrows in their own dock at a lower corner, away from the key */
+    .bench.maze:not(.moved) { top:56px; bottom:auto; }
+    .maze-dock { position:fixed; z-index:21; bottom:12px; inset-inline-end:12px; padding:.4rem .5rem .55rem; display:flex; flex-direction:column; gap:.15rem;
+      touch-action:none; overscroll-behavior:contain; user-select:none; -webkit-user-select:none; max-width:calc(100% - 24px); }
+    .dock-hide { align-self:flex-end; min-height:32px; }
+    .pad-show { position:fixed; z-index:21; bottom:16px; inset-inline-end:16px; border-radius:999px; min-height:48px; padding-inline:1.1rem; box-shadow:0 6px 20px rgba(0,0,0,.45); }
+    @media (max-height: 560px) and (orientation: landscape) { .maze-dock, .pad-show { inset-inline-end:auto; inset-inline-start:8px; bottom:6px; } }
     .b-ins { margin:0; line-height:1.6; } .b-msg { margin:0; color:#9be3b4; } .b-msg.bad { color:#ffb4a3; } .b-ok { margin:0; color:#9be3b4; font-size:1.1rem; }
     .b-hint { margin:0; color:#cfe2ff; }
     .b-notes { margin:0; padding:0; list-style:none; display:grid; gap:.2rem; color:#f3e2b8; font-size:.92rem; } .b-actions { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; }
@@ -475,6 +494,8 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
   /** The instructions panel at a table — this player's own view only, never shared with the group. */
   benchPos = signal<{ x: number; y: number } | null>(null);
   benchMin = signal(false);
+  /** The maze arrows folded into their round button (they come back with it, and whenever the maze is opened again). */
+  padHidden = signal(false);
   benchClosed = signal(false);
   private benchRef = viewChild<ElementRef<HTMLElement>>('benchEl');
   focusPuzzle = computed(() => this.game.scenario()?.puzzles.find((p) => p.id === this.focus()));
@@ -824,6 +845,11 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
         if (mine) this.audio.cue('find', 30);
         this.systemLine(n.message, 'clue');
         break;
+      case 'puzzle-action':
+        // who changed a shared puzzle: the others see it at once; everyone finds it in the chat log
+        if (mine) this.system.update((l) => [...l.slice(-60), { id: String(++this.toastId), text: n.message, at: this.game.serverNow() }]);
+        else this.systemLine(n.message, 'info');
+        break;
       case 'object-inspected':
         if (!mine) this.toast(n.message, 'info');
         break;
@@ -1161,6 +1187,11 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     this.panel.set(null);
     this.note.set(null);
     this.benchMsg.set(null);
+    this.benchClosed.set(false);
+    // on a phone the maze opens with its instructions folded at the top, so the board and the arrows have the screen; the
+    // arrows always come back when the maze is opened again
+    this.benchMin.set(window.innerWidth < 760);
+    this.padHidden.set(false);
     this.world.enterMaze();
     this.focus.set(this.world.isMaze ? 'h3-maze' : null);
   }
@@ -1198,7 +1229,10 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
   private async benchOp(puzzle: string, action: object) {
     this.benchBusy.set(true);
     try {
-      return await this.game.operate(puzzle, action);
+      // changes to the shared table carry the version this player sees (see the puzzle panels)
+      const op = (action as { op?: string }).op ?? '';
+      const rev = this.game.snapshot()?.mechanisms?.[puzzle]?.rev ?? 0;
+      return await this.game.operate(puzzle, ['place', 'remove', 'reset'].includes(op) ? { ...action, rev } : action);
     } finally {
       this.benchBusy.set(false);
     }

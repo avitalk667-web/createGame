@@ -1,16 +1,17 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AdminApiService } from '../core/admin-api.service';
-import { ApiService } from '../core/api.service';
+import { ApiService, Campaign } from '../core/api.service';
 import { AudioService } from '../core/audio.service';
 import { SiteService } from '../core/site.service';
 import { FaqEntryView, Product, formatPrice, playersLabel } from '../core/models';
+import { DrawCountdownComponent } from '../ui/draw-countdown.component';
 import { SettingsPanelComponent } from '../ui/settings-panel.component';
 
 /** Shared entry gate: a catalog of both games, each with its own server-side price (spec §2). */
 @Component({
   selector: 'px-home',
-  imports: [RouterLink, SettingsPanelComponent],
+  imports: [RouterLink, SettingsPanelComponent, DrawCountdownComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="bg" aria-hidden="true"></div>
@@ -54,7 +55,8 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
           @if (campaignOn()) {
             <!-- the "friend brings a friend" draw (same terms as the campaign: different, really paid buyers) -->
             <p class="promo">4 רוכשים שונים דרך הקישור האישי = כניסה להגרלה על <b>888 ₪</b>!</p>
-            <p class="draw">ההגרלה תיערך ביום ראשון, ג׳ בטבת תשפ״ז, 13.12.2026.</p>
+            <p class="draw">ההגרלה תיערך ביום ראשון, ג׳ בטבת תשפ״ז, 13.12.2026, בשעה 20:00.</p>
+            <px-draw-countdown [drawAt]="campaign()?.drawAt" [serverNow]="campaign()?.serverNow" />
           }
         </div>
         <a class="btn primary" routerLink="/share">יצירת קישור אישי</a>
@@ -363,6 +365,8 @@ export class HomePage {
   faq = signal<FaqEntryView[]>([]);
   /** The friend-brings-a-friend draw is summed up in the personal-link banner while the campaign is on. */
   campaignOn = signal(false);
+  /** The campaign settings, for the countdown to the draw inside the personal-link card. */
+  campaign = signal<Campaign | null>(null);
   openFaq = signal<string | null>(null);
   price = formatPrice;
   players = playersLabel;
@@ -372,7 +376,7 @@ export class HomePage {
     this.load();
     this.site.load();
     this.api.faq().then((f) => this.faq.set(f)).catch(() => {});
-    this.api.campaign().then((c) => this.campaignOn.set(c.enabled)).catch(() => {});
+    this.api.campaign().then((c) => { this.campaign.set(c); this.campaignOn.set(c.enabled); }).catch(() => {});
     this.adminApi.session().then((s) => this.isAdmin.set(s.admin)).catch(() => {});
   }
 

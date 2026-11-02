@@ -24,6 +24,8 @@ export interface ReferralReply {
 export interface Campaign {
   enabled: boolean; title: string; prize: string; lead: string; body: string; drawLabel: string; drawDate: string; buttonLabel: string;
   popupTitle: string; popupBody: string; popupCreateLabel: string; popupLaterLabel: string; minBuyers: number;
+  /** The exact moment of the draw (ISO with its offset) and the server's time when this was read, for the countdown. */
+  drawAt?: string | null; serverNow?: string;
 }
 
 /** The visitor's own personal link, remembered in this browser after it was created (shown again in the campaign popup). */

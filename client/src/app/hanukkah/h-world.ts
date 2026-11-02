@@ -305,6 +305,88 @@ function glyphTexture(text: string, color = '#ffd36b', size = 256, font = 'Segoe
 }
 
 /** A text sheet (parchment / board) drawn on a canvas, right-to-left. */
+/**
+ * A nine-branched menorah drawn with lines, at (cx, cy) and the given height. The maze and its sign use it instead of the
+ * 🕎 emoji, which some phones and fonts cannot draw (it then left an empty cell in the maze).
+ */
+export function drawMenorah(g: CanvasRenderingContext2D, cx: number, cy: number, h: number, color = '#ffd36b') {
+  const w = h * 1.05;
+  const top = cy - h * 0.32;
+  const base = cy + h * 0.42;
+  g.save();
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  g.strokeStyle = color;
+  g.fillStyle = color;
+  g.shadowColor = 'rgba(255,200,90,.65)';
+  g.shadowBlur = h * 0.08;
+  g.lineWidth = Math.max(2, h * 0.06);
+  // four pairs of arms (U shapes) around the middle stem, the outer ones widest
+  for (let k = 1; k <= 4; k++) {
+    const r = (w / 2) * (k / 4);
+    g.beginPath();
+    g.moveTo(cx - r, top);
+    g.lineTo(cx - r, top + h * 0.12);
+    g.arc(cx, top + h * 0.12, r, Math.PI, 0, true);
+    g.lineTo(cx + r, top);
+    g.stroke();
+  }
+  g.beginPath();
+  g.moveTo(cx, top - h * 0.06);
+  g.lineTo(cx, base);
+  g.stroke();
+  // the foot
+  g.beginPath();
+  g.moveTo(cx - w * 0.22, base);
+  g.lineTo(cx + w * 0.22, base);
+  g.stroke();
+  // nine flames: the middle one (the shamash) higher
+  for (let k = -4; k <= 4; k++) {
+    const x = cx + (w / 2) * (k / 4);
+    const y = (k === 0 ? top - h * 0.06 : top) - h * 0.05;
+    g.beginPath();
+    g.ellipse(x, y - h * 0.035, h * 0.03, h * 0.065, 0, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.restore();
+}
+
+function menorahTexture(size = 256, color = '#ffd36b') {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  drawMenorah(c.getContext('2d')!, size / 2, size / 2 + size * 0.04, size * 0.78, color);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = MAX_ANISO;
+  return t;
+}
+
+/** The order of the maze symbols on the back wall: star, flame, menorah, each drawn in its own third so none is cut off. */
+function mazeSignTexture() {
+  const w = 512, h = 220;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#2a2016';
+  g.fillRect(0, 0, w, h);
+  g.strokeStyle = 'rgba(255,211,107,.55)';
+  g.lineWidth = 6;
+  g.strokeRect(8, 8, w - 16, h - 16);
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = 'bold 96px Segoe UI Emoji, Noto Color Emoji, Apple Color Emoji, serif';
+  g.fillStyle = '#ffd36b';
+  // read right to left, as before: star (right), flame, menorah (left)
+  g.fillText('⭐', (w * 5) / 6, h / 2 + 6);
+  g.fillText('🔥', w / 2, h / 2 + 6);
+  drawMenorah(g, w / 6, h / 2 + 4, 132);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = MAX_ANISO;
+  return t;
+}
+
 function sheetTexture(lines: string[], opts: { bg?: string; color?: string; w?: number; h?: number; size?: number; title?: string } = {}) {
   const w = opts.w ?? 512;
   const h = opts.h ?? 384;
@@ -2037,13 +2119,29 @@ export class HanukkahWorld {
         const gate = this.box(MAZE_CELL * 0.9, 0.12, MAZE_CELL * 0.9, gateMat, p.x, p.y + 0.04, p.z);
         this.mazeGates.set(ch, gate);
       } else if (symbols[ch]) {
-        const s = new THREE.Mesh(new THREE.PlaneGeometry(MAZE_CELL * 0.85, MAZE_CELL * 0.85), new THREE.MeshBasicMaterial({ map: glyphTexture(symbols[ch]), transparent: true }));
+        // the menorah is drawn (not an emoji: some devices have no menorah emoji), a bit larger, with a soft glow under it so
+        // its thin branches read from the side too; every symbol sits just above the board, never level with it
+        const menorah = ch === 'M';
+        const size = MAZE_CELL * (menorah ? 0.96 : 0.85);
+        const s = new THREE.Mesh(new THREE.PlaneGeometry(size, size),
+          new THREE.MeshBasicMaterial({ map: menorah ? menorahTexture() : glyphTexture(symbols[ch]), transparent: true, depthWrite: false }));
         s.rotation.x = -Math.PI / 2;
-        s.position.set(p.x, p.y - 0.01, p.z);
+        s.position.set(p.x, p.y + 0.006, p.z);
+        s.renderOrder = 2;
         this.scene.add(s);
+        if (menorah) {
+          const glow = new THREE.Mesh(new THREE.CircleGeometry(MAZE_CELL * 0.46, 24),
+            new THREE.MeshBasicMaterial({ color: '#ffcf6a', transparent: true, opacity: 0.22, depthWrite: false }));
+          glow.rotation.x = -Math.PI / 2;
+          glow.position.set(p.x, p.y + 0.003, p.z);
+          glow.renderOrder = 1;
+          this.scene.add(glow);
+        }
       }
     }));
-    const glass = new THREE.Mesh(new THREE.BoxGeometry(cols * MAZE_CELL + 0.3, 0.02, rows * MAZE_CELL + 0.3), new THREE.MeshStandardMaterial({ color: '#cfe8ff', transparent: true, opacity: 0.12, roughness: 0.05 }));
+    // the glass never hides what lies under it: it writes no depth, so the symbols and the key below always draw (before,
+    // the menorah — nearest to the player — was drawn after the glass and vanished behind it)
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(cols * MAZE_CELL + 0.3, 0.02, rows * MAZE_CELL + 0.3), new THREE.MeshStandardMaterial({ color: '#cfe8ff', transparent: true, opacity: 0.12, roughness: 0.05, depthWrite: false }));
     glass.position.set(0, 1.18, c - 1.0);
     this.scene.add(glass);
     this.mazeKey = this.keyMesh('#ffd24a', 0.45);
@@ -2085,7 +2183,7 @@ export class HanukkahWorld {
       this.mazeLevers.push(lever);
     }
     // symbol board on the back wall
-    const boardTex = sheetTexture(['⭐   🔥   🕎'], { bg: '#2a2016', color: '#ffd36b', w: 512, h: 220, size: 80 });
+    const boardTex = mazeSignTexture();
     const sb = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.0), this.std('#ffffff', { map: boardTex }));
     sb.position.set(0, 2.6, c - H_HALF_D + 0.06);
     this.scene.add(sb);

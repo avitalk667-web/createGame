@@ -141,6 +141,10 @@ export interface MechanismState {
   /** Inspection: objects examined, and those whose hidden symbol was uncovered. */
   found?: string[];
   symbols?: string[];
+  /** Goes up with every change the server accepts; who made the last one (a change based on an older version is refused). */
+  rev?: number;
+  lastBy?: string | null;
+  lastById?: string | null;
 }
 
 export interface PlayerScore {

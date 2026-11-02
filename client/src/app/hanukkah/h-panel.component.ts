@@ -77,6 +77,7 @@ const MAZE_SYMBOLS: Record<string, string> = { '*': '⭐', F: '🔥', M: '🕎',
                     <small dir="rtl">{{ sl.label }}</small>
                     <b class="dl">{{ mech()?.slots?.[sl.id] ? emoji(mech()!.slots[sl.id]) : '' }}</b>
                     <span dir="rtl" class="small">{{ mech()?.slots?.[sl.id] ? itemName(mech()!.slots[sl.id]) : 'ריק' }}</span>
+                    @if (by(sl.id); as b) { <em class="by">✋ {{ b }}</em> }
                   </button>
                 }
               </div>
@@ -103,6 +104,7 @@ const MAZE_SYMBOLS: Record<string, string> = { '*': '⭐', F: '🔥', M: '🕎',
                     <span class="pot" [style.transform]="'scale(' + (0.7 + $any(sl).size * 0.15) + ')'">🏺</span>
                     <b class="mark">{{ $any(sl).mark }}</b>
                     <small dir="rtl">{{ placed ? itemName(placed) : sl.label }}</small>
+                    @if (by(sl.id); as b) { <em class="by">✋ {{ b }}</em> }
                   </button>
                 }
               </div>
@@ -167,6 +169,7 @@ const MAZE_SYMBOLS: Record<string, string> = { '*': '⭐', F: '🔥', M: '🕎',
                     [disabled]="busy() || state()?.status === 'solved'" [attr.aria-label]="sl.label">
                     <span class="pot">🪞</span>
                     <small>{{ mech()?.slots?.[sl.id] ? emoji(mech()!.slots[sl.id]) + ' ' + itemName(mech()!.slots[sl.id]) : sl.label }}</small>
+                    @if (by(sl.id); as b) { <em class="by">✋ {{ b }}</em> }
                   </button>
                 }
               </div>
@@ -215,6 +218,7 @@ const MAZE_SYMBOLS: Record<string, string> = { '*': '⭐', F: '🔥', M: '🕎',
                     <small dir="rtl">{{ sl.label }}</small>
                     <b class="dl">{{ mech()?.slots?.[sl.id] ? emoji(mech()!.slots[sl.id]) : '' }}</b>
                     <span dir="rtl" class="small">{{ mech()?.slots?.[sl.id] ? itemName(mech()!.slots[sl.id]) : 'ריק' }}</span>
+                    @if (by(sl.id); as b) { <em class="by">✋ {{ b }}</em> }
                   </button>
                 }
               </div>
@@ -236,6 +240,7 @@ const MAZE_SYMBOLS: Record<string, string> = { '*': '⭐', F: '🔥', M: '🕎',
                     [disabled]="busy() || state()?.status === 'solved'" [attr.aria-label]="sl.label">
                     <span class="pot">⚖️</span>
                     <small>{{ mech()?.slots?.[sl.id] ? emoji(mech()!.slots[sl.id]) + ' ' + itemName(mech()!.slots[sl.id]) : sl.label }}</small>
+                    @if (by(sl.id); as b) { <em class="by">✋ {{ b }}</em> }
                   </button>
                 }
               </div>
@@ -265,6 +270,7 @@ const MAZE_SYMBOLS: Record<string, string> = { '*': '⭐', F: '🔥', M: '🕎',
                   <button class="slot" [class.full]="!!mech()?.slots?.[sl.id]" (click)="slotClick(sl.id)" [disabled]="busy() || state()?.status === 'solved'">
                     <small>{{ sl.label }}</small>
                     <b>{{ mech()?.slots?.[sl.id] ? emoji(mech()!.slots[sl.id]) + ' ' + itemName(mech()!.slots[sl.id]) : 'ריק' }}</b>
+                    @if (by(sl.id); as b) { <em class="by">✋ {{ b }}</em> }
                   </button>
                 }
               </div>
@@ -277,7 +283,7 @@ const MAZE_SYMBOLS: Record<string, string> = { '*': '⭐', F: '🔥', M: '🕎',
               <div class="maze-wrap">
                 <div class="maze" dir="ltr" [style.grid-template-columns]="'repeat(' + mazeCols() + ', 1fr)'">
                   @for (cell of mazeCells(); track $index) {
-                    <span class="mc" [class.wall]="cell.ch === '#'" [class.gate]="cell.gate" [class.open]="cell.open" [class.key]="cell.key">{{ cell.key ? '🔑' : cell.label }}</span>
+                    <span class="mc" [class.wall]="cell.ch === '#'" [class.gate]="cell.gate" [class.open]="cell.open" [class.key]="cell.key">@if (cell.key) { 🔑 } @else if (cell.ch === 'M') { <svg class="menorah" viewBox="0 0 24 24" role="img" aria-label="מנורה"><path d="M12 4v15M7.5 21h9M3 6v2a9 6 0 0 0 18 0V6M5.3 6v2a6.7 4.6 0 0 0 13.4 0V6M7.5 6v2a4.5 3.2 0 0 0 9 0V6M9.8 6v2a2.2 1.6 0 0 0 4.4 0V6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><g fill="currentColor"><circle cx="3" cy="4.4" r="1"/><circle cx="5.3" cy="4.4" r="1"/><circle cx="7.5" cy="4.4" r="1"/><circle cx="9.8" cy="4.4" r="1"/><circle cx="12" cy="2.6" r="1"/><circle cx="14.2" cy="4.4" r="1"/><circle cx="16.5" cy="4.4" r="1"/><circle cx="18.7" cy="4.4" r="1"/><circle cx="21" cy="4.4" r="1"/></g></svg> } @else { {{ cell.label }} }</span>
                   }
                 </div>
                 <div class="controls">
@@ -326,6 +332,7 @@ const MAZE_SYMBOLS: Record<string, string> = { '*': '⭐', F: '🔥', M: '🕎',
                     <small dir="rtl">{{ sl.label }}</small>
                     <b class="dl">{{ mech()?.slots?.[sl.id] ? emoji(mech()!.slots[sl.id]) : '' }}</b>
                     @if (mech()?.backs?.[sl.id]) { <span class="back">גב: {{ mech()!.backs[sl.id] }}</span> }
+                    @if (by(sl.id); as b) { <em class="by">✋ {{ b }}</em> }
                   </button>
                 }
               </div>
@@ -374,6 +381,7 @@ const MAZE_SYMBOLS: Record<string, string> = { '*': '⭐', F: '🔥', M: '🕎',
                     <b>{{ mech()?.slots?.[sl.id] ? emoji(mech()!.slots[sl.id]) + ' ' + itemName(mech()!.slots[sl.id]) : 'ריק' }}</b>
                     @if (v === true) { <span class="verdict ok" role="status">✓ מיקום נכון</span> }
                     @else if (v === false) { <span class="verdict bad" role="status">✗ מיקום שגוי — אפשר להזיז</span> }
+                    @if (by(sl.id); as b) { <em class="by">✋ {{ b }}</em> }
                   </button>
                 }
               </div>
@@ -458,6 +466,7 @@ const MAZE_SYMBOLS: Record<string, string> = { '*': '⭐', F: '🔥', M: '🕎',
     .mc { aspect-ratio:1; display:grid; place-items:center; font-size:.95rem; background:#1e2a44; border-radius:3px; }
     .mc.wall { background:#8a6a3a; } .mc.gate { background:#3a5a9a; } .mc.gate.open { background:#1e2a44; outline: 1px dashed #6a9ae0; }
     .mc.key { background:#5a4a1a; box-shadow: inset 0 0 0 2px #ffd24a; }
+    .mc .menorah { width:88%; height:88%; color:#ffd36b; filter: drop-shadow(0 0 2px rgba(255,200,90,.6)); }
     .controls { display:flex; flex-direction:column; gap:.6rem; }
     .pad { display:grid; grid-template-columns: repeat(3, 52px); gap:4px; } .pad .mid { display:grid; place-items:center; font-size:1.4rem; }
     .levers { display:flex; flex-direction:column; gap:.3rem; } .lever.on { border-color: var(--ok); color:#9be3b4; }
@@ -500,10 +509,13 @@ const MAZE_SYMBOLS: Record<string, string> = { '*': '⭐', F: '🔥', M: '🕎',
     .evlist { display:flex; flex-wrap:wrap; gap:.4rem .9rem; margin-top:.6rem; color: var(--muted); } .evlist .ok { color:#9be3b4; }
     .inscriptions { background:#e9d8ad; color:#3a2410; border-radius:12px; padding:.7rem 2rem .7rem 1rem; margin:.3rem 0 .6rem; line-height:1.8;
       font-family: var(--font-title); }
-    .evboard { display:grid; grid-template-columns: repeat(4, 1fr); gap:.4rem; margin:.5rem 0; }
+    .evboard { display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:.4rem; margin:.5rem 0; }
     .evboard .slot { align-items:center; min-height:96px; justify-content:center; text-align:center; }
     .evboard .slot.lit { border-color:#ffd77a; box-shadow: 0 0 14px rgba(255,215,122,.5); }
-    @media (max-width: 480px) { .evboard { grid-template-columns: repeat(2, 1fr); } }
+    .slot .by { display:block; font-style:normal; font-size:.72rem; color: var(--muted); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    /* a phone keeps the row of four (places 1–4 read left to right, as on the wall): only the boxes get smaller */
+    @media (max-width: 480px) { .evboard { gap:.25rem; } .evboard .slot { min-height:78px; padding:.35rem .15rem; min-width:0; } .evboard .slot small { font-size:.68rem; line-height:1.25; }
+      .evboard .slot .small { font-size:.7rem; } .evboard .dl { font-size:1.35rem; } .evboard .slot .pot { font-size:1.4rem; } }
     .wscroll { background:#e9d8ad; color:#3a2410; border-radius:12px; padding:.6rem .9rem; display:flex; flex-direction:column; gap:.35rem; margin:.3rem 0 .6rem; }
     .wrow { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; } .wrow .mark { font-size:1.4rem; min-width:2.4rem; text-align:center; }
     .wrow small { flex-basis:100%; color:#5a3e1e; }
@@ -568,6 +580,12 @@ export class HPanelComponent {
   puzzle = computed<PuzzleContent | undefined>(() => this.game.scenario()?.puzzles.find((p) => p.id === this.puzzleId()));
   state = computed<PuzzleStateDto | undefined>(() => this.game.snapshot()?.puzzles.find((p) => p.id === this.puzzleId()));
   mech = computed<MechanismState | undefined>(() => this.game.snapshot()?.mechanisms?.[this.puzzleId()]);
+  /** Who placed what is in a slot (the server records it with each placement), shown to everyone under the item. */
+  by(slot: string): string | null {
+    const id = this.mech()?.slotBy?.[slot];
+    if (!id || !this.mech()?.slots?.[slot]) return null;
+    return this.game.snapshot()?.players.find((p) => p.id === id)?.nickname ?? null;
+  }
   /** The puzzle's public data, with the texts the admin set for this game (fixed when it started) over it. */
   data = computed(() => ({ ...(this.puzzle()?.publicData ?? {}), ...(this.game.snapshot()?.questions?.[this.puzzleId()] ?? {}) }));
   allPlaced = computed(() => this.slots().length > 0 && this.slots().every((s) => !!this.mech()?.slots?.[s.id]));
@@ -762,7 +780,11 @@ export class HPanelComponent {
   async operate(action: object, quiet = false) {
     this.busy.set(true);
     try {
-      const r = await this.game.operate(this.puzzleId(), action);
+      // a change to a shared puzzle carries the version this player sees, so it never overwrites a change made by another
+      // player that has not reached this screen yet (the server refuses it and the new state shows)
+      const op = (action as { op?: string }).op ?? '';
+      const sent = ['place', 'remove', 'reset'].includes(op) ? { ...action, rev: this.mech()?.rev ?? 0 } : action;
+      const r = await this.game.operate(this.puzzleId(), sent);
       if (!r.ok) {
         this.message.set({ ok: false, text: r.message });
         this.audio.sfx('wrong');

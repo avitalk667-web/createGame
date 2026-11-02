@@ -196,6 +196,14 @@ public sealed class MechanismState
     /// the server's check and cleared when that place changes; a right item stays where it is.
     /// </summary>
     public Dictionary<string, bool> Verdict { get; set; } = new();
+    /// <summary>
+    /// Goes up with every change the server accepts, and who made the last one. A client may send the version it saw: an
+    /// action based on an older view (someone else changed it in the meantime) is refused, so nobody overwrites a change
+    /// they have not seen yet.
+    /// </summary>
+    public int Rev { get; set; }
+    public string? LastById { get; set; }
+    public string? LastBy { get; set; }
     /// <summary>Inspection: objects already examined, and those whose hidden symbol was uncovered (target ids).</summary>
     public List<string> Found { get; set; } = new();
     public List<string> Symbols { get; set; } = new();

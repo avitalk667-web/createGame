@@ -6,11 +6,14 @@ import { ApiService, Campaign, myLinkStore } from '../core/api.service';
 
 /** Pages where the popup never appears: a game in progress, joining one, paying, the admin and the personal-link page itself. */
 const QUIET = [/^\/room\//, /^\/join/, /^\/checkout\//, /^\/sandbox-pay\//, /^\/admin/, /^\/share/, /^\/unsubscribe/];
-/** Set once the popup has been shown in this browser: it never comes back (closing, "not now" and "create" alike). */
+/**
+ * Set once the popup has been shown in this visit (sessionStorage: this tab, kept through refreshes and page changes), so it
+ * does not come back during the visit; a new visit — a new tab or window, or the browser opened again — shows it again.
+ */
 const SEEN_KEY = 'px_campaign_seen';
 
 /**
- * The "friend brings a friend" popup: shown only once in a browser, a few seconds into a visit to the site's own pages,
+ * The "friend brings a friend" popup: shown once in every visit, a few seconds into it, on the site's own pages,
  * never during a game.
  * A visitor who already created a link in this browser sees it with a copy button instead of the invitation.
  */
@@ -77,7 +80,7 @@ export class CampaignPopupComponent {
     return QUIET.some((r) => r.test(url));
   }
 
-  /** Once in this browser, ever. */
+  /** Once per visit. */
   private consider() {
     clearTimeout(this.timer);
     if (this.quiet()) {
@@ -100,7 +103,7 @@ export class CampaignPopupComponent {
 
   private wasSeen() {
     try {
-      return !!sessionStorage.getItem(SEEN_KEY) || !!localStorage.getItem(SEEN_KEY);
+      return !!sessionStorage.getItem(SEEN_KEY);
     } catch {
       return false;
     }
@@ -109,8 +112,7 @@ export class CampaignPopupComponent {
   private remember() {
     try {
       sessionStorage.setItem(SEEN_KEY, '1');
-      localStorage.setItem(SEEN_KEY, String(Date.now()));
-    } catch { /* storage blocked: it may show again on a later visit */ }
+    } catch { /* storage blocked: it may show again on a later page of this visit */ }
   }
 
   later() {

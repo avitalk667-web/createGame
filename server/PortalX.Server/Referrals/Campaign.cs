@@ -20,6 +20,11 @@ public sealed class CampaignContent
     public string Body { get; init; } = "";
     public string DrawLabel { get; init; } = "";
     public string DrawDate { get; init; } = "";
+    /// <summary>
+    /// The exact moment of the draw (with its Israel offset), for the countdown on the site; null = no countdown. The site
+    /// counts down to it from the server's clock, so a device with a wrong clock still shows the right time left.
+    /// </summary>
+    public DateTimeOffset? DrawAt { get; init; }
     public string ButtonLabel { get; init; } = "";
     public string PopupTitle { get; init; } = "";
     public string PopupBody { get; init; } = "";
@@ -89,6 +94,6 @@ public sealed class CampaignContent
     {
         enabled = Enabled, title = Title, prize = Prize, lead = Lead, body = Body, drawLabel = DrawLabel, drawDate = DrawDate,
         buttonLabel = ButtonLabel, popupTitle = PopupTitle, popupBody = PopupBody, popupCreateLabel = PopupCreateLabel,
-        popupLaterLabel = PopupLaterLabel, minBuyers = MinBuyers,
+        popupLaterLabel = PopupLaterLabel, minBuyers = MinBuyers, drawAt = DrawAt, serverNow = DateTimeOffset.UtcNow,
     };
 }

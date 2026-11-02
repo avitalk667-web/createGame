@@ -57,9 +57,16 @@ public sealed partial class GameEngine
 
         var world = World(room);
         var mech = world.Mechanisms.TryGetValue(puzzle.Id, out var m) ? m : world.Mechanisms[puzzle.Id] = NewMechanism(puzzle);
+        // an action based on an older view of the puzzle (another player changed it since) is refused; the player's own
+        // quick actions never conflict with each other
+        var pid = player!.Id.ToString();
+        if (action.TryGetProperty("rev", out var rev) && rev.ValueKind == JsonValueKind.Number && rev.GetInt32() != mech.Rev && mech.LastById != pid)
+            return new ActionOutcome(false, "changed", $"{mech.LastBy ?? "שחקן אחר"} שינה את זה הרגע — המצב המעודכן מוצג לפניכם. נסו שוב.", [], false);
+        var before = new Dictionary<string, string>(mech.Slots);
+        ActionOutcome outcome;
         try
         {
-            return puzzle.Type switch
+            outcome = puzzle.Type switch
             {
                 "slots" => OperateSlots(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
                 "maze" => OperateMaze(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
@@ -74,6 +81,52 @@ public sealed partial class GameEngine
         {
             return ActionOutcome.Fail("bad-action", "הפעולה לא נשלחה בצורה תקינה.");
         }
+        if (!outcome.StateChanged) return outcome;
+
+        // the action changed the shared puzzle: a new version, and everyone is told who did what
+        // (read again: a solve may have saved more changes than this method's copy of the world holds)
+        var saved = World(room);
+        if (saved.Mechanisms.TryGetValue(puzzle.Id, out var after))
+        {
+            after.Rev++;
+            after.LastById = pid;
+            after.LastBy = player.Nickname;
+            SaveWorld(room, saved, now);
+        }
+        var line = ActionLine(scenario!, puzzle, player, op, action, before, after);
+        if (line == null) return outcome;
+        // the general line replaces the shorter "placed" notice of the same action
+        return outcome with { Notices = [.. outcome.Notices.Where(n => n.Kind != "item-placed"), new("puzzle-action", line, pid, puzzle.Id)] };
+    }
+
+    /// <summary>
+    /// "Who did what" for an action that changed a shared puzzle: the player, the puzzle, what they did and the new state
+    /// of the object. Null for actions that have their own notices (inspecting, spinning, checking, solving) and for each
+    /// step of the maze key (its holder's name is shown on the controls instead).
+    /// </summary>
+    private static string? ActionLine(ScenarioContent scenario, PuzzleContent puzzle, PlayerSession player, string op, JsonElement action,
+        IReadOnlyDictionary<string, string> before, MechanismState? after)
+    {
+        string Slot(string id) => puzzle.PublicData["slots"]?.AsArray().FirstOrDefault(s => s?["id"]?.GetValue<string>() == id)?["label"]?.GetValue<string>() ?? id;
+        string Item(string? id) => id == null ? "" : scenario.Item(id)?.Name ?? id;
+        string? Arg(string name) => action.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+        string? did = op switch
+        {
+            "place" when Arg("slot") is { } s => before.FirstOrDefault(kv => kv.Value == Arg("item")).Key is { } src && src != s
+                ? $"העביר את {Item(Arg("item"))} מ„{Slot(src)}” אל „{Slot(s)}”"
+                : $"הניח את {Item(Arg("item"))} ב„{Slot(s)}”",
+            "remove" when Arg("slot") is { } s => $"הוריד את {Item(before.GetValueOrDefault(s))} מ„{Slot(s)}”",
+            "reset" => "החזיר את כל הפריטים למקומם",
+            "lever" when after != null && action.TryGetProperty("index", out var i) && i.GetInt32() is var k && k >= 0 && k < after.Levers.Count
+                => $"הזיז את „{puzzle.PublicData["levers"]![k]!["label"]!.GetValue<string>()}” — השער {(after.Levers[k] ? "נפתח" : "נסגר")}",
+            "rotate" => "סובב אבן בפסיפס",
+            _ => null,
+        };
+        if (did == null) return null;
+        // the beam of a balance: where it leans now
+        if (puzzle.Type == "balance" && after != null && op is "place" or "remove" or "reset")
+            did += after.Tilt == 0 ? " · המאזניים מאוזנים" : after.Tilt < 0 ? " · הכף השמאלית כבדה יותר" : " · הכף הימנית כבדה יותר";
+        return $"{player.Nickname} · {puzzle.Title}: {did}";
     }
 
     private static MechanismState NewMechanism(PuzzleContent puzzle)

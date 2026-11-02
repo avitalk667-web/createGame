@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, HostListener, OnDestroy, computed, inject, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, OnDestroy, booleanAttribute, computed, inject, input, output, signal } from '@angular/core';
 import { AudioService } from '../core/audio.service';
 import { GameService } from '../core/game.service';
 
@@ -35,7 +35,7 @@ const KEY_DIRS: Record<string, string> = { ArrowUp: 'N', ArrowDown: 'S', ArrowLe
       <span></span>
     </div>
     @if (msg(); as m) { <p class="msg" role="status">{{ m }}</p> }
-    <p class="muted small tip">לחיצה קצרה — צעד אחד. לחיצה ארוכה — תנועה רציפה עד שמרפים. אפשר גם עם מקשי החיצים.</p>
+    @if (!compact()) { <p class="muted small tip">לחיצה קצרה — צעד אחד. לחיצה ארוכה — תנועה רציפה עד שמרפים. אפשר גם עם מקשי החיצים.</p> }
   `,
   styles: [`
     :host { display:block; user-select:none; -webkit-user-select:none; }
@@ -52,11 +52,14 @@ const KEY_DIRS: Record<string, string> = { ArrowUp: 'N', ArrowDown: 'S', ArrowLe
     @keyframes shake { 0%,100% { transform:none } 25% { transform: translateX(-6px) } 75% { transform: translateX(6px) } }
     .msg { color:#ffb4a3; margin:.4rem 0 0; text-align:center; font-weight:700; }
     .tip { text-align:center; margin:.4rem 0 0; }
+    :host([compact]) .who { font-size:.78rem; margin:0 0 .3rem; max-width:13rem; text-align:center; margin-inline:auto; }
   `],
 })
 export class MazePadComponent implements OnDestroy {
   private game = inject(GameService);
   private audio = inject(AudioService);
+  /** The small floating dock beside the maze: no tip line, a shorter status. */
+  compact = input(false, { transform: booleanAttribute });
   /** The key hit a wall or a closed gate (the room shakes the key). */
   blocked = output<string>();
   msg = signal<string | null>(null);
