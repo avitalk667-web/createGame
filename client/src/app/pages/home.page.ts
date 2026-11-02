@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AdminApiService } from '../core/admin-api.service';
 import { ApiService, Campaign } from '../core/api.service';
@@ -6,12 +6,14 @@ import { AudioService } from '../core/audio.service';
 import { SiteService } from '../core/site.service';
 import { FaqEntryView, Product, formatPrice, playersLabel } from '../core/models';
 import { DrawCountdownComponent } from '../ui/draw-countdown.component';
+import { PrizeGiftComponent } from '../ui/prize-gift.component';
+import { HowItWorksComponent } from '../ui/how-it-works.component';
 import { SettingsPanelComponent } from '../ui/settings-panel.component';
 
 /** Shared entry gate: a catalog of both games, each with its own server-side price (spec §2). */
 @Component({
   selector: 'px-home',
-  imports: [RouterLink, SettingsPanelComponent, DrawCountdownComponent],
+  imports: [RouterLink, SettingsPanelComponent, DrawCountdownComponent, PrizeGiftComponent, HowItWorksComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="bg" aria-hidden="true"></div>
@@ -48,18 +50,40 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
 
     <main>
       <!-- the personal-link invitation: first thing under the menu, in the page flow (never a popup) -->
-      <section class="share card" aria-labelledby="share-title">
-        <div>
-          <h2 id="share-title">אהבתם? שתפו את PORTAL X</h2>
-          <p>צרו קישור אישי ושתפו אותו עם חברים ומכרים.</p>
+      <section class="share" [class.with-prize]="campaignOn()" aria-labelledby="share-title">
+        <div class="share-info">
+          <div class="share-head">
+            <span class="share-badge" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false"><path fill="currentColor" d="M18 4.5v15a1 1 0 0 1-1.6.8L12 17H7.5l1.2 4.2a1 1 0 0 1-1 1.3H6.4a1 1 0 0 1-1-.7L3.9 17A2.5 2.5 0 0 1 2 14.5v-4A2.5 2.5 0 0 1 4.5 8H12l4.4-4.3A1 1 0 0 1 18 4.5Zm2.2 4.1a.8.8 0 0 1 1.1-.2 4.4 4.4 0 0 1 0 7.2.8.8 0 1 1-.9-1.3 2.8 2.8 0 0 0 0-4.6.8.8 0 0 1-.2-1.1Z"/></svg>
+            </span>
+            <div>
+              <h2 id="share-title">אהבתם? שתפו את PORTAL X</h2>
+              <p class="share-lead">צרו קישור אישי ושתפו אותו עם חברים ומכרים.</p>
+            </div>
+          </div>
           @if (campaignOn()) {
             <!-- the "friend brings a friend" draw (same terms as the campaign: different, really paid buyers) -->
-            <p class="promo">4 רוכשים שונים דרך הקישור האישי = כניסה להגרלה על <b>888 ₪</b>!</p>
-            <p class="draw">ההגרלה תיערך ביום ראשון, ג׳ בטבת תשפ״ז, 13.12.2026, בשעה 20:00.</p>
+            <p class="promo">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M20 7h-2.2A3 3 0 0 0 12 3.8 3 3 0 0 0 6.2 7H4a1 1 0 0 0-1 1v3a1 1 0 0 0 1 1h7V7h2v5h7a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1Zm-11-.1a1.1 1.1 0 1 1 2-.6V7H9.5a1 1 0 0 1-.5-.1ZM15 7h-2v-.7A1.1 1.1 0 1 1 15 7ZM4 13.5V20a1 1 0 0 0 1 1h6v-7.5H4Zm9 7.5h6a1 1 0 0 0 1-1v-6.5h-7V21Z"/></svg>
+              <span>4 רוכשים שונים דרך הקישור האישי = כניסה להגרלה על <b>{{ campaign()?.prize || '888 ₪' }}</b>!</span>
+            </p>
+            <p class="draw">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 2a1 1 0 0 1 1 1v1h6V3a1 1 0 1 1 2 0v1h1.5A2.5 2.5 0 0 1 21 6.5v12a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 18.5v-12A2.5 2.5 0 0 1 5.5 4H7V3a1 1 0 0 1 1-1ZM5 10v8.5c0 .3.2.5.5.5h13a.5.5 0 0 0 .5-.5V10H5Zm2 2h2v2H7v-2Zm4 0h2v2h-2v-2Zm4 0h2v2h-2v-2Zm-8 4h2v2H7v-2Zm4 0h2v2h-2v-2Z"/></svg>
+              <span>ההגרלה תיערך ביום ראשון, ג׳ בטבת תשפ״ז, 13.12.2026, בשעה 20:00.</span>
+            </p>
             <px-draw-countdown [drawAt]="campaign()?.drawAt" [serverNow]="campaign()?.serverNow" />
           }
         </div>
-        <a class="btn primary" routerLink="/share">יצירת קישור אישי</a>
+        <div class="share-prize">
+          @if (campaignOn()) {
+            <span class="share-brand gold-title" aria-hidden="true">PORTAL X</span>
+            <px-prize-gift class="share-gift" [amount]="campaign()?.prize || '888 ₪'" />
+          }
+          <a class="btn share-cta" routerLink="/share">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M18 2a4 4 0 1 1-2.9 6.8l-6.2 3.1a4 4 0 0 1 0 .2l6.2 3.1a4 4 0 1 1-.9 1.8l-6.2-3.1a4 4 0 1 1 0-5.8l6.2-3.1A4 4 0 0 1 18 2Z"/></svg>
+            יצירת קישור אישי
+          </a>
+        </div>
       </section>
 
       <section class="hero" aria-labelledby="hero-title">
@@ -126,17 +150,7 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
         }
       </section>
 
-      <section id="how" class="how" aria-labelledby="how-title">
-        <h2 id="how-title">איך זה עובד?</h2>
-        <ol>
-          <li><b>בוחרים משחק</b><span>כל משחק עם עולם, חידות ומחיר משלו.</span></li>
-          <li><b>רכישה אחת לקבוצה</b><span>משלמים פעם אחת — לא לכל משתתף.</span></li>
-          <li><b>מקבלים קוד משחק</b><span>הקוד נוצר אחרי אישור התשלום בשרת.</span></li>
-          <li><b>עד 4 משתתפים</b><span>אפשר להזמין עד שלושה חברים, ואת „שער הסודות” ו„סוד פך השמן” אפשר לשחק גם לבד („הפורטל האחרון” — מ־2). כל אחד מזין את הקוד, בוחר כינוי ודמות. המארח נספר בין הארבעה.</span></li>
-          <li><b>משחקים יחד</b><span>המארח מתחיל, וכל הקבוצה נכנסת להרפתקה.</span></li>
-        </ol>
-        <p class="muted">עובד בדפדפן במחשב ובטלפון. לא צריך מצלמה, מיקרופון או הרשמה. רוצים לנסות קודם? „שער הסודות” חינמי לגמרי.</p>
-      </section>
+      <px-how-it-works [freeGameId]="freeGameId()" />
 
 
       <section id="faq" class="faq" aria-labelledby="faq-title">
@@ -298,24 +312,56 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
     .price b { font-size:1.8rem; color:var(--gold-2); line-height:1.1; }
     .price span { font-size:.9rem; color:var(--muted); }
     .price .sale-soon { display:block; color:var(--gold-2); font-weight:700; }
-    .how { padding-block:2rem; scroll-margin-top:84px; }
-    .share { display:flex; align-items:center; justify-content:space-between; gap:1.5rem; margin-block:1.1rem 0; padding:1.25rem 1.6rem;
-      border:1px solid rgba(224,185,92,.45); border-radius:16px; background:linear-gradient(135deg, rgba(20,32,74,.96), rgba(10,18,48,.96)); }
-    .share h2 { margin:0 0 .3rem; color:var(--gold-2); font-size:clamp(1.25rem, 2.4vw, 1.9rem); line-height:1.25; }
-    .share p { margin:0; color:#d6dcef; line-height:1.6; }
-    .share .promo { margin-top:.35rem; color:#fff; font-weight:700; } .share .promo b { color:var(--gold-2); font-size:1.15em; white-space:nowrap; }
-    .share .draw { font-size:.9rem; color:#c9d2ee; }
-    .share .btn { white-space:nowrap; min-height:48px; padding-inline:1.6rem; flex-shrink:0; transition:transform .2s, box-shadow .2s, filter .2s; }
-    .share .btn:hover { transform:translateY(-1px); filter:brightness(1.06); box-shadow:0 6px 22px rgba(224,185,92,.35); }
-    @media (max-width: 640px) {
-      .share { flex-direction:column; align-items:stretch; gap:.7rem; margin-top:.75rem; padding:.85rem 1rem; }
-      .share p { font-size:.9rem; line-height:1.5; }
-      .share .btn { justify-content:center; text-align:center; }
+    /* the personal-link card and the draw: navy and gold, the details and countdown on the right, the prize on the left */
+    .share { position:relative; display:grid; grid-template-columns:minmax(0, 1fr); gap:1.2rem; margin-block:1.1rem 0; padding:1.4rem 1.6rem;
+      border-radius:22px; border:1px solid rgba(240,200,110,.7); color:#fbf3e4; overflow:hidden; isolation:isolate;
+      background: radial-gradient(circle at 18% 45%, rgba(244,184,74,.16), transparent 42%), radial-gradient(circle at 85% 0%, rgba(80,120,220,.14), transparent 50%),
+        linear-gradient(135deg, #111c44, #0a1230 60%, #0b1435);
+      box-shadow: 0 0 0 4px rgba(240,200,110,.08), 0 0 26px rgba(240,200,110,.18), 0 18px 40px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,230,160,.18); }
+    .share.with-prize { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); align-items:center; }
+    .share-info { display:flex; flex-direction:column; gap:.8rem; min-width:0; }
+    .share-head { display:flex; align-items:center; gap:1rem; }
+    .share-badge { flex-shrink:0; width:clamp(52px, 6vw, 76px); aspect-ratio:1; border-radius:50%; display:grid; place-items:center; color:var(--gold-2);
+      background: radial-gradient(circle at 35% 30%, #1d2c5e, #0a1230); border:2px solid rgba(240,200,110,.75); box-shadow: 0 0 18px rgba(240,200,110,.35), inset 0 0 12px rgba(240,200,110,.15); }
+    .share-badge svg { width:52%; height:52%; filter: drop-shadow(0 0 4px rgba(255,210,120,.6)); }
+    .share h2 { margin:0; font-family:var(--font-title); font-weight:900; font-size:clamp(1.55rem, 3.4vw, 2.6rem); line-height:1.15;
+      background: linear-gradient(180deg, #fff1bf, #f2c45a 55%, #c58d2f); -webkit-background-clip:text; background-clip:text; color:transparent;
+      filter: drop-shadow(0 2px 6px rgba(0,0,0,.45)); }
+    .share-lead { margin:.3rem 0 0; color:#efe6d6; font-size:clamp(.98rem, 1.5vw, 1.2rem); line-height:1.5; }
+    .share .ico { width:1.35em; height:1.35em; flex-shrink:0; }
+    .share .promo { margin:0; display:flex; align-items:center; gap:.6rem; padding:.6rem 1.1rem; border-radius:999px; color:#14193a; font-weight:800;
+      font-size:clamp(.95rem, 1.5vw, 1.15rem); line-height:1.35; background: linear-gradient(180deg, #ffeab0, #f1c25a 55%, #d9a240);
+      box-shadow: 0 0 16px rgba(240,200,110,.35), inset 0 1px 0 rgba(255,255,255,.6); }
+    .share .promo b { font-size:1.2em; font-weight:900; white-space:nowrap; }
+    .share .draw { margin:0; display:flex; align-items:center; gap:.55rem; color:#f3ead9; font-size:clamp(.9rem, 1.3vw, 1.05rem); }
+    .share .draw .ico { color:var(--gold-2); }
+    .share-prize { display:flex; flex-direction:column; align-items:center; gap:.4rem; min-width:0; }
+    .share-brand { font-size:clamp(1.5rem, 2.6vw, 2.2rem); font-weight:800; letter-spacing:.04em; align-self:flex-start; margin-inline-start:auto; filter: drop-shadow(0 2px 6px rgba(0,0,0,.5)); }
+    .share-gift { width:min(100%, 390px); margin-block:-.6rem -.3rem; }
+    .share-cta { display:inline-flex; align-items:center; justify-content:center; gap:.6rem; width:min(100%, 360px); min-height:58px; padding:.7rem 1.6rem;
+      border-radius:999px; border:1px solid #fff0c0; color:#14193a; font-weight:900; font-size:clamp(1.05rem, 1.6vw, 1.3rem); text-decoration:none; white-space:nowrap;
+      background: linear-gradient(180deg, #fff0bd, #f3c75e 50%, #d8a03c); box-shadow: 0 0 22px rgba(240,200,110,.4), 0 8px 18px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.7);
+      transition: transform .18s ease, box-shadow .18s ease, filter .18s ease; }
+    .share-cta:hover { transform:translateY(-2px); filter:brightness(1.07) saturate(1.05); box-shadow: 0 0 30px rgba(240,200,110,.55), 0 12px 22px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.7); }
+    .share-cta:active { transform:translateY(1px) scale(.98); filter:brightness(.97); box-shadow: 0 0 14px rgba(240,200,110,.35), 0 4px 10px rgba(0,0,0,.35); }
+    .share-cta:focus-visible { outline:3px solid #fff3c4; outline-offset:3px; }
+    .share-cta .ico { width:1.4em; height:1.4em; color:#14193a; }
+    .share .promo .ico { color:#14193a; }
+    .share:not(.with-prize) { grid-template-columns: minmax(0, 1fr) auto; align-items:center; }
+    @media (prefers-reduced-motion: no-preference) { .share { animation: share-in .7s ease both; } }
+    @keyframes share-in { from { opacity:0; transform: translateY(8px) } }
+    /* tablet: still two columns, tighter */
+    @media (max-width: 1000px) { .share { padding:1.2rem 1.2rem; gap:1rem; } .share.with-prize { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); } }
+    /* not enough room: one column — title, the offer, the date, the countdown, then the prize and the button */
+    @media (max-width: 760px) {
+      .share, .share.with-prize, .share:not(.with-prize) { grid-template-columns: minmax(0, 1fr); margin-top:.75rem; padding:1rem .9rem 1.1rem; border-radius:18px; }
+      .share-head { gap:.7rem; }
+      .share .promo { border-radius:16px; padding:.55rem .8rem; }
+      .share .draw { align-items:flex-start; }
+      .share-brand { align-self:center; margin:0; }
+      .share-gift { width:min(78%, 300px); }
+      .share-cta { width:100%; }
     }
-    .how ol { list-style:none; padding:0; margin:0; display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:1rem; counter-reset:s; }
-    .how li { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:1rem; counter-increment:s; display:flex; flex-direction:column; gap:.3rem; }
-    .how li::before { content:counter(s); font-family:var(--font-title); font-size:2rem; color:var(--gold); font-weight:900; }
-    .how li span { color:var(--muted); line-height:1.5; }
     footer { text-align:center; padding-block:2rem 2.5rem; border-top:1px solid var(--line); margin-top:1rem; }
     footer nav { display:flex; justify-content:center; flex-wrap:wrap; gap:.4rem 1.4rem; }
     footer a { color:var(--text); }
@@ -324,7 +370,6 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
     .center { text-align:center; }
     @media (max-width: 1060px) { .links { gap:1rem; } .bar { gap:1rem; } }
     @media (max-width: 960px) {
-      .how ol { grid-template-columns:repeat(2, minmax(0,1fr)); }
       /* tablets: the picture on top at full width, the text under it */
       .hero { grid-template-columns:1fr; }
       .hero-art { order:-1; }
@@ -338,7 +383,6 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
     }
     @media (max-width: 760px) {
       .grid { grid-template-columns:1fr; }
-      .how ol { grid-template-columns:1fr; }
       .hero { padding-block:1rem 1.75rem; gap:1.1rem; }
       .hero-art { border-radius:16px; }
       .hero-cta { width:100%; max-width:420px; }
@@ -358,6 +402,8 @@ export class HomePage {
   /** The admin button appears only for a verified admin session (the server decides). */
   isAdmin = signal(false);
   products = signal<Product[]>([]);
+  /** The free trial game, for the "want to try first?" box of how it works. */
+  freeGameId = computed(() => this.products().find((p) => p.isFree)?.id ?? 'gate-of-secrets');
   loading = signal(true);
   error = signal<string | null>(null);
   showSettings = signal(false);
