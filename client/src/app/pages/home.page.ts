@@ -49,41 +49,33 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
     </header>
 
     <main>
-      <!-- the personal-link invitation: first thing under the menu, in the page flow (never a popup) -->
+      <!-- the personal-link invitation and the draw: a slim banner, one row on a computer (button, countdown, text, prize, logo
+           from right to left), a few short rows on a phone -->
       <section class="share" [class.with-prize]="campaignOn()" aria-labelledby="share-title">
-        <div class="share-info">
-          <div class="share-head">
-            <span class="share-badge" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><path fill="currentColor" d="M18 4.5v15a1 1 0 0 1-1.6.8L12 17H7.5l1.2 4.2a1 1 0 0 1-1 1.3H6.4a1 1 0 0 1-1-.7L3.9 17A2.5 2.5 0 0 1 2 14.5v-4A2.5 2.5 0 0 1 4.5 8H12l4.4-4.3A1 1 0 0 1 18 4.5Zm2.2 4.1a.8.8 0 0 1 1.1-.2 4.4 4.4 0 0 1 0 7.2.8.8 0 1 1-.9-1.3 2.8 2.8 0 0 0 0-4.6.8.8 0 0 1-.2-1.1Z"/></svg>
-            </span>
-            <div>
-              <h2 id="share-title">אהבתם? שתפו את PORTAL X</h2>
-              <p class="share-lead">צרו קישור אישי ושתפו אותו עם חברים ומכרים.</p>
-            </div>
-          </div>
+        <a class="btn share-cta" routerLink="/share">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M18 2a4 4 0 1 1-2.9 6.8l-6.2 3.1a4 4 0 0 1 0 .2l6.2 3.1a4 4 0 1 1-.9 1.8l-6.2-3.1a4 4 0 1 1 0-5.8l6.2-3.1A4 4 0 0 1 18 2Z"/></svg>
+          <span>יצירת קישור אישי</span>
+        </a>
+        @if (campaignOn()) {
+          <px-draw-countdown class="share-timer" compact [drawAt]="campaign()?.drawAt" [serverNow]="campaign()?.serverNow" />
+        }
+        <div class="share-text">
+          <h2 id="share-title">אהבתם? שתפו את PORTAL X</h2>
           @if (campaignOn()) {
             <!-- the "friend brings a friend" draw (same terms as the campaign: different, really paid buyers) -->
             <p class="promo">
               <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M20 7h-2.2A3 3 0 0 0 12 3.8 3 3 0 0 0 6.2 7H4a1 1 0 0 0-1 1v3a1 1 0 0 0 1 1h7V7h2v5h7a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1Zm-11-.1a1.1 1.1 0 1 1 2-.6V7H9.5a1 1 0 0 1-.5-.1ZM15 7h-2v-.7A1.1 1.1 0 1 1 15 7ZM4 13.5V20a1 1 0 0 0 1 1h6v-7.5H4Zm9 7.5h6a1 1 0 0 0 1-1v-6.5h-7V21Z"/></svg>
               <span>4 רוכשים שונים דרך הקישור האישי = כניסה להגרלה על <b>{{ campaign()?.prize || '888 ₪' }}</b>!</span>
             </p>
-            <p class="draw">
-              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 2a1 1 0 0 1 1 1v1h6V3a1 1 0 1 1 2 0v1h1.5A2.5 2.5 0 0 1 21 6.5v12a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 18.5v-12A2.5 2.5 0 0 1 5.5 4H7V3a1 1 0 0 1 1-1ZM5 10v8.5c0 .3.2.5.5.5h13a.5.5 0 0 0 .5-.5V10H5Zm2 2h2v2H7v-2Zm4 0h2v2h-2v-2Zm4 0h2v2h-2v-2Zm-8 4h2v2H7v-2Zm4 0h2v2h-2v-2Z"/></svg>
-              <span>ההגרלה תיערך ביום ראשון, ג׳ בטבת תשפ״ז, 13.12.2026, בשעה 20:00.</span>
-            </p>
-            <px-draw-countdown [drawAt]="campaign()?.drawAt" [serverNow]="campaign()?.serverNow" />
+            <p class="draw">ההגרלה: יום ראשון, ג׳ בטבת תשפ״ז, 13.12.2026, 20:00</p>
+          } @else {
+            <p class="lead">צרו קישור אישי ושתפו אותו עם חברים ומכרים.</p>
           }
         </div>
-        <div class="share-prize">
-          @if (campaignOn()) {
-            <span class="share-brand gold-title" aria-hidden="true">PORTAL X</span>
-            <px-prize-gift class="share-gift" [amount]="campaign()?.prize || '888 ₪'" />
-          }
-          <a class="btn share-cta" routerLink="/share">
-            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M18 2a4 4 0 1 1-2.9 6.8l-6.2 3.1a4 4 0 0 1 0 .2l6.2 3.1a4 4 0 1 1-.9 1.8l-6.2-3.1a4 4 0 1 1 0-5.8l6.2-3.1A4 4 0 0 1 18 2Z"/></svg>
-            יצירת קישור אישי
-          </a>
-        </div>
+        @if (campaignOn()) {
+          <px-prize-gift class="share-gift" [amount]="campaign()?.prize || '888 ₪'" />
+        }
+        <span class="share-brand gold-title" aria-hidden="true">PORTAL X</span>
       </section>
 
       <section class="hero" aria-labelledby="hero-title">
@@ -312,57 +304,62 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
     .price b { font-size:1.8rem; color:var(--gold-2); line-height:1.1; }
     .price span { font-size:.9rem; color:var(--muted); }
     .price .sale-soon { display:block; color:var(--gold-2); font-weight:700; }
-    /* the personal-link card and the draw: navy and gold, the details and countdown on the right, the prize on the left */
-    .share { position:relative; display:grid; grid-template-columns:minmax(0, 1fr); gap:1.2rem; margin-block:1.1rem 0; padding:1.4rem 1.6rem;
-      border-radius:22px; border:1px solid rgba(240,200,110,.7); color:#fbf3e4; overflow:hidden; isolation:isolate;
-      background: radial-gradient(circle at 18% 45%, rgba(244,184,74,.16), transparent 42%), radial-gradient(circle at 85% 0%, rgba(80,120,220,.14), transparent 50%),
-        linear-gradient(135deg, #111c44, #0a1230 60%, #0b1435);
-      box-shadow: 0 0 0 4px rgba(240,200,110,.08), 0 0 26px rgba(240,200,110,.18), 0 18px 40px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,230,160,.18); }
-    .share.with-prize { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); align-items:center; }
-    .share-info { display:flex; flex-direction:column; gap:.8rem; min-width:0; }
-    .share-head { display:flex; align-items:center; gap:1rem; }
-    .share-badge { flex-shrink:0; width:clamp(52px, 6vw, 76px); aspect-ratio:1; border-radius:50%; display:grid; place-items:center; color:var(--gold-2);
-      background: radial-gradient(circle at 35% 30%, #1d2c5e, #0a1230); border:2px solid rgba(240,200,110,.75); box-shadow: 0 0 18px rgba(240,200,110,.35), inset 0 0 12px rgba(240,200,110,.15); }
-    .share-badge svg { width:52%; height:52%; filter: drop-shadow(0 0 4px rgba(255,210,120,.6)); }
-    .share h2 { margin:0; font-family:var(--font-title); font-weight:900; font-size:clamp(1.55rem, 3.4vw, 2.6rem); line-height:1.15;
+    /* the personal-link banner: slim, navy and gold, a thin glowing frame; never taller than about 160px on a computer */
+    .share { display:grid; align-items:center; gap:clamp(.55rem, 1vw, 1rem); margin-block:1rem 0; padding:.6rem clamp(.7rem, 1.3vw, 1.1rem);
+      grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "cta text brand";
+      border-radius:18px; border:1px solid rgba(240,200,110,.75); color:#fbf3e4;
+      background: radial-gradient(circle at 20% 50%, rgba(244,184,74,.14), transparent 35%), linear-gradient(90deg, #0b1435, #111c44 50%, #0b1435);
+      box-shadow: 0 0 0 3px rgba(240,200,110,.07), 0 0 18px rgba(240,200,110,.22), 0 10px 26px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,230,160,.15); }
+    .share.with-prize { grid-template-columns: auto auto minmax(0, 1fr) auto auto; grid-template-areas: "cta timer text gift brand"; }
+    .share-cta { grid-area:cta; }
+    .share-timer { grid-area:timer; }
+    .share-text { grid-area:text; min-width:0; display:flex; flex-direction:column; gap:.25rem; padding-inline-start:clamp(.4rem, 1vw, .9rem); }
+    .share-gift { grid-area:gift; width:clamp(80px, 7vw, 100px); }
+    .share-brand { grid-area:brand; font-size:clamp(1.1rem, 1.5vw, 1.45rem); font-weight:800; letter-spacing:.04em; white-space:nowrap; filter: drop-shadow(0 2px 6px rgba(0,0,0,.5)); }
+    /* a thin gold line between the text and the prize */
+    .share.with-prize .share-text { border-inline-end:1px solid rgba(240,200,110,.45); padding-inline-end:clamp(.6rem, 1.2vw, 1.1rem); }
+    .share h2 { margin:0; font-family:var(--font-title); font-weight:900; font-size:clamp(1.2rem, 1.9vw, 1.65rem); line-height:1.15;
       background: linear-gradient(180deg, #fff1bf, #f2c45a 55%, #c58d2f); -webkit-background-clip:text; background-clip:text; color:transparent;
-      filter: drop-shadow(0 2px 6px rgba(0,0,0,.45)); }
-    .share-lead { margin:.3rem 0 0; color:#efe6d6; font-size:clamp(.98rem, 1.5vw, 1.2rem); line-height:1.5; }
-    .share .ico { width:1.35em; height:1.35em; flex-shrink:0; }
-    .share .promo { margin:0; display:flex; align-items:center; gap:.6rem; padding:.6rem 1.1rem; border-radius:999px; color:#14193a; font-weight:800;
-      font-size:clamp(.95rem, 1.5vw, 1.15rem); line-height:1.35; background: linear-gradient(180deg, #ffeab0, #f1c25a 55%, #d9a240);
-      box-shadow: 0 0 16px rgba(240,200,110,.35), inset 0 1px 0 rgba(255,255,255,.6); }
-    .share .promo b { font-size:1.2em; font-weight:900; white-space:nowrap; }
-    .share .draw { margin:0; display:flex; align-items:center; gap:.55rem; color:#f3ead9; font-size:clamp(.9rem, 1.3vw, 1.05rem); }
-    .share .draw .ico { color:var(--gold-2); }
-    .share-prize { display:flex; flex-direction:column; align-items:center; gap:.4rem; min-width:0; }
-    .share-brand { font-size:clamp(1.5rem, 2.6vw, 2.2rem); font-weight:800; letter-spacing:.04em; align-self:flex-start; margin-inline-start:auto; filter: drop-shadow(0 2px 6px rgba(0,0,0,.5)); }
-    .share-gift { width:min(100%, 390px); margin-block:-.6rem -.3rem; }
-    .share-cta { display:inline-flex; align-items:center; justify-content:center; gap:.6rem; width:min(100%, 360px); min-height:58px; padding:.7rem 1.6rem;
-      border-radius:999px; border:1px solid #fff0c0; color:#14193a; font-weight:900; font-size:clamp(1.05rem, 1.6vw, 1.3rem); text-decoration:none; white-space:nowrap;
-      background: linear-gradient(180deg, #fff0bd, #f3c75e 50%, #d8a03c); box-shadow: 0 0 22px rgba(240,200,110,.4), 0 8px 18px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.7);
+      filter: drop-shadow(0 2px 5px rgba(0,0,0,.45)); }
+    .share .ico { width:1.3em; height:1.3em; flex-shrink:0; }
+    .share .promo { margin:0; display:flex; align-items:center; gap:.45rem; color:#f6eedf; font-weight:700; font-size:clamp(.88rem, 1.05vw, 1rem); line-height:1.35; }
+    .share .promo .ico { color:var(--gold-2); }
+    .share .promo b { color:var(--gold-2); font-weight:900; white-space:nowrap; }
+    .share .draw { margin:0; color:#b9b4a8; font-size:.8rem; }
+    .share .lead { margin:0; color:#e8e1d2; font-size:.95rem; }
+    .share-cta { display:inline-flex; align-items:center; justify-content:center; gap:.5rem; min-height:54px; max-width:11.5em; padding:.5rem 1.1rem; border-radius:999px; text-align:center;
+      border:1px solid #fff0c0; color:#14193a; font-weight:900; font-size:clamp(.95rem, 1.1vw, 1.08rem); line-height:1.2; text-decoration:none;
+      background: linear-gradient(180deg, #fff0bd, #f3c75e 50%, #d8a03c); box-shadow: 0 0 18px rgba(240,200,110,.4), 0 6px 14px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.7);
       transition: transform .18s ease, box-shadow .18s ease, filter .18s ease; }
-    .share-cta:hover { transform:translateY(-2px); filter:brightness(1.07) saturate(1.05); box-shadow: 0 0 30px rgba(240,200,110,.55), 0 12px 22px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.7); }
-    .share-cta:active { transform:translateY(1px) scale(.98); filter:brightness(.97); box-shadow: 0 0 14px rgba(240,200,110,.35), 0 4px 10px rgba(0,0,0,.35); }
+    .share-cta .ico { color:#14193a; width:1.35em; height:1.35em; }
+    .share-cta:hover { transform:translateY(-1px); filter:brightness(1.07); box-shadow: 0 0 26px rgba(240,200,110,.55), 0 8px 18px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.7); }
+    .share-cta:active { transform:translateY(1px) scale(.98); filter:brightness(.97); }
     .share-cta:focus-visible { outline:3px solid #fff3c4; outline-offset:3px; }
-    .share-cta .ico { width:1.4em; height:1.4em; color:#14193a; }
-    .share .promo .ico { color:#14193a; }
-    .share:not(.with-prize) { grid-template-columns: minmax(0, 1fr) auto; align-items:center; }
-    @media (prefers-reduced-motion: no-preference) { .share { animation: share-in .7s ease both; } }
-    @keyframes share-in { from { opacity:0; transform: translateY(8px) } }
-    /* tablet: still two columns, tighter */
-    @media (max-width: 1000px) { .share { padding:1.2rem 1.2rem; gap:1rem; } .share.with-prize { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); } }
-    /* not enough room: one column — title, the offer, the date, the countdown, then the prize and the button */
-    @media (max-width: 760px) {
-      .share, .share.with-prize, .share:not(.with-prize) { grid-template-columns: minmax(0, 1fr); margin-top:.75rem; padding:1rem .9rem 1.1rem; border-radius:18px; }
-      .share-head { gap:.7rem; }
-      .share .promo { border-radius:16px; padding:.55rem .8rem; }
-      .share .draw { align-items:flex-start; }
-      .share-brand { align-self:center; margin:0; }
-      .share-gift { width:min(78%, 300px); }
-      .share-cta { width:100%; }
+    @media (prefers-reduced-motion: no-preference) { .share { animation: share-in .6s ease both; } }
+    @keyframes share-in { from { opacity:0; transform: translateY(6px) } }
+    /* narrower computers: the logo steps aside (the page header already shows it) */
+    @media (max-width: 1360px) {
+      .share { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "cta text"; }
+      .share.with-prize { grid-template-columns: auto auto minmax(0, 1fr) auto; grid-template-areas: "cta timer text gift"; }
+      .share-brand { display:none; }
     }
-    footer { text-align:center; padding-block:2rem 2.5rem; border-top:1px solid var(--line); margin-top:1rem; }
+    /* tablet: two short rows — the text and the prize, then the countdown and the button */
+    @media (max-width: 1000px) {
+      .share.with-prize { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "text gift" "timer cta"; row-gap:.6rem; }
+      .share.with-prize .share-text { border:0; padding:0; }
+      .share-timer { justify-self:start; }
+    }
+    /* phone: the title and offer with a small prize beside them, then the countdown, then a full-width button */
+    @media (max-width: 640px) {
+      .share, .share.with-prize { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "text gift" "timer timer" "cta cta"; gap:.55rem; margin-top:.7rem; padding:.7rem .75rem .8rem; border-radius:16px; }
+      .share:not(.with-prize) { grid-template-areas: "text text" "cta cta"; }
+      .share-gift { width:62px; }
+      .share-timer { justify-self:stretch; }
+      .share h2 { font-size:clamp(1.02rem, 5.2vw, 1.25rem); white-space:nowrap; }
+      .share-text { gap:.2rem; }
+      .share .promo { align-items:flex-start; font-size:.9rem; line-height:1.3; }
+      .share-cta { width:100%; max-width:none; min-height:48px; }
+    }
     footer nav { display:flex; justify-content:center; flex-wrap:wrap; gap:.4rem 1.4rem; }
     footer a { color:var(--text); }
     footer .contact { margin:.8rem 0 .2rem; } footer .contact a { color:var(--gold-2); font-weight:700; }

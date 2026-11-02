@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, booleanAttribute, computed, inject, input, signal } from '@angular/core';
 
 /**
  * Countdown to the campaign draw: days, hours, minutes and seconds in four gold-framed tiles. Read right to left they go
@@ -14,13 +14,16 @@ import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, input
     @if (target() !== null) {
       <div class="draw-timer" role="timer" aria-live="off">
         @if (left(); as l) {
+          @if (!compact()) {
           <p class="dt-title">
             <svg class="laurel" viewBox="0 0 24 40" aria-hidden="true" focusable="false"><path d="M18 38C8 32 5 20 10 4" /><g><ellipse cx="9" cy="30" rx="2.4" ry="4.6" transform="rotate(-40 9 30)" /><ellipse cx="7" cy="22" rx="2.4" ry="4.6" transform="rotate(-20 7 22)" /><ellipse cx="8" cy="14" rx="2.4" ry="4.6" transform="rotate(5 8 14)" /><ellipse cx="13" cy="33" rx="2.2" ry="4.2" transform="rotate(50 13 33)" /><ellipse cx="12" cy="25" rx="2.2" ry="4.2" transform="rotate(35 12 25)" /><ellipse cx="12.5" cy="17" rx="2.2" ry="4.2" transform="rotate(25 12.5 17)" /></g></svg>
             <span>ההגרלה הגדולה מתקרבת!</span>
             <svg class="laurel flip" viewBox="0 0 24 40" aria-hidden="true" focusable="false"><path d="M18 38C8 32 5 20 10 4" /><g><ellipse cx="9" cy="30" rx="2.4" ry="4.6" transform="rotate(-40 9 30)" /><ellipse cx="7" cy="22" rx="2.4" ry="4.6" transform="rotate(-20 7 22)" /><ellipse cx="8" cy="14" rx="2.4" ry="4.6" transform="rotate(5 8 14)" /><ellipse cx="13" cy="33" rx="2.2" ry="4.2" transform="rotate(50 13 33)" /><ellipse cx="12" cy="25" rx="2.2" ry="4.2" transform="rotate(35 12 25)" /><ellipse cx="12.5" cy="17" rx="2.2" ry="4.2" transform="rotate(25 12.5 17)" /></g></svg>
           </p>
+          }
           <!-- laid out left to right (days … seconds), so on the page seconds stand at the right and days at the left -->
           <div class="boxes" dir="ltr" [attr.aria-label]="'נותרו ' + l.days + ' ימים, ' + l.hours + ' שעות, ' + l.minutes + ' דקות ו־' + l.seconds + ' שניות'">
+            @if (compact()) { <svg class="hourglass" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 2.5h12M6 21.5h12M7.5 2.5c0 5 4.5 6 4.5 9.5S7.5 16.5 7.5 21.5M16.5 2.5c0 5-4.5 6-4.5 9.5s4.5 4.5 4.5 9.5" /><path class="sand" d="M9.5 7h5l-2.5 3.2ZM9 20.2c.8-2.2 2-3 3-3.4 1 .4 2.2 1.2 3 3.4Z" /></svg> }
             <div class="box"><b>{{ l.days }}</b><span>ימים</span></div>
             <i class="sep" aria-hidden="true">:</i>
             <div class="box"><b>{{ pad(l.hours) }}</b><span>שעות</span></div>
@@ -57,9 +60,22 @@ import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, input
     .sep { font-style:normal; font-family: var(--font-title); font-weight:900; font-size:clamp(1.1rem, 3vw, 1.8rem); color:#e9b955; line-height:1; padding-bottom:1.1em; flex:0 0 auto; }
     .dt-done { margin:0; color:#ffe39a; font-weight:800; font-size:clamp(1.05rem, 2vw, 1.3rem); text-shadow: 0 0 12px rgba(255,215,122,.4); }
     @media (max-width: 360px) { .sep { display:none; } .dt-title span { padding-inline:.9rem; } }
+    /* the slim banner: a pill-shaped frame, small tiles, an hourglass at the left */
+    :host([compact]) .draw-timer { margin:0; padding:.45rem .55rem; border-radius:999px; border-width:1px; box-shadow: 0 0 12px rgba(240,200,110,.2), inset 0 0 14px rgba(240,200,110,.06); }
+    :host([compact]) .boxes { gap:.35rem; max-width:none; }
+    :host([compact]) .sep { display:none; }
+    :host([compact]) .box { flex:0 0 auto; width:clamp(48px, 4.2vw, 58px); padding:.32rem .1rem .28rem; border-radius:10px; gap:.05rem; }
+    :host([compact]) .box b { font-size:clamp(1.25rem, 1.9vw, 1.6rem); }
+    :host([compact]) .box span { font-size:.74rem; }
+    :host([compact]) .hourglass { width:24px; height:34px; flex-shrink:0; margin-inline:.15rem .25rem; }
+    .hourglass path { fill:none; stroke:#f0c45c; stroke-width:1.7; stroke-linecap:round; } .hourglass .sand { fill:#f0c45c; stroke:none; }
+    :host([compact]) .dt-done { font-size:.95rem; padding:.3rem .8rem; }
+    @media (max-width: 400px) { :host([compact]) .box { width:clamp(48px, 17vw, 60px); } :host([compact]) .hourglass { display:none; } }
   `],
 })
 export class DrawCountdownComponent {
+  /** The slim banner: small tiles beside an hourglass, no title pill and no colons. */
+  compact = input(false, { transform: booleanAttribute });
   /** The moment of the draw (ISO with offset, from the server's campaign settings). */
   drawAt = input<string | null | undefined>(null);
   /** The server's time when the settings were read: the device clock is corrected by it. */
