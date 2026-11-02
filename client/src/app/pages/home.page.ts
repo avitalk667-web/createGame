@@ -175,7 +175,6 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
         <a routerLink="/share">יצירת קישור אישי</a>
       </nav>
       <p class="contact">יצירת קשר: <a [href]="'mailto:' + site.info().contactEmail" dir="ltr">{{ site.info().contactEmail }}</a></p>
-      <p class="muted small">פרטי העסק יעודכנו כאן לפני פתיחת המכירות.</p>
     </footer>
     @if (showSettings()) { <px-settings (close)="showSettings.set(false)" /> }
   `,
@@ -273,7 +272,9 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
     .product.free { border-color: var(--gold); box-shadow: 0 0 0 1px rgba(224,185,92,.4), var(--shadow); }
     .ribbon { position:absolute; top:12px; inset-inline-start:12px; z-index:2; background:linear-gradient(180deg,#ffe08a,#c9a24d); color:#2a1606;
       font-weight:900; padding:.25rem .8rem; border-radius:999px; box-shadow:0 4px 14px rgba(0,0,0,.4); }
-    .faq { padding-block:1rem 2.5rem; scroll-margin-top:84px; max-width:860px; }
+    /* the questions stand in the middle of the page on a computer, as a centered column */
+    .faq { padding-block:1rem 2.5rem; scroll-margin-top:84px; max-width:860px; margin-inline:auto; }
+    .faq > h2 { text-align:center; }
     .faq-list { display:flex; flex-direction:column; gap:.5rem; }
     .faq-item { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; }
     .faq-item h3 { margin:0; font-family:inherit; font-size:1.05rem; }
