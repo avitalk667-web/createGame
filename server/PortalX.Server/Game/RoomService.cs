@@ -64,6 +64,13 @@ public sealed class RoomService(PortalDbContext db, GameEngine engine, ILogger<R
     public Task<GameRoom?> FindByCodeAsync(string code) =>
         db.Rooms.AsNoTracking().Include(r => r.Players).FirstOrDefaultAsync(r => r.Code == NormalizeCode(code));
 
+    public const string RefundedCode = "refunded";
+    public const string RefundedMessage = "הרכישה של המשחק הזה הוחזרה, ולכן המשחק סגור. התוצאות וההיסטוריה נשמרות.";
+
+    /// <summary>Whether the purchase behind this game was refunded. Nothing is deleted: the game only stops accepting anyone.</summary>
+    public Task<bool> ClosedByRefundAsync(Guid? entitlementId) =>
+        entitlementId is { } id ? db.Entitlements.AnyAsync(e => e.Id == id && e.Revoked) : Task.FromResult(false);
+
     public Task<PlayerSession?> FindPlayerByTokenAsync(string token) =>
         db.Players.AsNoTracking().FirstOrDefaultAsync(p => p.TokenHash == Hash(token) && !p.IsRemoved);
 
@@ -97,6 +104,10 @@ public sealed class RoomService(PortalDbContext db, GameEngine engine, ILogger<R
 
             var room = await LoadAsync(roomId, tracking: true);
             if (room == null) return new ExecResult(ActionOutcome.Fail("no-room", "החדר לא נמצא."), null, false, roomId);
+            // after a refund no one acts in the game; a player can still leave, and still see the results of a finished game
+            var stillAllowed = type == "disconnect" || (type == "connect" && room.Phase == RoomPhase.Completed);
+            if (!stillAllowed && await ClosedByRefundAsync(room.EntitlementId))
+                return new ExecResult(ActionOutcome.Fail(RefundedCode, RefundedMessage), await SnapshotAsync(roomId), false, roomId);
             var wasCompleted = room.Phase == RoomPhase.Completed;
             var awardedBefore = GameEngine.World(room).Score?.Log.Select(e => e.Key).ToHashSet() ?? [];
             var roundBefore = room.Round;

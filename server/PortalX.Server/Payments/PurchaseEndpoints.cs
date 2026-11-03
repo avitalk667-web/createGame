@@ -7,6 +7,7 @@ namespace PortalX.Server.Payments;
 public sealed record CreateOrderRequest(string? ProductId, string? Email, string? CouponCode = null);
 public sealed record CouponCheckRequest(string? ProductId, string? Code);
 public sealed record SandboxOutcomeRequest(string? Outcome);
+public sealed record PaymentCheckRequest(string? PaymentId);
 
 public static class PurchaseEndpoints
 {
@@ -64,6 +65,31 @@ public static class PurchaseEndpoints
             var (game, error) = await purchases.OpenGameAsync(id);
             return error != null ? Error(error) : Results.Ok(new { code = game!.Code, hostClaim = game.HostClaim, existing = game.Existing });
         }).RequireRateLimiting("create");
+
+        // The buyer came back from the provider's page. What the URL said is only a hint: the server asks the provider itself.
+        api.MapPost("/orders/{id:guid}/payment-check", async (Guid id, PaymentCheckRequest req, HttpRequest http, PurchaseService purchases, SumitReconciler sumit) =>
+        {
+            if (await purchases.FindOrderAsync(id, http.Headers[OrderKeyHeader]) == null) return Results.NotFound(NoOrder);
+            if (long.TryParse(req.PaymentId, out var paymentId) && paymentId > 0) await sumit.CheckPaymentIdAsync(id, paymentId, "return");
+            else await sumit.LookupAsync(id, "return");
+            return Results.Ok(await purchases.OrderViewAsync((await purchases.FindOrderAsync(id, http.Headers[OrderKeyHeader]))!));
+        }).RequireRateLimiting("payment-check");
+
+        api.MapPost("/orders/{id:guid}/payment-cancelled", async (Guid id, HttpRequest http, PurchaseService purchases, SumitReconciler sumit) =>
+        {
+            if (await purchases.FindOrderAsync(id, http.Headers[OrderKeyHeader]) == null) return Results.NotFound(NoOrder);
+            await sumit.BuyerCancelledAsync(id);
+            return Results.Ok(await purchases.OrderViewAsync((await purchases.FindOrderAsync(id, http.Headers[OrderKeyHeader]))!));
+        }).RequireRateLimiting("payment-check");
+
+        // SUMIT's notification after a payment. Its content is never trusted or even read as proof: it only makes the server ask SUMIT.
+        api.MapPost("/payments/ipn/sumit/{id:guid}/{session}", async (Guid id, string session, HttpRequest http, SumitReconciler sumit) =>
+        {
+            if (!await sumit.IpnMatchesAsync(id, session)) return Results.NotFound();
+            await sumit.LogIpnShapeAsync(http);
+            await sumit.LookupAsync(id, "ipn");
+            return Results.Ok();
+        }).RequireRateLimiting("payment-ipn");
 
         // Server-to-server payment notifications. Only a verified signature can change an order.
         api.MapPost("/payments/webhook/{provider}", async (string provider, HttpRequest http, PurchaseService purchases) =>

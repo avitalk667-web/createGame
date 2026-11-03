@@ -330,6 +330,19 @@ public class Order
     public DateTime? ReferralAttributedAt { get; set; }
     /// <summary>Why the order does not count for its link although it came through it (e.g. "self-purchase"); null = counts.</summary>
     public string? ReferralExclusion { get; set; }
+    /// <summary>The provider's customer, document and authorization of the verified payment. Never any card details.</summary>
+    public long? ProviderCustomerId { get; set; }
+    public long? ProviderDocumentId { get; set; }
+    public long? ProviderDocumentNumber { get; set; }
+    public string? ProviderAuthNumber { get; set; }
+    /// <summary>When the provider itself confirmed this payment, server to server.</summary>
+    public DateTime? PaymentVerifiedAt { get; set; }
+    /// <summary>When the provider's payment link stops working; set only for providers whose links expire.</summary>
+    public DateTime? CheckoutExpiresAt { get; set; }
+    /// <summary>The last time this order was checked against the provider (limits the number of calls).</summary>
+    public DateTime? LastReconciledAt { get; set; }
+    /// <summary>Something the admin must handle, e.g. "document-missing" or "second-payment:123"; null = nothing.</summary>
+    public string? ProviderIssue { get; set; }
     /// <summary>Optimistic concurrency (PostgreSQL xmin).</summary>
     public uint Version { get; set; }
 }
@@ -348,6 +361,8 @@ public class PaymentEvent
     public bool IsTest { get; set; }
     /// <summary>"applied", "ignored:..." or "rejected:...".</summary>
     public string Result { get; set; } = "";
+    /// <summary>What led to this event: "ipn", "return", "sweep", "admin", ... ; null = the provider's own signed notification.</summary>
+    public string? Source { get; set; }
     public DateTime ReceivedAt { get; set; }
 }
 

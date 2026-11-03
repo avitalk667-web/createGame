@@ -338,6 +338,7 @@ export interface OrderView {
   number: number;
   productId: string;
   productName: string;
+  provider: string;
   price: number;
   /** Before a coupon (null on old orders), the discount and the code that was used. */
   originalPrice?: number | null;
@@ -353,6 +354,8 @@ export interface OrderView {
   game?: { code: string; phase: string; playerCount: number } | null;
   canOpenGame: boolean;
   gameBlockedReason?: string | null;
+  /** The payment came after the coupon's limit was reached: refunded by hand, no game. */
+  paymentNeedsRefund?: boolean;
 }
 
 export function formatPrice(p: Product): string | null {

@@ -1,7 +1,7 @@
 import { DatePipe, DecimalPipe, JsonPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { sessionStore } from '../core/api.service';
+import { orderStore, sessionStore } from '../core/api.service';
 import {
   AdminApiService, AdminFilters, AdminGame, AdminOrder, AdminProduct, AuditEntry, CouponRow, CouponUse, Dashboard, FaqRow, EmailSetup, MailingFilters, MailingList,
   MoneyTotals, ReferralDetails, ReferralFilters, ReferralList } from '../core/admin-api.service';
@@ -180,21 +180,27 @@ const ACTIONS: Record<string, string> = {
             }
           }
           @case ('orders') {
-            <div class="bar"><span class="muted">{{ orders().length }} הזמנות</span><a class="btn small" [href]="csvUrl()" download>ייצוא CSV</a></div>
+            <div class="bar"><span class="muted">{{ orders().length }} הזמנות</span><a class="btn small" [href]="csvUrl()" download>ייצוא CSV</a><button class="btn small ghost" type="button" (click)="sumitCheck()">בדיקת חיבור ל-SUMIT</button></div>
+            @if (sumitStatus()) { <p class="muted" role="status">{{ sumitStatus() }}</p> }
             <div class="table-wrap">
               <table>
-                <thead><tr><th>מס׳</th><th>תאריך</th><th>דוא״ל</th><th>משחק</th><th>מחיר מקורי</th><th>הנחה</th><th>קופון</th><th>לתשלום</th><th>תשלום</th><th>מזהה עסקה</th><th>קוד משחק</th><th>משתתפים</th><th>משחק</th></tr></thead>
+                <thead><tr><th>פעולות</th><th>מס׳</th><th>תאריך</th><th>דוא״ל</th><th>משחק</th><th>מחיר מקורי</th><th>הנחה</th><th>קופון</th><th>לתשלום</th><th>תשלום</th><th>מזהה עסקה</th><th>מסמך</th><th>לטיפול</th><th>קוד משחק</th><th>משתתפים</th><th>משחק</th></tr></thead>
                 <tbody>
                   @for (o of orders(); track o.id) {
                     <tr [class.test]="o.isTest">
+                      <td class="row-actions">
+                        @if (o.provider === 'sumit' && o.status !== 'refunded') { <button class="btn small ghost" type="button" (click)="checkPayment(o)">בדיקה מול SUMIT</button> }
+                        @if (o.status === 'paid') { <button class="btn small ghost" type="button" (click)="markRefunded(o)">סימון כהוחזר</button> }
+                      </td>
                       <td>{{ o.number }}{{ o.isTest ? ' (בדיקה)' : '' }}</td><td>{{ o.createdAt | date: 'd.M.yy HH:mm' }}</td><td dir="ltr">{{ o.email ?? '—' }}</td>
                       <td>{{ o.productName }}</td><td>{{ o.originalPrice | number: '1.0-2' }} ₪</td>
                       <td>{{ o.discount ? '−' + (o.discount | number: '1.0-2') + ' ₪' : '—' }}</td><td dir="ltr">{{ o.couponCode ?? '—' }}</td>
                       <td><b>{{ o.amount | number: '1.0-2' }} {{ o.currency === 'ILS' ? '₪' : o.currency }}</b></td>
                       <td><span class="st" [attr.data-s]="o.status">{{ label(o.status) }}</span></td><td dir="ltr" class="small">{{ o.transactionId ?? '—' }}</td>
+                      <td dir="ltr" class="small">{{ o.documentNumber ?? o.documentId ?? '—' }}</td><td class="small">{{ issueLabel(o.issue) }}</td>
                       <td dir="ltr">{{ o.gameCode ?? '—' }}</td><td>{{ o.players }}</td><td>{{ o.gameStatus ? label(o.gameStatus) : '—' }}</td>
                     </tr>
-                  } @empty { <tr><td colspan="13" class="muted">אין הזמנות בסינון הזה.</td></tr> }
+                  } @empty { <tr><td colspan="16" class="muted">אין הזמנות בסינון הזה.</td></tr> }
                 </tbody>
               </table>
             </div>
@@ -277,6 +283,7 @@ const ACTIONS: Record<string, string> = {
                       @if (p.saleDate) { <button type="button" class="btn small ghost" (click)="clearSale(p.id)" [disabled]="busy()">ביטול מועד הפתיחה</button> }</p>
                   </fieldset>
                   <button class="btn primary small" type="submit" [disabled]="busy()">שמירה</button>
+                  @if (!p.isFree && p.price) { <button class="btn small ghost" type="button" (click)="trialPurchase(p.id, p.name, p.price)" [disabled]="busy()">רכישת ניסיון אמיתית</button> }
                   @if (saved() === p.id) { <span class="ok">נשמר</span> }
                 </form>
               }
@@ -644,6 +651,7 @@ const ACTIONS: Record<string, string> = {
     th, td { padding:.5rem .6rem; text-align:start; border-bottom:1px solid rgba(201,162,77,.15); white-space:nowrap; }
     th { background:var(--panel-solid); color:var(--gold-2); position:sticky; top:0; }
     tr.test td { opacity:.65; } tr.click { cursor:pointer; } tr.click:hover td { background:rgba(255,255,255,.04); }
+    .row-actions { display:flex; gap:.3rem; }
     .st { padding:.1em .55em; border-radius:999px; border:1px solid var(--line); font-size:.8rem; }
     .st[data-s=paid], .st[data-s=published] { border-color:var(--ok); color:#9be3b4; }
     .st[data-s=refunded], .st[data-s=failed] { border-color:var(--bad); color:#ffc2b5; }
@@ -700,6 +708,7 @@ export class AdminPage {
   audit = signal<AuditEntry[]>([]);
   edits = signal<Record<string, ProductEdit>>({});
   saved = signal<string | null>(null);
+  sumitStatus = signal<string | null>(null);
   freeProduct = signal('');
   freeCode = signal<string | null>(null);
   busy = signal(false);
@@ -1093,6 +1102,61 @@ export class AdminPage {
     const msg = c.active ? `להשבית את הקופון ${c.code}? רכישות קודמות שהשתמשו בו לא ישתנו.` : `להפעיל מחדש את הקופון ${c.code}?`;
     if (!confirm(msg)) return;
     try { await this.api.setCouponActive(c.id, !c.active); await this.reload(); } catch (e: any) { this.fail(e); }
+  }
+
+  /** Reads only: charges nothing and creates nothing. */
+  async sumitCheck() {
+    try {
+      const r = await this.api.sumitCheck();
+      this.sumitStatus.set(!r.configured ? 'SUMIT לא מוגדר בשרת הזה (חסרים משתני סביבה).'
+        : !r.connected ? `אין חיבור ל-SUMIT: ${r.problem ?? ''}`
+        : !r.billing ? `החיבור תקין (${r.organization ?? ''}), אבל מודול הסליקה לא ענה: ${r.problem ?? ''}`
+        : `החיבור תקין: ${r.organization ?? ''}. ${r.vatExempt ? 'מוגדר כעוסק פטור: תקין, קבלה בלבד.' : `לא מוגדר כעוסק פטור (סוג ${r.organizationType ?? 'לא ידוע'}): דף תשלום לא ייפתח.`} הספק ${r.providerActive ? 'פעיל' : 'כבוי'}. לא בוצע חיוב.`);
+    } catch (e: any) { this.fail(e); }
+  }
+
+  /** The admin's one real purchase: charged only if the card is entered and approved on SUMIT's page. */
+  async trialPurchase(id: string, name: string, price: number) {
+    if (!confirm(`רכישת ניסיון אמיתית של "${name}": הכרטיס יחויב ב-${price} ₪ בדף של SUMIT, ותופק קבלה אמיתית. ההחזר נעשה ידנית ב-SUMIT. להמשיך?`)) return;
+    try {
+      const o = await this.api.trialOrder(id);
+      orderStore.save({ orderId: o.orderId, key: o.accessKey, productId: id, productName: o.productName, createdAt: new Date().toISOString() });
+      window.location.assign(o.checkoutUrl);
+    } catch (e: any) { this.fail(e); }
+  }
+
+  issueLabel(issue?: string | null) {
+    if (!issue) return '—';
+    if (issue === 'document-missing') return 'לא הופק מסמך';
+    if (issue === 'document-draft') return 'המסמך בטיוטה';
+    if (issue === 'document-not-receipt') return 'המסמך שהופק אינו קבלה';
+    if (issue.startsWith('payment-mismatch:')) return `תשלום לא תואם (${issue.slice(17)}): לבדוק ב-SUMIT`;
+    if (issue.startsWith('coupon-limit:')) return `מכסת הקופון מלאה (${issue.slice(13)}): נדרש החזר`;
+    if (issue.startsWith('second-payment:')) return `תשלום כפול (${issue.slice(15)}): נדרש החזר`;
+    return issue;
+  }
+
+  private checkLabel(result: string) {
+    return ({ inactive: 'ספק SUMIT כבוי, ולא נשלחה בדיקה.', none: 'לא נמצא תשלום ב-SUMIT.', 'applied:paid': 'התשלום אומת וההזמנה סומנה כשולמה.', already: 'ההזמנה כבר מעודכנת.',
+      unavailable: 'SUMIT לא זמינה כרגע. נסו שוב.', incomplete: 'הבדיקה לא הושלמה. נסו שוב.' } as Record<string, string>)[result] ?? `תוצאה: ${result}`;
+  }
+
+  /** Asks SUMIT about this order on the server. */
+  async checkPayment(o: AdminOrder) {
+    try {
+      const r = await this.api.checkOrderPayment(o.id);
+      this.sumitStatus.set(`הזמנה ${o.number}: ${this.checkLabel(r.result)}`);
+      this.orders.set(await this.api.orders(this.f()));
+    } catch (e: any) { this.fail(e); }
+  }
+
+  /** Records a refund already made at SUMIT. The order and its game stay in the history. */
+  async markRefunded(o: AdminOrder) {
+    if (!confirm(`לסמן את הזמנה ${o.number} כהוחזרה? הסימון לא מחזיר כסף: את ההחזר עצמו מבצעים ב-SUMIT. אחרי הסימון אי אפשר לפתוח משחק עם ההזמנה, והיא לא נספרת בהגרלה.`)) return;
+    try {
+      await this.api.markOrderRefunded(o.id);
+      this.orders.set(await this.api.orders(this.f()));
+    } catch (e: any) { this.fail(e); }
   }
 
   async showCouponOrders(c: CouponRow) {

@@ -186,6 +186,8 @@ public sealed class GameHub(RoomService rooms, RoomRuntime runtime, PortalDbCont
     {
         if (PlayerId is not { } pid || RoomId is not { } rid) return NotConnected();
         if (!Allow("chat", 5, 8)) return new HubResult(false, "too-fast", "רגע, רגע... שלחתם הרבה הודעות ברצף.");
+        var chatRoom = await db.Rooms.AsNoTracking().Where(r => r.Id == rid).Select(r => r.EntitlementId).FirstOrDefaultAsync();
+        if (await rooms.ClosedByRefundAsync(chatRoom)) return new HubResult(false, RoomService.RefundedCode, RoomService.RefundedMessage);
         string? cleanText = null, cleanEmote = null;
         if (!string.IsNullOrEmpty(emote))
         {
@@ -251,6 +253,7 @@ public sealed class GameHub(RoomService rooms, RoomRuntime runtime, PortalDbCont
         var room = await db.Rooms.AsNoTracking().Include(r => r.Players).Include(r => r.Puzzles).AsSplitQuery().FirstOrDefaultAsync(r => r.Id == rid);
         if (room != null) rooms.Engine.FillMissingPuzzles(room);
         if (room == null) return new HubResult(false, "no-room", "החדר לא נמצא.");
+        if (await rooms.ClosedByRefundAsync(room.EntitlementId)) return new HubResult(false, RoomService.RefundedCode, RoomService.RefundedMessage);
         var outcome = action(room, pid);
         return new HubResult(outcome.Ok, outcome.Code, outcome.Message, outcome.Data);
     }

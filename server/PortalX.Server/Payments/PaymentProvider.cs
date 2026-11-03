@@ -7,7 +7,7 @@ namespace PortalX.Server.Payments;
 
 public sealed class PaymentOptions
 {
-    /// <summary>"none" (default) or "sandbox". A real Israeli provider is added here later.</summary>
+    /// <summary>"none" (default), "sandbox" or "sumit". SUMIT's own settings come from the environment (see <see cref="SumitOptions"/>).</summary>
     public string Provider { get; set; } = "none";
     public SandboxOptions Sandbox { get; set; } = new();
 }
@@ -22,12 +22,18 @@ public sealed record CheckoutSession(string SessionId, string CheckoutUrl);
 
 public enum PaymentEventType { Succeeded, Failed, Cancelled, Refunded }
 
-/// <summary>A payment notification after its signature was verified by the provider.</summary>
+/// <summary>What the provider itself reported about a payment when asked server to server. Never any card details.</summary>
+public sealed record VerifiedPayment(long? CustomerId, long? DocumentId, string? AuthNumber);
+
+/// <summary>A payment notification after its signature, or the provider's own answer, was verified.</summary>
 public sealed record PaymentNotification(
     string EventId, PaymentEventType Type, string SessionId, Guid OrderId, string? TransactionId,
-    decimal Amount, string Currency, bool IsTest);
+    decimal Amount, string Currency, bool IsTest, VerifiedPayment? Verified = null, string? Source = null);
 
 public sealed class InvalidWebhookException(string message) : Exception(message);
+
+/// <summary>The provider could not open a payment page. Nothing was charged. The message is safe to log.</summary>
+public sealed class PaymentStartException(string message) : Exception(message);
 
 /// <summary>A payment provider: hosted checkout page + signed server-to-server notifications.</summary>
 public interface IPaymentProvider
@@ -35,7 +41,12 @@ public interface IPaymentProvider
     string Name { get; }
     /// <summary>Test providers never create revenue and never unlock games in production.</summary>
     bool IsTest { get; }
-    CheckoutSession CreateCheckout(Order order);
+    /// <summary>How long a payment link lasts, for providers whose links expire.</summary>
+    TimeSpan? CheckoutLifetime => null;
+    /// <summary>A fresh identifier for an order, fixed before the order is saved.</summary>
+    string NewSessionId();
+    /// <summary>Opens the payment page of a saved order. Throws <see cref="PaymentStartException"/> when it cannot.</summary>
+    Task<CheckoutSession> CreateCheckoutAsync(Order order);
     /// <summary>Verifies the signature and parses the body. Throws <see cref="InvalidWebhookException"/>.</summary>
     PaymentNotification ParseWebhook(string body, IHeaderDictionary headers);
 }
@@ -46,7 +57,7 @@ public sealed class PaymentGateway(IPaymentProvider? provider)
     public IPaymentProvider? Provider { get; } = provider;
     public bool Available => Provider != null;
 
-    public static PaymentGateway Create(PaymentOptions options, IHostEnvironment env, ILogger logger)
+    public static PaymentGateway Create(PaymentOptions options, IHostEnvironment env, ILogger logger, Func<IPaymentProvider?>? sumit = null)
     {
         switch (options.Provider.Trim().ToLowerInvariant())
         {
@@ -57,6 +68,9 @@ public sealed class PaymentGateway(IPaymentProvider? provider)
             case "sandbox":
                 logger.LogWarning("TEST PAYMENTS: the sandbox provider is active. No money is charged and nothing counts as revenue.");
                 return new PaymentGateway(new SandboxPaymentProvider(options.Sandbox));
+            case "sumit":
+                // SumitOptions.FromConfig already logged why, when the settings are refused
+                return new PaymentGateway(sumit?.Invoke());
             case "" or "none":
                 return new PaymentGateway(null);
             default:
@@ -83,11 +97,10 @@ public sealed class SandboxPaymentProvider : IPaymentProvider
     public string Name => "sandbox";
     public bool IsTest => true;
 
-    public CheckoutSession CreateCheckout(Order order)
-    {
-        var session = "sbx_" + Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
-        return new CheckoutSession(session, "/sandbox-pay/" + session);
-    }
+    public string NewSessionId() => "sbx_" + Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
+
+    public Task<CheckoutSession> CreateCheckoutAsync(Order order) =>
+        Task.FromResult(new CheckoutSession(order.ProviderSessionId!, "/sandbox-pay/" + order.ProviderSessionId));
 
     public string Sign(string body) => "sha256=" + Convert.ToHexString(HMACSHA256.HashData(_secret, Encoding.UTF8.GetBytes(body))).ToLowerInvariant();
 

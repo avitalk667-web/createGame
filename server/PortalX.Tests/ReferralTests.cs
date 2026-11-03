@@ -22,11 +22,9 @@ public sealed class FakeLiveProvider : IPaymentProvider
 {
     public string Name => "fake-live";
     public bool IsTest => false;
-    public CheckoutSession CreateCheckout(Order order)
-    {
-        var session = "live_" + Guid.NewGuid().ToString("N");
-        return new CheckoutSession(session, "https://pay.test/" + session);
-    }
+    public string NewSessionId() => "live_" + Guid.NewGuid().ToString("N");
+    public Task<CheckoutSession> CreateCheckoutAsync(Order order) =>
+        Task.FromResult(new CheckoutSession(order.ProviderSessionId!, "https://pay.test/" + order.ProviderSessionId));
     public PaymentNotification ParseWebhook(string body, IHeaderDictionary headers) => throw new InvalidWebhookException("not used");
 }
 

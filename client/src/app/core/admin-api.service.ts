@@ -42,6 +42,10 @@ export interface AdminOrder {
   amount: number; originalPrice: number; discount: number; couponCode?: string | null;
   currency: string; status: string; provider: string; transactionId?: string | null; isTest: boolean;
   refundedAmount?: number | null; gameCode?: string | null; players: number; gameStatus?: string | null;
+  documentId?: number | null;
+  documentNumber?: number | null;
+  issue?: string | null;
+  verifiedAt?: string | null;
 }
 
 export interface AdminGame {
@@ -169,6 +173,10 @@ export class AdminApiService {
   logout() { return this.request<void>('POST', '/api/admin/logout'); }
   dashboard(f: AdminFilters) { return this.request<Dashboard>('GET', '/api/admin/dashboard' + filterQuery(f)); }
   orders(f: AdminFilters) { return this.request<AdminOrder[]>('GET', '/api/admin/orders' + filterQuery(f)); }
+  sumitCheck() { return this.request<{ configured: boolean; providerActive: boolean; connected: boolean; billing: boolean; vatExempt: boolean; organization?: string | null; organizationType?: string | null; paymentsLastDay?: number | null; problem?: string | null }>('POST', '/api/admin/sumit/check'); }
+  trialOrder(productId: string) { return this.request<{ orderId: string; accessKey: string; checkoutUrl: string; price: number; productName: string }>('POST', `/api/admin/products/${encodeURIComponent(productId)}/trial-order`); }
+  checkOrderPayment(id: string) { return this.request<{ result: string }>('POST', `/api/admin/orders/${id}/check-payment`); }
+  markOrderRefunded(id: string) { return this.request<{ result: string }>('POST', `/api/admin/orders/${id}/mark-refunded`); }
   csvUrl(f: AdminFilters) { return '/api/admin/orders.csv' + filterQuery(f); }
   games(f: AdminFilters) { return this.request<AdminGame[]>('GET', '/api/admin/games' + filterQuery(f)); }
   game(code: string) { return this.request<any>('GET', `/api/admin/games/${encodeURIComponent(code)}`); }

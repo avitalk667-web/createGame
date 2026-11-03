@@ -48,6 +48,9 @@ const POLL_LIMIT_MS = 90_000;
             <dt>נוצרה</dt><dd>{{ o.createdAt | date: 'd.M.yyyy HH:mm' }}</dd>
           </dl>
 
+          @if (o.paymentNeedsRefund) {
+            <div class="state bad" role="alert"><b>התשלום התקבל, אבל מכסת הקופון כבר נוצלה</b><p>המשחק לא נפתח, והתשלום יוחזר לכם במלואו. אפשר לפנות אלינו ולציין את מספר ההזמנה.</p></div>
+          } @else {
           @switch (o.status) {
             @case ('pending') {
               <div class="state wait" role="status">
@@ -84,6 +87,7 @@ const POLL_LIMIT_MS = 90_000;
               <div class="state bad" role="alert"><b>התשלום לא הושלם. אפשר לנסות שוב.</b><p>לא בוצע חיוב, והמשחק לא נפתח.</p></div>
               <a class="btn primary" [routerLink]="['/games', o.productId]">ניסיון חוזר</a>
             }
+          }
           }
           @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
 
@@ -130,6 +134,8 @@ export class CheckoutPage implements OnDestroy {
   private router = inject(Router);
   private audio = inject(AudioService);
   orderId = input.required<string>();
+  /** Set by the route SUMIT returns to after a cancel. */
+  cancelled = input(false);
   key = signal<string | null>(null);
   order = signal<OrderView | null>(null);
   error = signal<string | null>(null);
@@ -137,6 +143,8 @@ export class CheckoutPage implements OnDestroy {
   copied = signal(false);
   pollGaveUp = signal(false);
   private timer?: ReturnType<typeof setTimeout>;
+  private returnPaymentId: string | null = null;
+  private asked = false;
   private pollStarted = 0;
 
   recoveryLink = computed(() => `${location.origin}/checkout/${this.orderId()}#k=${this.key() ?? ''}`);
@@ -153,7 +161,23 @@ export class CheckoutPage implements OnDestroy {
       history.replaceState(history.state, '', location.pathname);
     }
     this.key.set(orderStore.get(id)?.key ?? null);
+    // the provider adds its payment number to the return address: passed on to the server as a hint, then hidden
+    this.returnPaymentId = [...new URLSearchParams(location.search)].find(([k]) => k.toLowerCase() === 'og-paymentid')?.[1] ?? null;
+    if (location.search) history.replaceState(history.state, '', location.pathname);
     if (this.key()) this.refresh(true);
+  }
+
+  /** One question to the provider per page load or "check again", never per poll. */
+  private async askProvider(o: OrderView) {
+    if (this.asked || o.provider !== 'sumit' || o.status !== 'pending') return;
+    this.asked = true;
+    try {
+      this.order.set(this.cancelled()
+        ? await this.api.paymentCancelled(o.id, this.key()!)
+        : await this.api.paymentCheck(o.id, this.key()!, this.returnPaymentId));
+    } catch {
+      // the server keeps checking on its own; the page goes on polling
+    }
   }
 
   async refresh(restartPolling = false) {
@@ -161,6 +185,7 @@ export class CheckoutPage implements OnDestroy {
     if (restartPolling) {
       this.pollStarted = Date.now();
       this.pollGaveUp.set(false);
+      this.asked = false;
     }
     try {
       const o = await this.api.order(this.orderId(), this.key()!);
@@ -168,7 +193,8 @@ export class CheckoutPage implements OnDestroy {
       this.error.set(null);
       const stored = orderStore.get(o.id);
       if (stored && !stored.productId) orderStore.save({ ...stored, productId: o.productId, productName: o.productName });
-      if (o.status === 'pending') {
+      await this.askProvider(o);
+      if (this.order()?.status === 'pending') {
         if (Date.now() - this.pollStarted < POLL_LIMIT_MS) this.timer = setTimeout(() => this.refresh(), POLL_MS);
         else this.pollGaveUp.set(true);
       }

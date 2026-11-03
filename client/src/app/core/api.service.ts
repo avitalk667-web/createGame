@@ -154,6 +154,15 @@ export class ApiService {
       'POST', `/api/orders/${encodeURIComponent(id)}/game`, undefined, { 'X-Order-Key': key });
   }
 
+  /** After the provider's page: the server asks the provider itself. The payment number from the address is only a hint. */
+  paymentCheck(id: string, key: string, paymentId: string | null) {
+    return this.request<OrderView>('POST', `/api/orders/${encodeURIComponent(id)}/payment-check`, { paymentId }, { 'X-Order-Key': key });
+  }
+
+  paymentCancelled(id: string, key: string) {
+    return this.request<OrderView>('POST', `/api/orders/${encodeURIComponent(id)}/payment-cancelled`, undefined, { 'X-Order-Key': key });
+  }
+
   sandboxCheckout(session: string) {
     return this.request<{ number: number; productName: string; amount: number; currency: string; status: string; orderId: string }>(
       'GET', `/api/sandbox/checkout/${encodeURIComponent(session)}`);

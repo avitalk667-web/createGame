@@ -34,6 +34,15 @@ public sealed record ProductUpdate(string? Name, string? Tagline, string? Descri
 /// </summary>
 public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, RoomService rooms, TestCheckout testCheckout, ILogger<AdminService> logger)
 {
+    public const string TrialOrderAction = "sumit-trial-order";
+
+    /// <summary>A trial purchase whose payment link may still be open.</summary>
+    public Task<bool> RecentTrialOrderAsync()
+    {
+        var since = DateTime.UtcNow.AddHours(-1);
+        return db.AdminAuditLog.AnyAsync(a => a.Action == TrialOrderAction && a.CreatedAt > since);
+    }
+
     public async Task AuditAsync(string admin, string action, string? targetType, string? targetId, object? details = null)
     {
         db.AdminAuditLog.Add(new AdminAuditLog
@@ -243,6 +252,8 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
                 ["productId"] = o.ProductId, ["productName"] = o.ProductName, ["amount"] = o.PriceSnapshot, ["currency"] = o.Currency,
                 ["status"] = o.Status.ToString().ToLowerInvariant(), ["provider"] = o.Provider, ["transactionId"] = o.ProviderTransactionId,
                 ["originalPrice"] = o.OriginalPrice ?? o.PriceSnapshot, ["discount"] = o.DiscountAmount, ["couponCode"] = o.CouponCode,
+                ["documentId"] = o.ProviderDocumentId, ["documentNumber"] = o.ProviderDocumentNumber, ["issue"] = o.ProviderIssue,
+                ["verifiedAt"] = o.PaymentVerifiedAt,
                 ["isTest"] = o.IsTest, ["paidAt"] = o.PaidAt, ["refundedAt"] = o.RefundedAt, ["refundedAmount"] = o.RefundedAmount,
                 ["gameCode"] = room?.Code, ["players"] = row?.Players ?? 0,
                 ["gameStatus"] = row == null ? (o.Status == OrderStatus.Paid ? "not-opened" : null) : GameStatus(row),
@@ -278,6 +289,7 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
             ("discount", "הנחה"), ("couponCode", "קופון"), ("amount", "סכום ששולם"),
             ("currency", "מטבע"), ("status", "סטטוס תשלום"), ("provider", "ספק סליקה"), ("transactionId", "מזהה עסקה"),
             ("isTest", "בדיקה"), ("refundedAmount", "סכום החזר"), ("gameCode", "קוד משחק"), ("players", "משתתפים"), ("gameStatus", "סטטוס משחק"),
+            ("documentNumber", "מספר מסמך"), ("issue", "לטיפול"),
         };
         var sb = new StringBuilder();
         sb.AppendLine(string.Join(",", cols.Select(c => Cell(c.Title))));

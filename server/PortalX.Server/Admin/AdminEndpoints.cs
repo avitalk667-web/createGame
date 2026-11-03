@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 
@@ -71,6 +72,48 @@ public static class AdminEndpoints
             var bytes = await s.OrdersCsvAsync(AdminFilter.Parse(r));
             await s.AuditAsync(AdminAuth.Name(ctx.User), "sales-exported", null, null, new { query = r.QueryString.Value });
             return Results.File(bytes, "text/csv; charset=utf-8", $"portalx-sales-{DateTime.UtcNow:yyyy-MM-dd}.csv");
+        });
+
+        // the keys and the connection, from this server; only reads
+        secured.MapPost("/sumit/check", async (HttpContext ctx, AdminService s, IConfiguration config, PortalX.Server.Mail.SiteOptions site, IHostEnvironment env,
+            Payments.SumitHttp http, Payments.PaymentGateway gateway, ILoggerFactory logs) =>
+        {
+            await s.AuditAsync(AdminAuth.Name(ctx.User), "sumit-connection-checked", null, null);
+            return Results.Ok(await Payments.SumitConnectionCheck.RunAsync(config, site, env, http, gateway, logs.CreateLogger("Payments")));
+        });
+
+        // one real purchase by the admin, to prove the whole path while the sale stays paused. The charge happens only on SUMIT's page.
+        secured.MapPost("/products/{id}/trial-order", async (string id, HttpContext ctx, AdminService s, Payments.PurchaseService purchases, Payments.PaymentGateway gateway) =>
+        {
+            if (gateway.Provider is not Payments.SumitPaymentProvider)
+                return Results.Json(new ApiError("provider-off", "ספק התשלום SUMIT כבוי, ולכן אי אפשר לפתוח רכישת ניסיון."), statusCode: 409);
+            if (await s.RecentTrialOrderAsync())
+                return Results.Json(new ApiError("trial-exists", "כבר נפתחה רכישת ניסיון בשעה האחרונה. אפשר לנסות שוב אחרי שהקישור שלה יפוג."), statusCode: 409);
+            var (created, error) = await purchases.CreateOrderAsync(id, null, adminTrial: true);
+            if (error != null) return Results.Json(new ApiError(error.Code, error.Message), statusCode: error.Status);
+            await s.AuditAsync(AdminAuth.Name(ctx.User), AdminService.TrialOrderAction, "order", created!.Order.Id.ToString(), new { product = id, amount = created.Order.PriceSnapshot });
+            return Results.Ok(new { orderId = created.Order.Id, accessKey = created.AccessKey, checkoutUrl = created.CheckoutUrl, price = created.Order.PriceSnapshot, productName = created.Order.ProductName });
+        });
+
+        // asks SUMIT about one order, for example when a buyer says they paid
+        secured.MapPost("/orders/{id:guid}/check-payment", async (Guid id, HttpContext ctx, AdminService s, Payments.SumitReconciler sumit) =>
+        {
+            var result = await sumit.LookupAsync(id, "admin", spaced: false);
+            await s.AuditAsync(AdminAuth.Name(ctx.User), "order-payment-checked", "order", id.ToString(), new { result });
+            return Results.Ok(new { result });
+        });
+
+        // records a refund already made at the provider: the game can no longer be opened, the history stays
+        secured.MapPost("/orders/{id:guid}/mark-refunded", async (Guid id, HttpContext ctx, AdminService s, Payments.PurchaseService purchases,
+            Microsoft.AspNetCore.SignalR.IHubContext<PortalX.Server.Hubs.GameHub> hub) =>
+        {
+            var (ok, result) = await purchases.MarkRefundedAsync(id);
+            if (!ok) return Results.Json(new ApiError(result, "אפשר לסמן החזר רק להזמנה ששולמה."), statusCode: 409);
+            await s.AuditAsync(AdminAuth.Name(ctx.User), "order-marked-refunded", "order", id.ToString());
+            // whoever is in the game right now is told why it stopped answering
+            if (await purchases.OpenRoomOfOrderAsync(id) is { } roomId)
+                await hub.Clients.Group("room:" + roomId).SendAsync("notice", new PortalX.Server.Game.GameNotice("refunded", PortalX.Server.Game.RoomService.RefundedMessage));
+            return Results.Ok(new { result });
         });
 
         secured.MapGet("/games", async (HttpRequest r, AdminService s) => Results.Ok(await s.GamesAsync(AdminFilter.Parse(r))));

@@ -33,3 +33,8 @@ services:
         sync: false
       - key: PORTALX_UNSUBSCRIBE_SECRET
         sync: false
+      # SUMIT payments stay off until Payments__Provider=sumit is set in the dashboard (see docs/sumit-setup.md).
+      - key: SUMIT_API_KEY
+        sync: false
+      - key: SUMIT_COMPANY_ID
+        value: "2561203971"

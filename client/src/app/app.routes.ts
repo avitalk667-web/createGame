@@ -4,6 +4,8 @@ export const routes: Routes = [
   { path: '', loadComponent: () => import('./pages/home.page').then((m) => m.HomePage), title: 'PORTAL X — בחרו את ההרפתקה שלכם' },
   { path: 'games/:id', loadComponent: () => import('./pages/game.page').then((m) => m.GamePage), title: 'פרטי המשחק — PORTAL X' },
   { path: 'checkout/:orderId', loadComponent: () => import('./pages/checkout.page').then((m) => m.CheckoutPage), title: 'הרכישה שלכם — PORTAL X' },
+  // SUMIT returns the buyer here after pressing cancel on its payment page
+  { path: 'checkout/:orderId/cancelled', data: { cancelled: true }, loadComponent: () => import('./pages/checkout.page').then((m) => m.CheckoutPage), title: 'הרכישה שלכם — PORTAL X' },
   { path: 'sandbox-pay/:session', loadComponent: () => import('./pages/sandbox-pay.page').then((m) => m.SandboxPayPage), title: 'תשלום בדיקה — PORTAL X' },
   { path: 'share', loadComponent: () => import('./pages/share.page').then((m) => m.SharePage), title: 'יצירת קישור אישי — PORTAL X' },
   { path: 'join', loadComponent: () => import('./pages/join-code.page').then((m) => m.JoinCodePage), title: 'יש לי קוד משחק — PORTAL X' },

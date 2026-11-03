@@ -829,6 +829,9 @@ namespace PortalX.Server.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<DateTime?>("CheckoutExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("CouponCode")
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
@@ -858,6 +861,9 @@ namespace PortalX.Server.Data.Migrations
                     b.Property<bool>("IsTest")
                         .HasColumnType("boolean");
 
+                    b.Property<DateTime?>("LastReconciledAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<long>("Number")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint");
@@ -870,6 +876,9 @@ namespace PortalX.Server.Data.Migrations
                         .HasColumnType("numeric(10,2)");
 
                     b.Property<DateTime?>("PaidAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("PaymentVerifiedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<decimal>("PriceSnapshot")
@@ -887,6 +896,23 @@ namespace PortalX.Server.Data.Migrations
                     b.Property<string>("Provider")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<string>("ProviderAuthNumber")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long?>("ProviderCustomerId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("ProviderDocumentId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("ProviderDocumentNumber")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ProviderIssue")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("ProviderSessionId")
                         .HasColumnType("text");
@@ -938,6 +964,10 @@ namespace PortalX.Server.Data.Migrations
                         .IsUnique()
                         .HasFilter("\"ProviderSessionId\" IS NOT NULL");
 
+                    b.HasIndex("Provider", "ProviderTransactionId")
+                        .IsUnique()
+                        .HasFilter("\"Provider\" = 'sumit' AND \"ProviderTransactionId\" IS NOT NULL");
+
                     b.ToTable("Orders", t =>
                         {
                             t.HasCheckConstraint("CK_Orders_Price", "\"PriceSnapshot\" > 0");
@@ -982,6 +1012,10 @@ namespace PortalX.Server.Data.Migrations
                     b.Property<string>("Result")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
 
                     b.Property<string>("Type")
                         .IsRequired()

@@ -37,7 +37,7 @@ public sealed class PurchaseService(
     // ------------------------------------------------------------------ orders
 
     public async Task<(CreatedOrder? Created, ServiceError? Error)> CreateOrderAsync(string? productId, string? email, string? couponCode = null,
-        Guid? referralLinkId = null)
+        Guid? referralLinkId = null, bool adminTrial = false)
     {
         var product = await db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == (productId ?? ""));
         if (product == null || product.Status != ProductStatus.Published)
@@ -45,7 +45,8 @@ public sealed class PurchaseService(
         if (product.IsFree)
             return (null, new ServiceError(409, "free-product", "המשחק הזה חינמי — אין צורך ברכישה."));
         // the opening time (Israel time) and a manual pause are checked here, whatever the page showed
-        if (SaleWindow.Refusal(product, DateTime.UtcNow) is { } closed) return (null, closed);
+        // only the admin's own trial purchase passes a paused sale; the sale itself stays exactly as it is
+        if (!adminTrial && SaleWindow.Refusal(product, DateTime.UtcNow) is { } closed) return (null, closed);
         if (product.PriceIls is not > 0)
             return (null, new ServiceError(409, "no-price", "המחיר של המשחק הזה טרם נקבע, ולכן אי אפשר לרכוש אותו עדיין."));
         if (!IsPlayable(product, scenarios))
@@ -90,8 +91,8 @@ public sealed class PurchaseService(
             ReferralLinkId = referralLinkId,
             ReferralAttributedAt = referralLinkId == null ? null : now,
         };
-        var checkout = provider.CreateCheckout(order);
-        order.ProviderSessionId = checkout.SessionId;
+        order.ProviderSessionId = provider.NewSessionId();
+        order.CheckoutExpiresAt = now + provider.CheckoutLifetime;
         // the order and its coupon use are saved together; the database retry strategy re-runs the whole unit
         ServiceError? reserveError = null;
         await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
@@ -115,7 +116,22 @@ public sealed class PurchaseService(
         }
         logger.LogInformation("Order {Number} created for {Product} ({Price} {Currency}, provider {Provider})",
             order.Number, product.Id, order.PriceSnapshot, order.Currency, provider.Name);
-        return (new CreatedOrder(order, key, checkout.CheckoutUrl), null);
+        // the order is saved first, so a payment can never arrive for an order the server does not know
+        try
+        {
+            var checkout = await provider.CreateCheckoutAsync(order);
+            return (new CreatedOrder(order, key, checkout.CheckoutUrl), null);
+        }
+        catch (PaymentStartException ex)
+        {
+            logger.LogWarning("Order {Number}: the payment page did not open: {Reason}", order.Number, ex.Message);
+            order.Status = OrderStatus.Failed;
+            order.FailedAt = DateTime.UtcNow;
+            order.UpdatedAt = order.FailedAt.Value;
+            await coupons.UpdateForOrderAsync(order.Id, order.Status, order.UpdatedAt);
+            await db.SaveChangesAsync();
+            return (null, new ServiceError(502, "payment-start-failed", "לא הצלחנו לפתוח את דף התשלום. לא בוצע חיוב. נסו שוב בעוד רגע."));
+        }
     }
 
     /// <summary>The order, if the key matches. Only the buyer holds the key.</summary>
@@ -136,7 +152,7 @@ public sealed class PurchaseService(
         var blocked = ent == null ? null : GameBlock(ent, product);
         return new
         {
-            order.Id, order.Number, order.ProductId, order.ProductName,
+            order.Id, order.Number, order.ProductId, order.ProductName, order.Provider,
             Price = order.PriceSnapshot, order.Currency,
             order.OriginalPrice, Discount = order.DiscountAmount, order.CouponCode,
             Status = order.Status.ToString().ToLowerInvariant(),
@@ -152,6 +168,8 @@ public sealed class PurchaseService(
             CanOpenGame = order.Status == OrderStatus.Paid && blocked == null
                 && (room == null ? ent!.SessionsUsed < ent.SessionsAllowed : room.Phase == RoomPhase.Lobby),
             GameBlockedReason = order.Status == OrderStatus.Paid ? blocked?.Message : null,
+            // the payment arrived after this coupon's limit was reached: it will be refunded by hand
+            PaymentNeedsRefund = order.ProviderIssue?.StartsWith("coupon-limit:") == true,
         };
     }
 
@@ -175,15 +193,35 @@ public sealed class PurchaseService(
     }
 
     /// <summary>Applies a verified notification exactly once. Returns what happened (also stored on the event).</summary>
-    public async Task<string> ApplyAsync(IPaymentProvider provider, PaymentNotification n)
+    public Task<string> ApplyAsync(IPaymentProvider provider, PaymentNotification n) => ApplyAsync(provider.Name, provider.IsTest, n);
+
+    /// <summary>The admin records a refund made at the provider. The order, its game and its results all stay on record.</summary>
+    public async Task<(bool Ok, string Result)> MarkRefundedAsync(Guid orderId)
+    {
+        var order = await db.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.Id == orderId);
+        if (order == null) return (false, "no-order");
+        if (order.Status != OrderStatus.Paid) return (false, "not-paid");
+        var result = await ApplyAsync(order.Provider, order.IsTest, new PaymentNotification(
+            $"admin-refund:{order.Id}", PaymentEventType.Refunded, order.ProviderSessionId ?? "", order.Id, order.ProviderTransactionId,
+            order.PriceSnapshot, order.Currency, order.IsTest, Source: "admin"));
+        return (result == "applied:refunded", result);
+    }
+
+    /// <summary>The game of this order, if it has one that has not finished.</summary>
+    public async Task<Guid?> OpenRoomOfOrderAsync(Guid orderId) =>
+        await db.Rooms.AsNoTracking().Where(r => r.Phase != RoomPhase.Completed && db.Entitlements.Any(e => e.OrderId == orderId && e.Id == r.EntitlementId))
+            .Select(r => (Guid?)r.Id).FirstOrDefaultAsync();
+
+    private async Task<string> ApplyAsync(string providerName, bool providerIsTest, PaymentNotification n)
     {
         var evt = new PaymentEvent
         {
-            Provider = provider.Name, ProviderEventId = n.EventId, OrderId = n.OrderId,
+            Provider = providerName, ProviderEventId = n.EventId, OrderId = n.OrderId,
             Type = n.Type.ToString().ToLowerInvariant(), Amount = n.Amount, Currency = n.Currency,
-            ProviderTransactionId = n.TransactionId, IsTest = n.IsTest, Result = "received", ReceivedAt = DateTime.UtcNow,
+            ProviderTransactionId = n.TransactionId, IsTest = n.IsTest, Result = "received", Source = n.Source, ReceivedAt = DateTime.UtcNow,
         };
         db.PaymentEvents.Add(evt);
+        var resumed = false;
         try
         {
             await db.SaveChangesAsync();
@@ -191,17 +229,24 @@ public sealed class PurchaseService(
         catch (DbUpdateException ex) when (IsUniqueViolation(ex))
         {
             db.ChangeTracker.Clear();
-            logger.LogInformation("Duplicate {Provider} event {Event} ignored", provider.Name, n.EventId);
-            return "duplicate";
+            var earlier = await db.PaymentEvents.AsNoTracking().FirstAsync(e => e.Provider == providerName && e.ProviderEventId == n.EventId);
+            // an earlier attempt that never finished (a crash after saving the event) must not block this payment for good
+            if (earlier.Result is not ("received" or RetryExhausted))
+            {
+                logger.LogInformation("Duplicate {Provider} event {Event} ignored", providerName, n.EventId);
+                return "duplicate";
+            }
+            evt = earlier;
+            resumed = true;
         }
 
-        string result = "rejected:retry-exhausted";
+        string result = RetryExhausted;
         for (var attempt = 0; attempt < 4; attempt++)
         {
             db.ChangeTracker.Clear();
             try
             {
-                result = await TransitionAsync(provider, n);
+                result = await TransitionAsync(providerName, providerIsTest, n);
                 break;
             }
             catch (DbUpdateException ex) when (ex is DbUpdateConcurrencyException || IsUniqueViolation(ex))
@@ -210,20 +255,26 @@ public sealed class PurchaseService(
             }
         }
         db.ChangeTracker.Clear();
-        await db.PaymentEvents.Where(e => e.Id == evt.Id).ExecuteUpdateAsync(s => s.SetProperty(e => e.Result, result));
+        // the other attempt finished at the same moment and its result stands
+        if (resumed && result.StartsWith("ignored")) return "duplicate";
+        var firstResult = result;
+        await db.PaymentEvents.Where(e => e.Id == evt.Id && (firstResult.StartsWith("applied") || e.Result == "received"))
+            .ExecuteUpdateAsync(s => s.SetProperty(e => e.Result, firstResult));
         if (result.StartsWith("rejected")) logger.LogWarning("Payment event {Event} for order {Order}: {Result}", n.EventId, n.OrderId, result);
         else logger.LogInformation("Payment event {Event} for order {Order}: {Result}", n.EventId, n.OrderId, result);
         return result;
     }
 
-    private async Task<string> TransitionAsync(IPaymentProvider provider, PaymentNotification n)
+    private const string RetryExhausted = "rejected:retry-exhausted";
+
+    private async Task<string> TransitionAsync(string providerName, bool providerIsTest, PaymentNotification n)
     {
         var order = await db.Orders.FirstOrDefaultAsync(o => o.Id == n.OrderId);
         if (order == null) return "rejected:unknown-order";
-        if (order.Provider != provider.Name) return "rejected:provider-mismatch";
+        if (order.Provider != providerName) return "rejected:provider-mismatch";
         if (order.ProviderSessionId != n.SessionId) return "rejected:session-mismatch";
         if (!string.Equals(n.Currency, order.Currency, StringComparison.OrdinalIgnoreCase)) return "rejected:currency-mismatch";
-        if (n.IsTest != provider.IsTest || n.IsTest != order.IsTest) return "rejected:test-flag-mismatch";
+        if (n.IsTest != providerIsTest || n.IsTest != order.IsTest) return "rejected:test-flag-mismatch";
         var amountOk = n.Type == PaymentEventType.Refunded ? n.Amount > 0 && n.Amount <= order.PriceSnapshot : n.Amount == order.PriceSnapshot;
         if (!amountOk) return "rejected:amount-mismatch";
 
@@ -231,10 +282,31 @@ public sealed class PurchaseService(
         string result;
         switch (n.Type)
         {
+            // the buyer paid twice for one order: one game only, and the admin is told to refund the second payment
+            case PaymentEventType.Succeeded when n.Verified != null && order.Status is OrderStatus.Paid or OrderStatus.Refunded
+                    && n.TransactionId != order.ProviderTransactionId:
+                order.ProviderIssue = "second-payment:" + n.TransactionId;
+                result = "flagged:second-payment";
+                break;
             case PaymentEventType.Succeeded when order.Status is OrderStatus.Pending or OrderStatus.Failed or OrderStatus.Cancelled:
+                // the coupon's limit is never passed: no game opens, and the admin is told to refund this payment
+                if (n.Verified != null && !await coupons.ClaimForPaymentAsync(order.Id, now))
+                {
+                    order.ProviderIssue = "coupon-limit:" + n.TransactionId;
+                    result = "flagged:coupon-limit";
+                    break;
+                }
                 order.Status = OrderStatus.Paid;
                 order.PaidAt = now;
                 order.ProviderTransactionId = n.TransactionId;
+                if (n.Verified is { } verified)
+                {
+                    order.PaymentVerifiedAt = now;
+                    order.ProviderCustomerId = verified.CustomerId;
+                    order.ProviderDocumentId = verified.DocumentId;
+                    order.ProviderAuthNumber = verified.AuthNumber;
+                    if (verified.DocumentId is not > 0) order.ProviderIssue = "document-missing";
+                }
                 if (!await db.Entitlements.AnyAsync(e => e.OrderId == order.Id))
                     db.Entitlements.Add(new Entitlement
                     {

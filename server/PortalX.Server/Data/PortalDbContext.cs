@@ -120,6 +120,11 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.ToTable(t => t.HasCheckConstraint("CK_Orders_Price", "\"PriceSnapshot\" > 0"));
             e.HasIndex(x => x.ReferralLinkId);
             e.Property(x => x.ReferralExclusion).HasMaxLength(32);
+            e.Property(x => x.ProviderAuthNumber).HasMaxLength(64);
+            e.Property(x => x.ProviderIssue).HasMaxLength(64);
+            // one SUMIT payment can never pay for two orders
+            e.HasIndex(x => new { x.Provider, x.ProviderTransactionId }).IsUnique()
+                .HasFilter("\"Provider\" = 'sumit' AND \"ProviderTransactionId\" IS NOT NULL");
             e.HasOne<ReferralLink>().WithMany().HasForeignKey(x => x.ReferralLinkId).OnDelete(DeleteBehavior.Restrict);
         });
 
@@ -171,6 +176,7 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.HasIndex(x => new { x.Provider, x.ProviderEventId }).IsUnique();
             e.HasIndex(x => x.OrderId);
             e.Property(x => x.Amount).HasPrecision(10, 2);
+            e.Property(x => x.Source).HasMaxLength(16);
         });
 
         b.Entity<Entitlement>(e =>

@@ -39,12 +39,17 @@ builder.Services.AddSingleton<DatabaseStatus>();
 builder.Services.AddScoped<RoomService>();
 // demo checkout: on only when the server's own settings say so (PAYMENTS_MODE=Test and ENABLE_TEST_CHECKOUT=true)
 builder.Services.AddSingleton(sp => TestCheckout.FromConfig(sp.GetRequiredService<IConfiguration>(),
-    sp.GetRequiredService<ILoggerFactory>().CreateLogger("Payments")));
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger("Payments"), sp.GetRequiredService<PaymentGateway>()));
+builder.Services.AddSingleton<SumitHttp>();
 builder.Services.AddSingleton(sp => PaymentGateway.Create(
     sp.GetRequiredService<IConfiguration>().GetSection("Payments").Get<PaymentOptions>() ?? new PaymentOptions(),
-    sp.GetRequiredService<IHostEnvironment>(), sp.GetRequiredService<ILoggerFactory>().CreateLogger("Payments")));
+    sp.GetRequiredService<IHostEnvironment>(), sp.GetRequiredService<ILoggerFactory>().CreateLogger("Payments"),
+    () => SumitPaymentProvider.TryCreate(sp.GetRequiredService<IConfiguration>(), sp.GetRequiredService<PortalX.Server.Mail.SiteOptions>(),
+        sp.GetRequiredService<IHostEnvironment>(), sp.GetRequiredService<SumitHttp>(), sp.GetRequiredService<ILoggerFactory>().CreateLogger("Payments"))));
 builder.Services.AddScoped<CouponService>();
 builder.Services.AddScoped<PurchaseService>();
+builder.Services.AddScoped<SumitReconciler>();
+builder.Services.AddHostedService<SumitReconciliationService>();
 builder.Services.Configure<AdminOptions>(builder.Configuration.GetSection("Admin"));
 builder.Services.AddScoped<AdminService>();
 // email: the contact address, SMTP settings (environment only), results emails, consents and unsubscribe links
@@ -106,6 +111,10 @@ builder.Services.AddRateLimiter(o =>
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:CreatePerMinute", 10), Window = TimeSpan.FromMinutes(1) }));
     o.AddPolicy("join", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:JoinPerMinute", 40), Window = TimeSpan.FromMinutes(1) }));
+    o.AddPolicy("payment-check", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:PaymentCheckPerMinute", 10), Window = TimeSpan.FromMinutes(1) }));
+    o.AddPolicy("payment-ipn", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:PaymentIpnPerMinute", 60), Window = TimeSpan.FromMinutes(1) }));
     o.AddPolicy("coupon", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:CouponPerMinute", 20), Window = TimeSpan.FromMinutes(1) }));
     // free trial games: a few per address per hour, so the free game cannot be used to flood the server
@@ -217,7 +226,7 @@ api.MapGet("/rooms/{code}", async (string code, RoomService rooms, ScenarioCatal
         phase = room.Phase.ToString().ToLowerInvariant(), playerCount = taken,
         minPlayers = rooms.Engine.MinPlayers(scenario), maxPlayers = rooms.Engine.MaxPlayers(room),
         // open until the game is finished, also in the middle of it, while a seat is free (spec 3)
-        canJoin = GameEngine.IsOpenForJoining(room) && taken < rooms.Engine.MaxPlayers(room),
+        canJoin = GameEngine.IsOpenForJoining(room) && taken < rooms.Engine.MaxPlayers(room) && !await rooms.ClosedByRefundAsync(room.EntitlementId),
     });
 }).RequireRateLimiting("join");
 
@@ -233,7 +242,8 @@ api.MapGet("/rooms/{code}/seat", async (string code, HttpRequest http, RoomServi
     var now = DateTime.UtcNow;
     var state = rooms.Engine.Seat(player, now);
     var max = rooms.Engine.MaxPlayers(room);
-    var canReturn = state != GameEngine.SeatState.Released || rooms.Engine.SeatsTaken(room, now, player.Id) < max;
+    var canReturn = (state != GameEngine.SeatState.Released || rooms.Engine.SeatsTaken(room, now, player.Id) < max)
+        && (room.Phase == PortalX.Server.Domain.RoomPhase.Completed || !await rooms.ClosedByRefundAsync(room.EntitlementId));
     return Results.Ok(new
     {
         seat = new

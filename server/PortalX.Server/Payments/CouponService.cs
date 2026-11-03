@@ -85,9 +85,36 @@ public sealed class CouponService(PortalDbContext db)
         {
             Id = Guid.NewGuid(), CouponId = c.Id, OrderId = order.Id, ProductId = order.ProductId,
             OriginalPrice = quote.OriginalPrice, Discount = quote.Discount, FinalPrice = quote.FinalPrice,
-            Status = RedemptionStatus.Reserved, CreatedAt = now, UpdatedAt = now, ReservedUntil = now + ReservationTime,
+            // a use stays held while the provider's payment page can still be paid, so it cannot pass to someone else meanwhile
+            Status = RedemptionStatus.Reserved, CreatedAt = now, UpdatedAt = now,
+            ReservedUntil = order.CheckoutExpiresAt is { } link ? link + SumitReconciler.CloseGrace : now + ReservationTime,
         });
         return null;
+    }
+
+    /// <summary>
+    /// A verified payment takes its coupon use. A use still held is simply taken; one that was released (the buyer cancelled,
+    /// then paid after all) is taken again only if the limit allows it, under the coupon's row lock. False = the limit is full.
+    /// </summary>
+    public async Task<bool> ClaimForPaymentAsync(Guid orderId, DateTime now)
+    {
+        var r = await db.CouponRedemptions.AsNoTracking().FirstOrDefaultAsync(x => x.OrderId == orderId);
+        if (r == null || r.Status == RedemptionStatus.Redeemed || (r.Status == RedemptionStatus.Reserved && r.ReservedUntil > now)) return true;
+        return await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            await using var tx = await db.Database.BeginTransactionAsync();
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"Coupons\" WHERE \"Id\" = {r.CouponId} FOR UPDATE");
+            var max = await db.Coupons.AsNoTracking().Where(c => c.Id == r.CouponId).Select(c => c.MaxRedemptions).FirstAsync();
+            if (max is { } limit && await Counting(r.CouponId, now).CountAsync(x => x.Id != r.Id) >= limit)
+            {
+                await tx.RollbackAsync();
+                return false;
+            }
+            await db.CouponRedemptions.Where(x => x.Id == r.Id).ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.Status, RedemptionStatus.Redeemed).SetProperty(x => x.UpdatedAt, now));
+            await tx.CommitAsync();
+            return true;
+        });
     }
 
     /// <summary>Moves the order's coupon use along with the payment (paid → redeemed, failed → released, refund → refunded).</summary>

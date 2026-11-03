@@ -20,12 +20,18 @@ public sealed class TestCheckout(bool enabled)
 
     public bool Enabled { get; } = enabled;
 
-    public static TestCheckout FromConfig(IConfiguration config, ILogger logger)
+    public static TestCheckout FromConfig(IConfiguration config, ILogger logger, PaymentGateway? gateway = null)
     {
         var mode = config["PAYMENTS_MODE"]?.Trim();
         var show = config["ENABLE_TEST_CHECKOUT"]?.Trim();
         var enabled = string.Equals(mode, "Test", StringComparison.OrdinalIgnoreCase)
             && string.Equals(show, "true", StringComparison.OrdinalIgnoreCase);
+        // a real payment page and a free way around it never live together
+        if (enabled && gateway?.Provider is SumitPaymentProvider)
+        {
+            logger.LogWarning("Demo checkout stays off because the SUMIT provider is active.");
+            enabled = false;
+        }
         if (enabled)
             logger.LogWarning("DEMO CHECKOUT is on (PAYMENTS_MODE=Test, ENABLE_TEST_CHECKOUT=true): paid games can be opened without payment. Nothing counts as revenue.");
         return new TestCheckout(enabled);
