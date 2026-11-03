@@ -86,7 +86,7 @@ public sealed class ProductSeed
 /// <summary>Public view of a product for the catalog pages.</summary>
 public static class ProductView
 {
-    public static object Build(Product p, ScenarioCatalog scenarios, Payments.PaymentGateway gateway, Payments.TestCheckout? test = null)
+    public static object Build(Product p, ScenarioCatalog scenarios, Payments.PaymentGateway gateway)
     {
         var playable = Payments.PurchaseService.IsPlayable(p, scenarios);
         return new
@@ -103,8 +103,6 @@ public static class ProductView
             Purchasable = Payments.PurchaseService.IsPurchasable(p, scenarios, gateway),
             PaymentsAvailable = gateway.Available,
             TestPayments = gateway.Provider?.IsTest ?? false,
-            // the demo button appears only when the server turned demo mode on
-            TestCheckout = (test?.Offers(p, scenarios) ?? false) && Payments.SaleWindow.State(p, DateTime.UtcNow) == Payments.SaleWindow.Open,
             // "open", "scheduled" or "paused"; a scheduled game shows its opening time (Israel time)
             SaleState = Payments.SaleWindow.State(p, DateTime.UtcNow),
             SaleOpensAt = p.SaleOpensAt,

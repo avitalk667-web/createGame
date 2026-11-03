@@ -27,7 +27,6 @@ export interface Dashboard {
     demo: number; demoStarted: number; demoCompleted: number;
   };
   participants: number;
-  demoCheckoutEnabled: boolean;
   testPaidOrders?: number | null;
 }
 

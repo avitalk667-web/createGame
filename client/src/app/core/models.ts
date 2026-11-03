@@ -315,8 +315,6 @@ export interface Product {
   paymentsAvailable: boolean;
   /** The active provider is a sandbox: no real charge. */
   testPayments: boolean;
-  /** The server offers the demo checkout for this game (no payment, never revenue). */
-  testCheckout?: boolean;
   /** A free trial game: started without payment (spec 1). */
   isFree?: boolean;
   /** Purchase availability set by the admin: open, scheduled to open later (Israel time) or paused. */

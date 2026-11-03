@@ -366,7 +366,7 @@ public class PaymentEvent
     public DateTime ReceivedAt { get; set; }
 }
 
-/// <summary>Where a right to play came from. TestCheckout is the demo mode: no payment, never revenue, always IsTest.</summary>
+/// <summary>Where a right to play came from. TestCheckout is kept only to read old rows: the demo mode was removed and nothing creates it.</summary>
 public enum EntitlementSource { Purchase = 0, AdminFree = 1, TestCheckout = 2 }
 
 /// <summary>The right to open group games of one product, created only after a verified payment (or by the admin).</summary>

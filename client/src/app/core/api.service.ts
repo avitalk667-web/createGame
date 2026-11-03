@@ -123,11 +123,6 @@ export class ApiService {
     return this.request<{ code: string; hostClaim: string }>('POST', `/api/products/${encodeURIComponent(productId)}/free-game`);
   }
 
-  /** Demo mode only: the server opens the game without payment, or refuses when demo mode is off. */
-  testGame(productId: string) {
-    return this.request<{ code: string; hostClaim: string; message: string }>('POST', `/api/products/${encodeURIComponent(productId)}/test-game`);
-  }
-
   site() {
     return this.request<SiteInfo>('GET', '/api/site');
   }

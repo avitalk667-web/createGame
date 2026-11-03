@@ -151,7 +151,6 @@ public class SumitPaymentTests
                     ["ENABLE_TEST_CHECKOUT"] = "true",
                     ["RateLimits:PaymentCheckPerMinute"] = "100000",
                     ["RateLimits:PaymentIpnPerMinute"] = "100000",
-                    ["RateLimits:TestGamesPerHour"] = "100000",
                 };
                 foreach (var (k, v) in extra ?? []) settings[k] = v;
                 c.AddInMemoryCollection(settings);
@@ -899,7 +898,6 @@ public class SumitPaymentTests
         var s = Start(production: true, extra: new() { ["Payments:Provider"] = "none" });
         await EnsureProductAsync(s.F.Services);
         Assert.False(s.F.Services.GetRequiredService<PaymentGateway>().Available);
-        Assert.True(s.F.Services.GetRequiredService<TestCheckout>().Enabled);
         Assert.Equal((HttpStatusCode)503, (await s.Http.PostAsJsonAsync("/api/orders", new { productId = ProductId })).StatusCode);
         var admin = await AdminAsync(s);
         Assert.Equal(HttpStatusCode.Conflict, (await admin.PostAsync($"/api/admin/products/{ProductId}/trial-order", null)).StatusCode);
@@ -1238,14 +1236,13 @@ public class SumitPaymentTests
     }
 
     [Fact]
-    public async Task The_demo_checkout_is_off_whenever_sumit_is_on()
+    public async Task There_is_no_demo_route_when_sumit_is_on()
     {
         var s = Start();
         await EnsureProductAsync(s.F.Services);
-        Assert.False(s.F.Services.GetRequiredService<TestCheckout>().Enabled);
-        Assert.Equal((HttpStatusCode)403, (await s.Http.PostAsync($"/api/products/{ProductId}/test-game", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await s.Http.PostAsync($"/api/products/{ProductId}/test-game", null)).StatusCode);
         var product = await (await s.Http.GetAsync($"/api/products/{ProductId}")).Content.ReadFromJsonAsync<JsonElement>(Json);
-        Assert.False(product.GetProperty("testCheckout").GetBoolean());
+        Assert.False(product.TryGetProperty("testCheckout", out _));
     }
 
     [Fact]
@@ -1256,14 +1253,12 @@ public class SumitPaymentTests
         {
             b.ConfigureAppConfiguration((_, c) => c.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Payments:Provider"] = "none", ["PAYMENTS_MODE"] = "Test", ["ENABLE_TEST_CHECKOUT"] = "true", ["RateLimits:TestGamesPerHour"] = "100000",
+                ["Payments:Provider"] = "none",
             }));
             b.ConfigureTestServices(s => s.AddSingleton<SumitHttp>(sumit));
         });
         var http = f.CreateClient();
         await EnsureProductAsync(f.Services);
-        Assert.True(f.Services.GetRequiredService<TestCheckout>().Enabled);
-        Assert.Equal(HttpStatusCode.OK, (await http.PostAsync($"/api/products/{ProductId}/test-game", null)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await http.PostAsync($"/api/payments/ipn/sumit/{Guid.NewGuid()}/x", new StringContent("{}"))).StatusCode);
         using (var scope = f.Services.CreateScope())
             Assert.Equal(0, await scope.ServiceProvider.GetRequiredService<SumitReconciler>().SweepAsync(DateTime.UtcNow));
