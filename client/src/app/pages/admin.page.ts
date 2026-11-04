@@ -1,7 +1,7 @@
 import { DatePipe, DecimalPipe, JsonPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { orderStore, sessionStore } from '../core/api.service';
+import { orderStore } from '../core/api.service';
 import {
   AdminApiService, AdminFilters, AdminGame, AdminOrder, AdminProduct, AuditEntry, CouponRow, CouponUse, Dashboard, FaqRow, EmailSetup, MailingFilters, MailingList,
   MoneyTotals, ReferralDetails, ReferralFilters, ReferralList } from '../core/admin-api.service';
@@ -70,23 +70,6 @@ const ACTIONS: Record<string, string> = {
         <button class="btn small ghost" (click)="logout()">יציאה</button>
       </header>
       <main>
-        <section class="card free">
-          <div>
-            <b>פתח משחק ללא תשלום עבורי</b>
-            <p class="muted small">נוצר משחק פנימי שמקושר לחשבון המנהל. הוא לא נרשם כעסקה ולא כהכנסה. אפשר להזמין אליו משתתפים עם הקוד.</p>
-          </div>
-          <div class="row">
-            <select [value]="freeProduct()" (change)="freeProduct.set($any($event.target).value)" aria-label="משחק">
-              @for (p of products(); track p.id) { <option [value]="p.id" [disabled]="!p.playable">{{ p.name }}{{ p.playable ? '' : ' (לא זמין)' }}</option> }
-            </select>
-            <button class="btn primary" (click)="openFree()" [disabled]="busy()">פתח משחק ללא תשלום</button>
-          </div>
-          @if (freeCode()) {
-            <p class="ok">נפתח משחק חינמי. קוד: <b dir="ltr">{{ freeCode() }}</b>
-              <button class="btn small" (click)="enter(freeCode()!)">כניסה כמארח</button></p>
-          }
-        </section>
-
         <nav class="tabs" role="tablist">
           @for (t of tabs; track t.id) {
             <button role="tab" [attr.aria-selected]="tab() === t.id" [class.on]="tab() === t.id" (click)="go(t.id)">{{ t.label }}</button>
@@ -136,7 +119,7 @@ const ACTIONS: Record<string, string> = {
                 <div class="stat card"><span>משחקים שנפתחו</span><b>{{ d.games.opened }}</b><small>{{ d.games.started }} התחילו · {{ d.games.completed }} הושלמו</small></div>
                 <div class="stat card"><span>משחקים ששולמו והתחילו</span><b>{{ d.games.paidStarted }}</b><small>{{ d.games.purchasedNotStarted }} נרכשו וטרם התחילו</small></div>
                 @if (d.games.demo) { <div class="stat card"><span>משחקי הדגמה ישנים (סגורים)</span><b>{{ d.games.demo }}</b><small>{{ d.games.demoStarted }} התחילו · {{ d.games.demoCompleted }} הושלמו · היסטוריה בלבד, לא נספר בהכנסות ובמכירות</small></div> }
-                <div class="stat card"><span>משחקים חינמיים של המנהל</span><b>{{ d.games.adminFree }}</b><small>{{ d.games.adminFreeStarted }} התחילו</small></div>
+                <div class="stat card"><span>משחקים חינמיים ישנים של המנהל</span><b>{{ d.games.adminFree }}</b><small>{{ d.games.adminFreeStarted }} התחילו</small></div>
                 <div class="stat card"><span>משתתפים</span><b>{{ d.participants }}</b><small>ללא ספירה כפולה בתוך אותו משחק</small></div>
                 <div class="stat card"><span>רוכשים (דוא״ל ייחודי)</span><b>{{ d.buyersWithEmail }}</b><small>אין חשבונות לקוח — נספרים רק מי שהשאירו דוא״ל</small></div>
               </div>
@@ -225,7 +208,6 @@ const ACTIONS: Record<string, string> = {
             @if (game(); as g) {
               <section class="card details" aria-label="פרטי משחק">
                 <div class="bar"><h2>משחק {{ g.code }} · {{ label(g.phase) }}</h2><button class="btn small ghost" (click)="game.set(null)">סגירה</button></div>
-                @if (g.access === 'admin-free' && g.phase === 'lobby') { <button class="btn small" (click)="enter(g.code)">כניסה כמארח</button> }
                 <h3>משתתפים</h3>
                 <ul>
                   @for (p of g.players; track p.nickname) {
@@ -626,8 +608,6 @@ const ACTIONS: Record<string, string> = {
     .narrow .card { display:flex; flex-direction:column; gap:.6rem; align-items:flex-start; }
     h1, h2 { font-family:var(--font-title); }
     h2 { font-size:1.3rem; margin:1rem 0 .5rem; } h3 { margin:.8rem 0 .3rem; font-size:1rem; }
-    .free { display:flex; flex-wrap:wrap; gap:.8rem 1.5rem; align-items:center; justify-content:space-between; margin-bottom:1rem; }
-    .free p { margin:.2rem 0 0; }
     .row { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
     .tabs { display:flex; gap:.25rem; border-bottom:1px solid var(--line); margin-bottom:1rem; overflow-x:auto; }
     .tabs button { background:none; border:none; color:var(--muted); padding:.6rem 1rem; font-weight:700; cursor:pointer; border-bottom:3px solid transparent; white-space:nowrap; font-size:1rem; }
@@ -709,8 +689,6 @@ export class AdminPage {
   edits = signal<Record<string, ProductEdit>>({});
   saved = signal<string | null>(null);
   sumitStatus = signal<string | null>(null);
-  freeProduct = signal('');
-  freeCode = signal<string | null>(null);
   busy = signal(false);
   error = signal<string | null>(null);
   csvUrl = computed(() => this.api.csvUrl(this.f()));
@@ -834,7 +812,6 @@ export class AdminPage {
       this.state.set('ok');
       const products = await this.api.products();
       this.products.set(products);
-      this.freeProduct.set(products.find((p) => p.playable)?.id ?? '');
       // back from Google's consent page: open the email setup and show the result (a short code, never a token)
       const q = new URLSearchParams(location.search);
       if (q.get('tab') === 'email-setup') {
@@ -962,33 +939,6 @@ export class AdminPage {
       this.fail(err);
     } finally {
       this.busy.set(false);
-    }
-  }
-
-  async openFree() {
-    if (!this.freeProduct()) return;
-    this.busy.set(true);
-    this.error.set(null);
-    try {
-      const g = await this.api.freeGame(this.freeProduct());
-      sessionStore.setHostClaim(g.code, g.hostClaim);
-      this.freeCode.set(g.code);
-      if (this.tab() === 'dashboard' || this.tab() === 'games') this.reload();
-    } catch (e: any) {
-      this.fail(e);
-    } finally {
-      this.busy.set(false);
-    }
-  }
-
-  /** Enters a free admin game as host (a fresh host claim is issued while it is in the lobby). */
-  async enter(code: string) {
-    try {
-      const g = await this.api.reclaim(code);
-      if (g.hostClaim) sessionStore.setHostClaim(g.code, g.hostClaim);
-      await this.router.navigate(['/join', g.code]);
-    } catch (e: any) {
-      this.fail(e);
     }
   }
 

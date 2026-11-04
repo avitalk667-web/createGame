@@ -214,13 +214,16 @@ api.MapGet("/rooms/{code}", async (string code, RoomService rooms, ScenarioCatal
     if (room == null) return Results.NotFound(new ApiError("no-room", "לא מצאנו חדר עם הקוד הזה. בדקו שהקוד נכון."));
     var scenario = catalog.Get(room.ScenarioId);
     var taken = rooms.Engine.SeatsTaken(room, DateTime.UtcNow);
+    var closure = await rooms.ClosureAsync(room);
     return Results.Ok(new
     {
         code = room.Code, scenarioId = room.ScenarioId, scenarioName = scenario.Name,
+        // why nobody can enter a closed game, so the page does not call it full
+        closedMessage = closure?.Message,
         phase = room.Phase.ToString().ToLowerInvariant(), playerCount = taken,
         minPlayers = rooms.Engine.MinPlayers(scenario), maxPlayers = rooms.Engine.MaxPlayers(room),
         // open until the game is finished, also in the middle of it, while a seat is free (spec 3)
-        canJoin = GameEngine.IsOpenForJoining(room) && taken < rooms.Engine.MaxPlayers(room) && await rooms.ClosureAsync(room) == null,
+        canJoin = GameEngine.IsOpenForJoining(room) && taken < rooms.Engine.MaxPlayers(room) && closure == null,
     });
 }).RequireRateLimiting("join");
 

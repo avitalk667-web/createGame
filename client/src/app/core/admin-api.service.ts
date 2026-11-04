@@ -181,8 +181,6 @@ export class AdminApiService {
   game(code: string) { return this.request<any>('GET', `/api/admin/games/${encodeURIComponent(code)}`); }
   products() { return this.request<AdminProduct[]>('GET', '/api/admin/products'); }
   updateProduct(id: string, body: object) { return this.request<AdminProduct>('PUT', `/api/admin/products/${encodeURIComponent(id)}`, body); }
-  freeGame(productId: string) { return this.request<{ code: string; hostClaim: string }>('POST', '/api/admin/free-game', { productId }); }
-  reclaim(code: string) { return this.request<{ code: string; hostClaim?: string | null }>('POST', `/api/admin/games/${encodeURIComponent(code)}/host-claim`); }
   audit() { return this.request<AuditEntry[]>('GET', '/api/admin/audit'); }
   emailSetup() { return this.request<EmailSetup>('GET', '/api/admin/email/status'); }
   startGmail() { return this.request<{ url: string }>('POST', '/api/admin/email/google/start'); }

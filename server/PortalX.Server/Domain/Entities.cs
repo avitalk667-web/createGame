@@ -52,7 +52,7 @@ public class GameRoom
     public string? ProductId { get; set; }
     /// <summary>The entitlement that paid for this room; at most one room per entitlement.</summary>
     public Guid? EntitlementId { get; set; }
-    /// <summary>"purchase", "admin-free" or "legacy" (created before purchases existed).</summary>
+    /// <summary>"purchase" or "free-sample"; on old rows also "admin-free", "test-checkout" or "legacy" (created before purchases existed, and closed).</summary>
     public string AccessSource { get; set; } = "legacy";
     /// <summary>Participant limit of this game, host included, fixed when it was opened (see GameOptions.MaxPlayers).</summary>
     public int MaxPlayers { get; set; } = 4;
@@ -366,7 +366,7 @@ public class PaymentEvent
     public DateTime ReceivedAt { get; set; }
 }
 
-/// <summary>Where a right to play came from. TestCheckout is kept only to read old rows: the demo mode was removed and nothing creates it.</summary>
+/// <summary>Where a right to play came from. AdminFree and TestCheckout are kept only to read old rows: nothing creates them any more.</summary>
 public enum EntitlementSource { Purchase = 0, AdminFree = 1, TestCheckout = 2 }
 
 /// <summary>The right to open group games of one product, created only after a verified payment (or by the admin).</summary>

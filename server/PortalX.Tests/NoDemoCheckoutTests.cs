@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http.Connections;
+using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
@@ -145,6 +147,78 @@ public class NoDemoCheckoutTests
         Assert.Equal(RoomService.DemoClosedCode, (await Body(join)).GetProperty("code").GetString());
         var room = await DbAsync(f, db => db.Rooms.AsNoTracking().SingleAsync(r => r.Code == code));
         Assert.Equal(phase, room.Phase);
+    }
+
+    [Fact]
+    public void No_admin_route_opens_a_game_without_payment()
+    {
+        using var f = SecondaryService();
+        var routes = f.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>().Select(e => e.RoutePattern.RawText ?? "").ToList();
+        Assert.Contains(routes, r => r.Contains("/admin/"));
+        Assert.DoesNotContain(routes, r => r.Contains("admin") && r.Contains("free-game", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(routes, r => r.Contains("host-claim", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>An old game with one seated player, the way an old room looks in the database.</summary>
+    private static async Task<(string Code, string Token)> LegacyRoomAsync(WebApplicationFactory<Program> f, HttpClient http, RoomPhase phase)
+    {
+        var opened = await Body(await http.PostAsync("/api/products/gate-of-secrets/free-game", null));
+        var code = opened.GetProperty("code").GetString()!;
+        var join = await http.PostAsJsonAsync($"/api/rooms/{code}/players", new { nickname = "Old", characterId = "explorer", appearance = "{}", hostClaim = opened.GetProperty("hostClaim").GetString() });
+        var token = (await Body(join)).GetProperty("token").GetString()!;
+        await DbAsync(f, db => db.Rooms.Where(r => r.Code == code).ExecuteUpdateAsync(s => s.SetProperty(r => r.AccessSource, RoomService.LegacyAccess).SetProperty(r => r.Phase, phase)));
+        return (code, token);
+    }
+
+    private static HubConnection Hub(WebApplicationFactory<Program> f) => new HubConnectionBuilder().WithUrl(new Uri(f.Server.BaseAddress, "/hubs/game"), o =>
+    {
+        o.Transports = HttpTransportType.LongPolling;
+        o.HttpMessageHandlerFactory = _ => f.Server.CreateHandler();
+    }).Build();
+
+    [Theory]
+    [InlineData(RoomPhase.Lobby)]
+    [InlineData(RoomPhase.Intro)]
+    [InlineData(RoomPhase.Playing)]
+    public async Task An_old_game_that_did_not_finish_lets_no_one_in_and_keeps_its_records(RoomPhase phase)
+    {
+        using var f = SecondaryService();
+        var http = f.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
+        var (code, token) = await LegacyRoomAsync(f, http, phase);
+        var eventsBefore = await DbAsync(f, db => db.Events.CountAsync(e => db.Rooms.Any(r => r.Id == e.RoomId && r.Code == code)));
+
+        var info = await Body(await http.GetAsync($"/api/rooms/{code}"));
+        Assert.False(info.GetProperty("canJoin").GetBoolean());
+        Assert.Equal(RoomService.LegacyClosedMessage, info.GetProperty("closedMessage").GetString());
+        var join = await http.PostAsJsonAsync($"/api/rooms/{code}/players", new { nickname = "Late", characterId = "scholar", appearance = "{}" });
+        Assert.Equal(HttpStatusCode.BadRequest, join.StatusCode);
+        Assert.Equal(RoomService.LegacyClosedCode, (await Body(join)).GetProperty("code").GetString());
+        var seat = await Body(await http.GetAsync($"/api/rooms/{code}/seat"));
+        Assert.False(seat.GetProperty("seat").GetProperty("canReturn").GetBoolean());
+
+        // the player who was in it can't come back through the game connection either
+        await using var hub = Hub(f);
+        await hub.StartAsync();
+        Assert.Equal(RoomService.LegacyClosedCode, (await hub.InvokeAsync<JsonElement>("Connect", token)).GetProperty("code").GetString());
+
+        var room = await DbAsync(f, db => db.Rooms.AsNoTracking().Include(r => r.Players).SingleAsync(r => r.Code == code));
+        Assert.Equal(phase, room.Phase);
+        Assert.Single(room.Players);
+        Assert.Equal(eventsBefore, await DbAsync(f, db => db.Events.CountAsync(e => e.RoomId == room.Id)));
+    }
+
+    [Fact]
+    public async Task An_old_game_that_finished_shows_its_results_but_cannot_be_played_again()
+    {
+        using var f = SecondaryService();
+        var http = f.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
+        var (code, token) = await LegacyRoomAsync(f, http, RoomPhase.Completed);
+        await using var hub = Hub(f);
+        await hub.StartAsync();
+        Assert.True((await hub.InvokeAsync<JsonElement>("Connect", token)).GetProperty("ok").GetBoolean());
+        Assert.Equal(RoomService.LegacyClosedCode, (await hub.InvokeAsync<JsonElement>("PlayAgain")).GetProperty("code").GetString());
+        Assert.Equal(RoomService.LegacyClosedCode, (await hub.InvokeAsync<JsonElement>("SendChat", "שלום", null)).GetProperty("code").GetString());
+        Assert.False((await Body(await http.GetAsync($"/api/rooms/{code}"))).GetProperty("canJoin").GetBoolean());
     }
 
     [Fact]

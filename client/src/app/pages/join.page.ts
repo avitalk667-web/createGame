@@ -44,7 +44,7 @@ import { SKIN_TONES, HAIR_COLORS, BAG_COLORS } from '../world/avatar';
           <p class="muted">בחרו את הדמות אליה אתם הכי מתחברים.</p>
         </header>
         @if (!room()!.canJoin) {
-          <p class="error">{{ room()!.phase === 'completed' ? 'המשחק הזה כבר הסתיים. אי אפשר להצטרף אליו.' : 'המשחק מלא — כל ' + room()!.maxPlayers + ' המקומות תפוסים או שמורים לשחקנים שהתנתקו.' }}</p>
+          <p class="error">{{ room()!.closedMessage ? room()!.closedMessage : room()!.phase === 'completed' ? 'המשחק הזה כבר הסתיים. אי אפשר להצטרף אליו.' : 'המשחק מלא — כל ' + room()!.maxPlayers + ' המקומות תפוסים או שמורים לשחקנים שהתנתקו.' }}</p>
         } @else if (room()!.phase !== 'lobby') {
           <p class="note">המשחק כבר התחיל — תצטרפו ישר לחדר שבו הקבוצה נמצאת עכשיו.</p>
         }

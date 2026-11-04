@@ -406,7 +406,7 @@ public sealed class PurchaseService(
                     r.ProductId = product.Id;
                     r.MaxPlayers = rooms.Engine.MaxPlayersFor(product.MaxPlayers);
                     r.EntitlementId = ent.Id;
-                    r.AccessSource = ent.Source == EntitlementSource.AdminFree ? "admin-free" : "purchase";
+                    r.AccessSource = "purchase";
                 });
                 logger.LogInformation("Order {Number}: game {Code} opened", order.Number, room.Code);
                 return (new OpenedGame(room.Code, hostClaim, false), null);

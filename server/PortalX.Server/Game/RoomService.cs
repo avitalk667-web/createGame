@@ -72,12 +72,18 @@ public sealed class RoomService(PortalDbContext db, GameEngine engine, ILogger<R
     public const string DemoClosedCode = "demo-closed";
     public const string DemoClosedMessage = "מצב ההדגמה הוסר מהאתר, ולכן המשחק הזה סגור. התוצאות וההיסטוריה נשמרות.";
 
+    /// <summary>Games from before purchases existed: never paid for, so they stay on record, closed.</summary>
+    public const string LegacyAccess = "legacy";
+    public const string LegacyClosedCode = "legacy-closed";
+    public const string LegacyClosedMessage = "המשחק הישן הזה נסגר. התוצאות וההיסטוריה נשמרות.";
+
     /// <summary>Why no one may act in this game, or null when it is open. Nothing is deleted: the game only stops accepting anyone.</summary>
     public Task<(string Code, string Message)?> ClosureAsync(GameRoom room) => ClosureAsync(room.AccessSource, room.EntitlementId);
 
     public async Task<(string Code, string Message)?> ClosureAsync(string? accessSource, Guid? entitlementId)
     {
         if (accessSource == LegacyDemoAccess) return (DemoClosedCode, DemoClosedMessage);
+        if (accessSource == LegacyAccess) return (LegacyClosedCode, LegacyClosedMessage);
         return entitlementId is { } id && await db.Entitlements.AnyAsync(e => e.Id == id && e.Revoked) ? (RefundedCode, RefundedMessage) : null;
     }
 

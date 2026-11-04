@@ -46,6 +46,8 @@ export interface RoomInfo {
   playerCount: number;
   maxPlayers: number;
   canJoin: boolean;
+  /** Why the game is closed (refunded or an old game), when it is. */
+  closedMessage?: string | null;
 }
 
 @Injectable({ providedIn: 'root' })

@@ -52,7 +52,7 @@ public class AdminTests
     [InlineData("GET", "/api/admin/games")]
     [InlineData("GET", "/api/admin/products")]
     [InlineData("GET", "/api/admin/audit")]
-    [InlineData("POST", "/api/admin/free-game")]
+    [InlineData("POST", "/api/admin/sumit/check")]
     [InlineData("PUT", "/api/admin/products/last-portal")]
     public async Task Admin_api_refuses_anyone_without_an_admin_session(string method, string url)
     {
@@ -108,7 +108,7 @@ public class AdminTests
     {
         var admin = await AdminClientAsync();
         admin.DefaultRequestHeaders.Remove(AdminAuth.CsrfHeader);
-        Assert.Equal(HttpStatusCode.Forbidden, (await admin.PostAsJsonAsync("/api/admin/free-game", new { productId = ProductId })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await admin.PostAsync("/api/admin/sumit/check", null)).StatusCode);
     }
 
     private static Order RealOrder(OrderStatus status, decimal price, decimal? refunded = null, bool test = false) => new()
@@ -134,9 +134,6 @@ public class AdminTests
                 RealOrder(OrderStatus.Paid, 50m, test: true), RealOrder(OrderStatus.Failed, 50m));
             return await db.SaveChangesAsync();
         });
-        // and a free admin game
-        (await admin.PostAsJsonAsync("/api/admin/free-game", new { productId = ProductId })).EnsureSuccessStatusCode();
-
         var after = (await Json200(await admin.GetAsync(url))).GetProperty("revenue");
         decimal D(JsonElement e, string p) => e.GetProperty(p).GetDecimal();
         Assert.Equal(100m, D(after, "gross") - D(before, "gross"));
@@ -146,42 +143,43 @@ public class AdminTests
     }
 
     [Fact]
-    public async Task Free_game_is_admin_only_marked_free_and_creates_no_order()
+    public async Task The_admin_cannot_open_a_game_without_payment_and_old_free_games_stay_in_the_history()
     {
         await EnsureProductAsync(_factory.Services);
         var admin = await AdminClientAsync();
         var ordersBefore = await DbAsync(db => db.Orders.CountAsync());
-        var dashBefore = await Json200(await admin.GetAsync($"/api/admin/dashboard?productId={ProductId}"));
-
-        var g = await Json200(await admin.PostAsJsonAsync("/api/admin/free-game", new { productId = ProductId }));
-        var code = g.GetProperty("code").GetString()!;
-        Assert.False(string.IsNullOrEmpty(g.GetProperty("hostClaim").GetString()));
-
-        var room = await DbAsync(db => db.Rooms.AsNoTracking().SingleAsync(r => r.Code == code));
-        Assert.Equal("admin-free", room.AccessSource);
-        var ent = await DbAsync(db => db.Entitlements.AsNoTracking().SingleAsync(e => e.Id == room.EntitlementId));
-        Assert.Equal(EntitlementSource.AdminFree, ent.Source);
-        Assert.Null(ent.OrderId);
+        var roomsBefore = await DbAsync(db => db.Rooms.CountAsync());
+        var entitlementsBefore = await DbAsync(db => db.Entitlements.CountAsync());
+        Assert.Equal(HttpStatusCode.NotFound, (await admin.PostAsJsonAsync("/api/admin/free-game", new { productId = ProductId })).StatusCode);
         Assert.Equal(ordersBefore, await DbAsync(db => db.Orders.CountAsync()));
+        Assert.Equal(roomsBefore, await DbAsync(db => db.Rooms.CountAsync()));
+        Assert.Equal(entitlementsBefore, await DbAsync(db => db.Entitlements.CountAsync()));
 
+        // a game opened that way in the past is still reported, apart from revenue
+        var dashBefore = await Json200(await admin.GetAsync($"/api/admin/dashboard?productId={ProductId}"));
+        string code;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PortalDbContext>();
+            var ent = new Entitlement { Id = Guid.NewGuid(), ProductId = ProductId, Source = EntitlementSource.AdminFree, SessionsAllowed = 1, SessionsUsed = 1, CreatedAt = DateTime.UtcNow };
+            db.Entitlements.Add(ent);
+            await db.SaveChangesAsync();
+            var (room, _) = await scope.ServiceProvider.GetRequiredService<PortalX.Server.Game.RoomService>().CreateRoomAsync("last-portal", r =>
+            {
+                r.ProductId = ProductId;
+                r.EntitlementId = ent.Id;
+                r.AccessSource = "admin-free";
+            });
+            code = room.Code;
+        }
         var dashAfter = await Json200(await admin.GetAsync($"/api/admin/dashboard?productId={ProductId}"));
         Assert.Equal(1, dashAfter.GetProperty("games").GetProperty("adminFree").GetInt32() - dashBefore.GetProperty("games").GetProperty("adminFree").GetInt32());
         Assert.Equal(dashBefore.GetProperty("revenue").GetProperty("gross").GetDecimal(), dashAfter.GetProperty("revenue").GetProperty("gross").GetDecimal());
-
-        var games = await Json200(await admin.GetAsync($"/api/admin/games?search={code}"));
-        var row = games.EnumerateArray().Single();
+        var row = (await Json200(await admin.GetAsync($"/api/admin/games?search={code}"))).EnumerateArray().Single();
         Assert.Equal("admin-free", row.GetProperty("access").GetString());
         Assert.Equal("מנהל", row.GetProperty("owner").GetString());
-
-        // the host claim can be re-issued while the game waits in the lobby
-        var again = await Json200(await admin.PostAsync($"/api/admin/games/{code}/host-claim", null));
-        Assert.NotEqual(g.GetProperty("hostClaim").GetString(), again.GetProperty("hostClaim").GetString());
-
-        var details = await Json200(await admin.GetAsync($"/api/admin/games/{code}"));
-        Assert.Equal("lobby", details.GetProperty("phase").GetString());
-
-        var audit = await Json200(await admin.GetAsync("/api/admin/audit"));
-        Assert.Contains(audit.EnumerateArray(), a => a.GetProperty("action").GetString() == "free-game-opened" && a.GetProperty("targetId").GetString() == code);
+        // its host claim can no longer be re-issued
+        Assert.Equal(HttpStatusCode.NotFound, (await admin.PostAsync($"/api/admin/games/{code}/host-claim", null)).StatusCode);
     }
 
     [Fact]

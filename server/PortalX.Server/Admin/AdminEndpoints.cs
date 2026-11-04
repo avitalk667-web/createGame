@@ -5,7 +5,6 @@ using Microsoft.Extensions.Options;
 namespace PortalX.Server.Admin;
 
 public sealed record AdminLoginRequest(string? Username, string? Password);
-public sealed record FreeGameRequest(string? ProductId);
 
 public static class AdminEndpoints
 {
@@ -127,18 +126,6 @@ public static class AdminEndpoints
         {
             var (product, error) = await s.UpdateProductAsync(id, u, AdminAuth.Name(ctx.User));
             return error != null ? Results.BadRequest(new ApiError("invalid", error)) : Results.Ok(product);
-        });
-
-        secured.MapPost("/free-game", async (FreeGameRequest req, HttpContext ctx, AdminService s) =>
-        {
-            var (game, error) = await s.OpenFreeGameAsync(req.ProductId ?? "", AdminAuth.Name(ctx.User));
-            return error != null ? Results.BadRequest(new ApiError("invalid", error)) : Results.Ok(new { code = game!.Code, hostClaim = game.HostClaim });
-        });
-
-        secured.MapPost("/games/{code}/host-claim", async (string code, AdminService s) =>
-        {
-            var (game, error) = await s.ReclaimFreeGameAsync(code);
-            return error != null ? Results.NotFound(new ApiError("no-game", error)) : Results.Ok(new { code = game!.Code, hostClaim = game.HostClaim });
         });
 
         secured.MapGet("/audit", async (AdminService s) => Results.Ok(await s.AuditListAsync()));

@@ -448,41 +448,6 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
     /// Opens a group game for the admin without payment (spec §15): an AdminFree entitlement and a room,
     /// no order, no revenue. Players invited to it get no ownership or entitlement of their own.
     /// </summary>
-    public async Task<(OpenedGame? Game, string? Error)> OpenFreeGameAsync(string productId, string admin)
-    {
-        var product = await db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == productId);
-        if (product == null) return (null, "המוצר לא נמצא.");
-        if (!PurchaseService.IsPlayable(product, scenarios)) return (null, "תוכן המשחק הזה עדיין לא קיים בשרת.");
-        var ent = new Entitlement
-        {
-            Id = Guid.NewGuid(), ProductId = product.Id, Source = EntitlementSource.AdminFree,
-            SessionsAllowed = 1, SessionsUsed = 1, IsTest = false, CreatedAt = DateTime.UtcNow,
-        };
-        db.Entitlements.Add(ent);
-        var (room, claim) = await rooms.CreateRoomAsync(product.ScenarioId!, r =>
-        {
-            r.ProductId = product.Id;
-            r.MaxPlayers = rooms.Engine.MaxPlayersFor(product.MaxPlayers);
-            r.EntitlementId = ent.Id;
-            r.AccessSource = "admin-free";
-        });
-        await AuditAsync(admin, "free-game-opened", "game", room.Code, new { productId = product.Id });
-        return (new OpenedGame(room.Code, claim, false), null);
-    }
-
-    /// <summary>A new host claim for a game the admin opened, while it is still in the lobby.</summary>
-    public async Task<(OpenedGame? Game, string? Error)> ReclaimFreeGameAsync(string code)
-    {
-        var room = await db.Rooms.FirstOrDefaultAsync(r => r.Code == RoomService.NormalizeCode(code) && r.AccessSource == "admin-free");
-        if (room == null) return (null, "המשחק לא נמצא.");
-        if (room.Phase != RoomPhase.Lobby) return (new OpenedGame(room.Code, null, true), null);
-        var claim = RoomService.NewToken();
-        room.HostClaimHash = RoomService.Hash(claim);
-        room.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync();
-        return (new OpenedGame(room.Code, claim, true), null);
-    }
-
     public async Task<object> AuditListAsync() =>
         (await db.AdminAuditLog.AsNoTracking().OrderByDescending(a => a.Id).Take(300).ToListAsync())
             .Select(a => new { a.Id, a.AdminName, a.Action, a.TargetType, a.TargetId, details = System.Text.Json.Nodes.JsonNode.Parse(a.DetailsJson), a.CreatedAt });
