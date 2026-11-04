@@ -1,7 +1,7 @@
 import { DatePipe, DecimalPipe, JsonPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { orderStore } from '../core/api.service';
+import { orderStore, sessionStore } from '../core/api.service';
 import {
   AdminApiService, AdminFilters, AdminGame, AdminOrder, AdminProduct, AuditEntry, CouponRow, CouponUse, Dashboard, FaqRow, EmailSetup, MailingFilters, MailingList,
   MoneyTotals, ReferralDetails, ReferralFilters, ReferralList } from '../core/admin-api.service';
@@ -70,6 +70,37 @@ const ACTIONS: Record<string, string> = {
         <button class="btn small ghost" (click)="logout()">יציאה</button>
       </header>
       <main>
+        <section class="card free">
+          <div class="free-head">
+            <div>
+              <b>פתיחת משחק לשחקנים בלי תשלום</b>
+              <p class="muted small">נוצר חדר עם קוד חדש. לא נוצרת הזמנה, אין סליקה ולא מופקת קבלה. הפתיחה נרשמת ביומן הפעולות.</p>
+            </div>
+            <button class="btn primary" type="button" (click)="toggleFree()" [attr.aria-expanded]="freeOpen()" aria-controls="free-panel">פתח משחק ללא תשלום</button>
+          </div>
+          @if (freeOpen()) {
+            <div class="row" id="free-panel">
+              <label>בחרו משחק
+                <select [value]="freeProduct()" (change)="freeProduct.set($any($event.target).value)">
+                  @for (p of playableProducts(); track p.id) { <option [value]="p.id">{{ p.name }}{{ p.isFree ? ' (חינמי)' : '' }}</option> }
+                </select>
+              </label>
+              <button class="btn primary" type="button" (click)="openFree()" [disabled]="busy() || !freeProduct()">יצירת קוד חדר</button>
+            </div>
+          }
+          @if (freeRooms().length) {
+            <ul class="free-rooms" aria-label="חדרים שנפתחו עכשיו">
+              @for (r of freeRooms(); track r.code) {
+                <li>
+                  <span>{{ r.productName }}:</span> <b dir="ltr" class="room-code">{{ r.code }}</b>
+                  <button class="btn small" type="button" (click)="copyCode(r.code)">{{ copied() === r.code ? 'הועתק' : 'העתקת הקוד' }}</button>
+                  <button class="btn small ghost" type="button" (click)="enter(r.code)">כניסה כמארח</button>
+                </li>
+              }
+            </ul>
+          }
+        </section>
+
         <nav class="tabs" role="tablist">
           @for (t of tabs; track t.id) {
             <button role="tab" [attr.aria-selected]="tab() === t.id" [class.on]="tab() === t.id" (click)="go(t.id)">{{ t.label }}</button>
@@ -119,7 +150,7 @@ const ACTIONS: Record<string, string> = {
                 <div class="stat card"><span>משחקים שנפתחו</span><b>{{ d.games.opened }}</b><small>{{ d.games.started }} התחילו · {{ d.games.completed }} הושלמו</small></div>
                 <div class="stat card"><span>משחקים ששולמו והתחילו</span><b>{{ d.games.paidStarted }}</b><small>{{ d.games.purchasedNotStarted }} נרכשו וטרם התחילו</small></div>
                 @if (d.games.demo) { <div class="stat card"><span>משחקי הדגמה ישנים (סגורים)</span><b>{{ d.games.demo }}</b><small>{{ d.games.demoStarted }} התחילו · {{ d.games.demoCompleted }} הושלמו · היסטוריה בלבד, לא נספר בהכנסות ובמכירות</small></div> }
-                <div class="stat card"><span>משחקים חינמיים ישנים של המנהל</span><b>{{ d.games.adminFree }}</b><small>{{ d.games.adminFreeStarted }} התחילו</small></div>
+                <div class="stat card"><span>משחקים חינמיים של המנהל</span><b>{{ d.games.adminFree }}</b><small>{{ d.games.adminFreeStarted }} התחילו</small></div>
                 <div class="stat card"><span>משתתפים</span><b>{{ d.participants }}</b><small>ללא ספירה כפולה בתוך אותו משחק</small></div>
                 <div class="stat card"><span>רוכשים (דוא״ל ייחודי)</span><b>{{ d.buyersWithEmail }}</b><small>אין חשבונות לקוח — נספרים רק מי שהשאירו דוא״ל</small></div>
               </div>
@@ -208,6 +239,7 @@ const ACTIONS: Record<string, string> = {
             @if (game(); as g) {
               <section class="card details" aria-label="פרטי משחק">
                 <div class="bar"><h2>משחק {{ g.code }} · {{ label(g.phase) }}</h2><button class="btn small ghost" (click)="game.set(null)">סגירה</button></div>
+                @if (g.access === 'admin-free' && g.phase === 'lobby') { <button class="btn small" (click)="enter(g.code)">כניסה כמארח</button> }
                 <h3>משתתפים</h3>
                 <ul>
                   @for (p of g.players; track p.nickname) {
@@ -632,6 +664,14 @@ const ACTIONS: Record<string, string> = {
     th { background:var(--panel-solid); color:var(--gold-2); position:sticky; top:0; }
     tr.test td { opacity:.65; } tr.click { cursor:pointer; } tr.click:hover td { background:rgba(255,255,255,.04); }
     .row-actions { display:flex; gap:.3rem; }
+    .free { margin-bottom:1rem; }
+    .free p { margin:.2rem 0 0; }
+    .free-head { display:flex; flex-wrap:wrap; gap:.8rem 1.5rem; align-items:center; justify-content:space-between; }
+    #free-panel { display:flex; flex-wrap:wrap; gap:.6rem; align-items:flex-end; margin-top:.8rem; }
+    #free-panel label { display:flex; flex-direction:column; gap:.25rem; }
+    .free-rooms { list-style:none; margin:.8rem 0 0; padding:0; display:flex; flex-direction:column; gap:.4rem; }
+    .free-rooms li { display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; }
+    .room-code { font-size:1.15rem; letter-spacing:.12em; color:var(--gold-2); }
     .st { padding:.1em .55em; border-radius:999px; border:1px solid var(--line); font-size:.8rem; }
     .st[data-s=paid], .st[data-s=published] { border-color:var(--ok); color:#9be3b4; }
     .st[data-s=refunded], .st[data-s=failed] { border-color:var(--bad); color:#ffc2b5; }
@@ -689,6 +729,10 @@ export class AdminPage {
   edits = signal<Record<string, ProductEdit>>({});
   saved = signal<string | null>(null);
   sumitStatus = signal<string | null>(null);
+  freeOpen = signal(false);
+  freeProduct = signal('');
+  freeRooms = signal<{ code: string; productName: string }[]>([]);
+  playableProducts = computed(() => this.products().filter((p) => p.playable));
   busy = signal(false);
   error = signal<string | null>(null);
   csvUrl = computed(() => this.api.csvUrl(this.f()));
@@ -939,6 +983,43 @@ export class AdminPage {
       this.fail(err);
     } finally {
       this.busy.set(false);
+    }
+  }
+
+  toggleFree() {
+    this.freeOpen.update((o) => !o);
+    if (!this.freeProduct()) this.freeProduct.set(this.playableProducts()[0]?.id ?? '');
+  }
+
+  /** Each press makes one more room with its own code; the server checks that this is the admin. */
+  async openFree() {
+    if (!this.freeProduct()) return;
+    this.busy.set(true);
+    this.error.set(null);
+    try {
+      const g = await this.api.freeGame(this.freeProduct());
+      sessionStore.setHostClaim(g.code, g.hostClaim);
+      this.freeRooms.update((rooms) => [{ code: g.code, productName: g.productName }, ...rooms]);
+      if (this.tab() === 'dashboard' || this.tab() === 'games') this.reload();
+    } catch (e: any) {
+      this.fail(e);
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  async copyCode(code: string) {
+    try { await navigator.clipboard.writeText(code); this.copied.set(code); setTimeout(() => this.copied.set(null), 2000); } catch { /* the code is on the screen */ }
+  }
+
+  /** Enters a room the admin opened as its host (a fresh host claim is issued while it is in the lobby). */
+  async enter(code: string) {
+    try {
+      const g = await this.api.reclaim(code);
+      if (g.hostClaim) sessionStore.setHostClaim(g.code, g.hostClaim);
+      await this.router.navigate(['/join', g.code]);
+    } catch (e: any) {
+      this.fail(e);
     }
   }
 

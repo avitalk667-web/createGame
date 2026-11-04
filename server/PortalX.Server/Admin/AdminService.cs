@@ -448,6 +448,50 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
     /// Opens a group game for the admin without payment (spec §15): an AdminFree entitlement and a room,
     /// no order, no revenue. Players invited to it get no ownership or entitlement of their own.
     /// </summary>
+    /// <summary>
+    /// Opens a room of any playable game without payment, however many the admin wants, also while its sale is paused.
+    /// It creates no order and never reaches the payment provider. The room and its log entry are saved together.
+    /// </summary>
+    public async Task<(OpenedGame? Game, string? ProductName, string? Error)> OpenFreeGameAsync(string productId, string admin)
+    {
+        var product = await db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == productId);
+        if (product == null) return (null, null, "המשחק לא נמצא.");
+        if (!PurchaseService.IsPlayable(product, scenarios)) return (null, null, "תוכן המשחק הזה עדיין לא קיים בשרת.");
+        var now = DateTime.UtcNow;
+        var ent = new Entitlement
+        {
+            Id = Guid.NewGuid(), ProductId = product.Id, Source = EntitlementSource.AdminFree,
+            SessionsAllowed = 1, SessionsUsed = 1, IsTest = false, CreatedAt = now,
+        };
+        db.Entitlements.Add(ent);
+        var (room, claim) = await rooms.CreateRoomAsync(product.ScenarioId!, r =>
+        {
+            r.ProductId = product.Id;
+            r.MaxPlayers = rooms.Engine.MaxPlayersFor(product.MaxPlayers);
+            r.EntitlementId = ent.Id;
+            r.AccessSource = "admin-free";
+            db.AdminAuditLog.Add(new AdminAuditLog
+            {
+                AdminName = admin, Action = "free-game-opened", TargetType = "game", TargetId = r.Code,
+                DetailsJson = JsonSerializer.Serialize(new { productId = product.Id, productName = product.Name, code = r.Code }), CreatedAt = now,
+            });
+        });
+        return (new OpenedGame(room.Code, claim, false), product.Name, null);
+    }
+
+    /// <summary>A new host claim for a room the admin opened, while it is still in the lobby.</summary>
+    public async Task<(OpenedGame? Game, string? Error)> ReclaimFreeGameAsync(string code)
+    {
+        var room = await db.Rooms.FirstOrDefaultAsync(r => r.Code == RoomService.NormalizeCode(code) && r.AccessSource == "admin-free");
+        if (room == null) return (null, "המשחק לא נמצא.");
+        if (room.Phase != RoomPhase.Lobby) return (new OpenedGame(room.Code, null, true), null);
+        var claim = RoomService.NewToken();
+        room.HostClaimHash = RoomService.Hash(claim);
+        room.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        return (new OpenedGame(room.Code, claim, true), null);
+    }
+
     public async Task<object> AuditListAsync() =>
         (await db.AdminAuditLog.AsNoTracking().OrderByDescending(a => a.Id).Take(300).ToListAsync())
             .Select(a => new { a.Id, a.AdminName, a.Action, a.TargetType, a.TargetId, details = System.Text.Json.Nodes.JsonNode.Parse(a.DetailsJson), a.CreatedAt });

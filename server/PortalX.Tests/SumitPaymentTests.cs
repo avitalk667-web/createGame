@@ -1193,6 +1193,26 @@ public class SumitPaymentTests
         Assert.Equal(RoomService.RefundedCode, (await back.InvokeAsync<JsonElement>("PlayAgain")).GetProperty("code").GetString());
     }
 
+    [Fact]
+    public async Task A_free_room_from_the_admin_never_reaches_sumit_even_when_it_is_on()
+    {
+        var s = Start(production: true);
+        await EnsureProductAsync(s.F.Services);
+        var orders = await s.Db(db => db.Orders.CountAsync());
+        var admin = await AdminAsync(s);
+        var res = await admin.PostAsJsonAsync("/api/admin/free-game", new { productId = ProductId });
+        res.EnsureSuccessStatusCode();
+        var code = (await res.Content.ReadFromJsonAsync<JsonElement>(Json)).GetProperty("code").GetString()!;
+        Assert.Empty(s.Sumit.Calls);
+        Assert.Equal(orders, await s.Db(db => db.Orders.CountAsync()));
+        Assert.Equal(HttpStatusCode.OK, (await s.Http.PostAsJsonAsync($"/api/rooms/{code}/players", new { nickname = "Guest", characterId = "explorer", appearance = "{}" })).StatusCode);
+
+        // the public still pays: an order goes to the payment page
+        var b = await BuyAsync(s);
+        Assert.StartsWith("https://pay.sumit.test/", b.CheckoutUrl);
+        await AssertNotOpenableAsync(s, b);
+    }
+
     // ------------------------------------------------------------------ settings and secrets
 
     private sealed class Env(string name) : IHostEnvironment

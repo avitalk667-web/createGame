@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PortalX.Server.Admin;
@@ -53,6 +54,7 @@ public class AdminTests
     [InlineData("GET", "/api/admin/products")]
     [InlineData("GET", "/api/admin/audit")]
     [InlineData("POST", "/api/admin/sumit/check")]
+    [InlineData("POST", "/api/admin/free-game")]
     [InlineData("PUT", "/api/admin/products/last-portal")]
     public async Task Admin_api_refuses_anyone_without_an_admin_session(string method, string url)
     {
@@ -143,43 +145,118 @@ public class AdminTests
     }
 
     [Fact]
-    public async Task The_admin_cannot_open_a_game_without_payment_and_old_free_games_stay_in_the_history()
+    public async Task The_admin_opens_many_free_rooms_of_any_game_with_no_order_and_a_full_log()
     {
         await EnsureProductAsync(_factory.Services);
         var admin = await AdminClientAsync();
         var ordersBefore = await DbAsync(db => db.Orders.CountAsync());
-        var roomsBefore = await DbAsync(db => db.Rooms.CountAsync());
-        var entitlementsBefore = await DbAsync(db => db.Entitlements.CountAsync());
-        Assert.Equal(HttpStatusCode.NotFound, (await admin.PostAsJsonAsync("/api/admin/free-game", new { productId = ProductId })).StatusCode);
-        Assert.Equal(ordersBefore, await DbAsync(db => db.Orders.CountAsync()));
-        Assert.Equal(roomsBefore, await DbAsync(db => db.Rooms.CountAsync()));
-        Assert.Equal(entitlementsBefore, await DbAsync(db => db.Entitlements.CountAsync()));
-
-        // a game opened that way in the past is still reported, apart from revenue
+        var eventsBefore = await DbAsync(db => db.PaymentEvents.CountAsync());
+        var redemptionsBefore = await DbAsync(db => db.CouponRedemptions.CountAsync());
         var dashBefore = await Json200(await admin.GetAsync($"/api/admin/dashboard?productId={ProductId}"));
-        string code;
-        using (var scope = _factory.Services.CreateScope())
+        await DbAsync(db => db.Products.Where(p => p.Id == ProductId).ExecuteUpdateAsync(s => s.SetProperty(p => p.SalePaused, true)));
+        try
         {
-            var db = scope.ServiceProvider.GetRequiredService<PortalDbContext>();
-            var ent = new Entitlement { Id = Guid.NewGuid(), ProductId = ProductId, Source = EntitlementSource.AdminFree, SessionsAllowed = 1, SessionsUsed = 1, CreatedAt = DateTime.UtcNow };
-            db.Entitlements.Add(ent);
-            await db.SaveChangesAsync();
-            var (room, _) = await scope.ServiceProvider.GetRequiredService<PortalX.Server.Game.RoomService>().CreateRoomAsync("last-portal", r =>
+            // a paid game, its sale paused, several times; every room has its own code and lets a plain visitor in
+            var codes = new List<string>();
+            for (var i = 0; i < 3; i++)
             {
-                r.ProductId = ProductId;
-                r.EntitlementId = ent.Id;
-                r.AccessSource = "admin-free";
-            });
-            code = room.Code;
+                var g = await Json200(await admin.PostAsJsonAsync("/api/admin/free-game", new { productId = ProductId }));
+                codes.Add(g.GetProperty("code").GetString()!);
+                Assert.False(string.IsNullOrEmpty(g.GetProperty("hostClaim").GetString()));
+                Assert.Equal("מוצר בדיקה", g.GetProperty("productName").GetString());
+            }
+            Assert.Equal(3, codes.Distinct().Count());
+            var visitor = _factory.CreateClient();
+            var join = await visitor.PostAsJsonAsync($"/api/rooms/{codes[0]}/players", new { nickname = "Guest", characterId = "explorer", appearance = "{}" });
+            Assert.Equal(HttpStatusCode.OK, join.StatusCode);
+
+            // a free game too
+            var free = await Json200(await admin.PostAsJsonAsync("/api/admin/free-game", new { productId = "gate-of-secrets" }));
+            var freeCode = free.GetProperty("code").GetString()!;
+            Assert.Equal("admin-free", await DbAsync(db => db.Rooms.Where(r => r.Code == freeCode).Select(r => r.AccessSource).SingleAsync()));
+
+            var room = await DbAsync(db => db.Rooms.AsNoTracking().SingleAsync(r => r.Code == codes[1]));
+            Assert.Equal("admin-free", room.AccessSource);
+            Assert.Equal(ProductId, room.ProductId);
+            var ent = await DbAsync(db => db.Entitlements.AsNoTracking().SingleAsync(e => e.Id == room.EntitlementId));
+            Assert.Equal(EntitlementSource.AdminFree, ent.Source);
+            Assert.Null(ent.OrderId);
+            Assert.False(ent.IsTest);
+
+            // no order, no payment, no coupon use, no revenue
+            Assert.Equal(ordersBefore, await DbAsync(db => db.Orders.CountAsync()));
+            Assert.Equal(eventsBefore, await DbAsync(db => db.PaymentEvents.CountAsync()));
+            Assert.Equal(redemptionsBefore, await DbAsync(db => db.CouponRedemptions.CountAsync()));
+            var dashAfter = await Json200(await admin.GetAsync($"/api/admin/dashboard?productId={ProductId}"));
+            Assert.Equal(3, dashAfter.GetProperty("games").GetProperty("adminFree").GetInt32() - dashBefore.GetProperty("games").GetProperty("adminFree").GetInt32());
+            Assert.Equal(dashBefore.GetProperty("revenue").GetProperty("gross").GetDecimal(), dashAfter.GetProperty("revenue").GetProperty("gross").GetDecimal());
+            var row = (await Json200(await admin.GetAsync($"/api/admin/games?search={codes[1]}"))).EnumerateArray().Single();
+            Assert.Equal("מנהל", row.GetProperty("owner").GetString());
+
+            // the log says who, which game, when and which code
+            var log = await DbAsync(db => db.AdminAuditLog.AsNoTracking().SingleAsync(a => a.Action == "free-game-opened" && a.TargetId == codes[2]));
+            Assert.Equal(AdminTests.Username, log.AdminName);
+            Assert.True(DateTime.UtcNow - log.CreatedAt < TimeSpan.FromMinutes(5));
+            using var details = JsonDocument.Parse(log.DetailsJson);
+            Assert.Equal(ProductId, details.RootElement.GetProperty("productId").GetString());
+            Assert.Equal("מוצר בדיקה", details.RootElement.GetProperty("productName").GetString());
+            Assert.Equal(codes[2], details.RootElement.GetProperty("code").GetString());
+            var audit = await Json200(await admin.GetAsync("/api/admin/audit"));
+            Assert.Contains(audit.EnumerateArray(), a => a.GetProperty("action").GetString() == "free-game-opened" && a.GetProperty("targetId").GetString() == codes[2]);
+
+            // the host claim is re-issued for such a room in the lobby
+            var again = await Json200(await admin.PostAsync($"/api/admin/games/{codes[1]}/host-claim", null));
+            Assert.False(string.IsNullOrEmpty(again.GetProperty("hostClaim").GetString()));
         }
-        var dashAfter = await Json200(await admin.GetAsync($"/api/admin/dashboard?productId={ProductId}"));
-        Assert.Equal(1, dashAfter.GetProperty("games").GetProperty("adminFree").GetInt32() - dashBefore.GetProperty("games").GetProperty("adminFree").GetInt32());
-        Assert.Equal(dashBefore.GetProperty("revenue").GetProperty("gross").GetDecimal(), dashAfter.GetProperty("revenue").GetProperty("gross").GetDecimal());
-        var row = (await Json200(await admin.GetAsync($"/api/admin/games?search={code}"))).EnumerateArray().Single();
-        Assert.Equal("admin-free", row.GetProperty("access").GetString());
-        Assert.Equal("מנהל", row.GetProperty("owner").GetString());
-        // its host claim can no longer be re-issued
+        finally
+        {
+            await DbAsync(db => db.Products.Where(p => p.Id == ProductId).ExecuteUpdateAsync(s => s.SetProperty(p => p.SalePaused, false)));
+        }
+    }
+
+    [Fact]
+    public async Task Only_the_admin_can_open_a_free_room_and_only_a_real_game()
+    {
+        await EnsureProductAsync(_factory.Services);
+        var rooms = await DbAsync(db => db.Rooms.CountAsync());
+
+        // no session: refused, with or without the header
+        var visitor = _factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
+        Assert.Equal(HttpStatusCode.Unauthorized, (await visitor.PostAsJsonAsync("/api/admin/free-game", new { productId = ProductId })).StatusCode);
+        visitor.DefaultRequestHeaders.Add(AdminAuth.CsrfHeader, "1");
+        Assert.Equal(HttpStatusCode.Unauthorized, (await visitor.PostAsJsonAsync("/api/admin/free-game", new { productId = ProductId })).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await visitor.PostAsync("/api/admin/games/ANY/host-claim", null)).StatusCode);
+
+        // a forged session cookie is refused too
+        var forged = _factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
+        forged.DefaultRequestHeaders.Add("Cookie", "portalx.admin=forged-value");
+        forged.DefaultRequestHeaders.Add(AdminAuth.CsrfHeader, "1");
+        Assert.Equal(HttpStatusCode.Unauthorized, (await forged.PostAsJsonAsync("/api/admin/free-game", new { productId = ProductId })).StatusCode);
+
+        // the admin without the header: refused (cross-site protection)
+        var noHeader = await AdminClientAsync();
+        noHeader.DefaultRequestHeaders.Remove(AdminAuth.CsrfHeader);
+        Assert.Equal(HttpStatusCode.Forbidden, (await noHeader.PostAsJsonAsync("/api/admin/free-game", new { productId = ProductId })).StatusCode);
+
+        // the public route still refuses a paid game
+        Assert.Equal(HttpStatusCode.Forbidden, (await visitor.PostAsync($"/api/products/{ProductId}/free-game", null)).StatusCode);
+
+        // the admin, for a game that does not exist: nothing is created
+        var admin = await AdminClientAsync();
+        Assert.Equal(HttpStatusCode.BadRequest, (await admin.PostAsJsonAsync("/api/admin/free-game", new { productId = "no-such-game" })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await admin.PostAsJsonAsync("/api/admin/free-game", new { })).StatusCode);
+        Assert.Equal(rooms, await DbAsync(db => db.Rooms.CountAsync()));
+    }
+
+    [Fact]
+    public async Task A_host_claim_is_never_issued_for_a_purchased_game()
+    {
+        var buyer = _factory.CreateClient();
+        var (code, _) = await PaidRoomAsync(buyer, _factory.Services);
+        var hash = await DbAsync(db => db.Rooms.Where(r => r.Code == code).Select(r => r.HostClaimHash).SingleAsync());
+        var admin = await AdminClientAsync();
         Assert.Equal(HttpStatusCode.NotFound, (await admin.PostAsync($"/api/admin/games/{code}/host-claim", null)).StatusCode);
+        Assert.Equal(hash, await DbAsync(db => db.Rooms.Where(r => r.Code == code).Select(r => r.HostClaimHash).SingleAsync()));
     }
 
     [Fact]

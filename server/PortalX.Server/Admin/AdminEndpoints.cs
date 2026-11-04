@@ -6,6 +6,8 @@ namespace PortalX.Server.Admin;
 
 public sealed record AdminLoginRequest(string? Username, string? Password);
 
+public sealed record FreeGameRequest(string? ProductId);
+
 public static class AdminEndpoints
 {
     private static readonly ApiError Denied = new("forbidden", "אין הרשאה.");
@@ -126,6 +128,22 @@ public static class AdminEndpoints
         {
             var (product, error) = await s.UpdateProductAsync(id, u, AdminAuth.Name(ctx.User));
             return error != null ? Results.BadRequest(new ApiError("invalid", error)) : Results.Ok(product);
+        });
+
+        // a room of any game without payment: no order, no provider call, no document. The admin's session and header are checked above.
+        secured.MapPost("/free-game", async (FreeGameRequest req, HttpContext ctx, AdminService s) =>
+        {
+            var (game, productName, error) = await s.OpenFreeGameAsync(req.ProductId ?? "", AdminAuth.Name(ctx.User));
+            return error != null
+                ? Results.BadRequest(new ApiError("invalid", error))
+                : Results.Ok(new { code = game!.Code, hostClaim = game.HostClaim, productId = req.ProductId, productName });
+        });
+
+        // a fresh host claim for such a room while it waits in the lobby; never for a purchased game
+        secured.MapPost("/games/{code}/host-claim", async (string code, AdminService s) =>
+        {
+            var (game, error) = await s.ReclaimFreeGameAsync(code);
+            return error != null ? Results.NotFound(new ApiError("no-game", error)) : Results.Ok(new { code = game!.Code, hostClaim = game.HostClaim });
         });
 
         secured.MapGet("/audit", async (AdminService s) => Results.Ok(await s.AuditListAsync()));

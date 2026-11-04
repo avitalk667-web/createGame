@@ -19,7 +19,7 @@ using static PortalX.Tests.TestPurchase;
 namespace PortalX.Tests;
 
 /// <summary>
-/// The demo checkout was removed: no setting brings it back, no route opens a paid game without a verified payment,
+/// The demo checkout was removed: no setting brings it back, and for the public no route opens a paid game without a verified payment,
 /// old demo games stay on record but closed, and the real free game keeps working.
 /// </summary>
 [Collection(DatabaseCollection.Name)]
@@ -147,16 +147,6 @@ public class NoDemoCheckoutTests
         Assert.Equal(RoomService.DemoClosedCode, (await Body(join)).GetProperty("code").GetString());
         var room = await DbAsync(f, db => db.Rooms.AsNoTracking().SingleAsync(r => r.Code == code));
         Assert.Equal(phase, room.Phase);
-    }
-
-    [Fact]
-    public void No_admin_route_opens_a_game_without_payment()
-    {
-        using var f = SecondaryService();
-        var routes = f.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>().Select(e => e.RoutePattern.RawText ?? "").ToList();
-        Assert.Contains(routes, r => r.Contains("/admin/"));
-        Assert.DoesNotContain(routes, r => r.Contains("admin") && r.Contains("free-game", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(routes, r => r.Contains("host-claim", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>An old game with one seated player, the way an old room looks in the database.</summary>
