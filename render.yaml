@@ -5,7 +5,6 @@ services:
   - type: web
     name: portal-x
     runtime: docker
-    plan: free
     region: frankfurt
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/health

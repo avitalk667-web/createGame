@@ -363,7 +363,7 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
     }
     footer nav { display:flex; justify-content:center; flex-wrap:wrap; gap:.4rem 1.4rem; }
     footer a { color:var(--text); }
-    footer .contact { margin:.8rem 0 .2rem; } footer .contact a { color:var(--gold-2); font-weight:700; }
+    footer .contact { margin:.8rem 0 .2rem; text-align:center; } footer .contact a { color:var(--gold-2); font-weight:700; }
     .small { font-size:.85rem; }
     .center { text-align:center; }
     @media (max-width: 1060px) { .links { gap:1rem; } .bar { gap:1rem; } }
