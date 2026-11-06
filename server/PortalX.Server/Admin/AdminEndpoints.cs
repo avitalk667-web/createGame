@@ -66,6 +66,9 @@ public static class AdminEndpoints
 
         secured.MapGet("/dashboard", async (HttpRequest r, AdminService s) => Results.Ok(await s.DashboardAsync(AdminFilter.Parse(r))));
 
+        // the statistics tab: sales, activity, games and personal links in a range of Israel days
+        secured.MapGet("/statistics", async (HttpRequest r, StatisticsService s) => Results.Ok(await s.GetAsync(StatisticsFilter.Parse(r, DateTime.UtcNow))));
+
         secured.MapGet("/orders", async (HttpRequest r, AdminService s) => Results.Ok(await s.OrderRowsAsync(AdminFilter.Parse(r))));
 
         secured.MapGet("/orders.csv", async (HttpRequest r, HttpContext ctx, AdminService s) =>

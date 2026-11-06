@@ -31,6 +31,7 @@
     "@fontsource/frank-ruhl-libre": "^5.1.0",
     "@fontsource/heebo": "^5.1.0",
     "@microsoft/signalr": "^8.0.7",
+    "html-to-image": "^1.11.13",
     "rxjs": "~7.8.0",
     "three": "^0.169.0",
     "tslib": "^2.3.0",

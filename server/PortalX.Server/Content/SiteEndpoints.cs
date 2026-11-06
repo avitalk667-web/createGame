@@ -31,7 +31,8 @@ public static class SiteEndpoints
         });
 
         // The free trial game (spec 1.5): no payment, no account, no entitlement — and never revenue.
-        api.MapPost("/products/{id}/free-game", async (string id, PortalDbContext db, ScenarioCatalog scenarios, RoomService rooms, ILoggerFactory logs) =>
+        api.MapPost("/products/{id}/free-game", async (string id, HttpRequest http, PortalDbContext db, ScenarioCatalog scenarios, RoomService rooms,
+            PortalX.Server.Referrals.ReferralService referrals, ILoggerFactory logs) =>
         {
             var product = await db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id && p.Status == ProductStatus.Published);
             if (product == null) return Results.NotFound(new ApiError("no-product", "המשחק לא נמצא."));
@@ -39,11 +40,14 @@ public static class SiteEndpoints
             if (!product.IsFree) return Results.Json(new ApiError("not-free", "המשחק הזה אינו חינמי. אפשר לרכוש אותו בעמוד המשחק."), statusCode: 403);
             if (!PurchaseService.IsPlayable(product, scenarios)) return Results.Json(new ApiError("not-available", "המשחק עדיין לא זמין."), statusCode: 409);
             if (SaleWindow.Refusal(product, DateTime.UtcNow) is { } closed) return Results.Json(new ApiError(closed.Code, closed.Message), statusCode: closed.Status);
+            // the personal link of this visit, read from the server-side visit record (never from the request), kept on the game
+            var referral = await referrals.ResolveVisitAsync(http.Cookies[PortalX.Server.Referrals.ReferralService.VisitCookie]);
             var (room, claim) = await rooms.CreateRoomAsync(product.ScenarioId!, r =>
             {
                 r.ProductId = product.Id;
                 r.AccessSource = "free-sample";
                 r.MaxPlayers = rooms.Engine.MaxPlayersFor(product.MaxPlayers);
+                r.ReferralLinkId = referral;
             });
             logs.CreateLogger("FreeGame").LogInformation("Free game {Code} opened for {Product}", room.Code, product.Id);
             return Results.Ok(new { code = room.Code, hostClaim = claim });

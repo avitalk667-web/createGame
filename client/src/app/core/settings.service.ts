@@ -19,6 +19,11 @@ export interface Settings {
 }
 
 const KEY = 'portalx.settings';
+/**
+ * Raised when a default changes in a way saved settings must follow. Every visit saved all the settings, defaults
+ * included, so an older saved value cannot tell a choice from the old default. Version 2: background music starts off.
+ */
+const VERSION = 2;
 
 function detectQuality(): Quality {
   const mobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
@@ -36,7 +41,7 @@ export class SettingsService {
     effect(() => {
       const s = this.settings();
       try {
-        localStorage.setItem(KEY, JSON.stringify(s));
+        localStorage.setItem(KEY, JSON.stringify({ ...s, v: VERSION }));
       } catch {}
     });
   }
@@ -51,7 +56,8 @@ export class SettingsService {
       // quiet music and moderate effects by default
       music: 0.35,
       effects: 0.6,
-      musicOn: true,
+      // background music starts off; the player turns it on with 🎵 or in the settings
+      musicOn: false,
       effectsOn: true,
       muted: false,
       captions: true,
@@ -61,7 +67,11 @@ export class SettingsService {
     };
     try {
       const raw = localStorage.getItem(KEY);
-      return raw ? { ...defaults, ...JSON.parse(raw) } : defaults;
+      if (!raw) return defaults;
+      const { v, ...saved } = JSON.parse(raw);
+      // settings saved before version 2 hold the old "music on" default, not a choice: music starts off once
+      if (!(v >= 2)) delete saved.musicOn;
+      return { ...defaults, ...saved };
     } catch {
       return defaults;
     }

@@ -1,4 +1,6 @@
 import { DatePipe, DecimalPipe, JsonPipe } from '@angular/common';
+import { AdminDrawComponent } from './admin-draw.component';
+import { AdminStatsComponent } from './admin-stats.component';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { orderStore, sessionStore } from '../core/api.service';
@@ -6,7 +8,7 @@ import {
   AdminApiService, AdminFilters, AdminGame, AdminOrder, AdminProduct, AuditEntry, CouponRow, CouponUse, Dashboard, FaqRow, EmailSetup, MailingFilters, MailingList,
   MoneyTotals, ReferralDetails, ReferralFilters, ReferralList } from '../core/admin-api.service';
 
-type Tab = 'dashboard' | 'orders' | 'games' | 'products' | 'faq' | 'coupons' | 'mailing' | 'referrals' | 'email-setup' | 'audit';
+type Tab = 'dashboard' | 'statistics' | 'draw' | 'orders' | 'games' | 'products' | 'faq' | 'coupons' | 'mailing' | 'referrals' | 'email-setup' | 'audit';
 
 /** The coupon form as typed (spec 4.3). Dates are local date-time strings from the inputs. */
 interface CouponForm {
@@ -49,7 +51,7 @@ const ACTIONS: Record<string, string> = {
  */
 @Component({
   selector: 'px-admin',
-  imports: [RouterLink, DatePipe, DecimalPipe, JsonPipe],
+  imports: [RouterLink, DatePipe, DecimalPipe, JsonPipe, AdminStatsComponent, AdminDrawComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (state() === 'loading') {
@@ -106,6 +108,9 @@ const ACTIONS: Record<string, string> = {
             <button role="tab" [attr.aria-selected]="tab() === t.id" [class.on]="tab() === t.id" (click)="go(t.id)">{{ t.label }}</button>
           }
         </nav>
+
+        @if (tab() === 'statistics') { <px-admin-stats /> }
+        @if (tab() === 'draw') { <px-admin-draw /> }
 
         @if (tab() === 'dashboard' || tab() === 'orders' || tab() === 'games') {
           <form class="filters card" (submit)="$event.preventDefault(); reload()">
@@ -477,13 +482,14 @@ const ACTIONS: Record<string, string> = {
                 <div class="stat card"><span>סך רכישות ששולמו</span><b>{{ rl.summary.purchases }}</b><small>{{ rl.summary.refunded }} מהן הוחזרו · ללא רכישות בדיקה ורכישה עצמית</small></div>
                 <div class="stat card"><span>סך מכירות ברוטו</span><b>{{ money(rl.summary.money, 'gross') }}</b><small>סך החזרים: {{ money(rl.summary.money, 'refunds') }}</small></div>
                 <div class="stat card"><span>הכנסה נטו מיוחסת</span><b>{{ money(rl.summary.money, 'net') }}</b><small>ברוטו פחות החזרים בפועל</small></div>
-                <div class="stat card"><span>זכאים להגרלת 888 ₪</span><b>{{ rl.summary.drawEligible }}</b><small>לפחות {{ rl.summary.drawMinBuyers }} רוכשים שונים ששילמו בפועל · ללא בדיקה, החזר ורכישה עצמית</small></div>
+                <div class="stat card"><span>כניסות דרך הקישורים</span><b>{{ rl.summary.visits }}</b><small>ביקור שנפתח דרך קישור אישי · רענון של אותו ביקור לא נספר</small></div>
+                <div class="stat card"><span>משחקים חינמיים שנפתחו</span><b>{{ rl.summary.freeGames }}</b><small>כל משחק פעם אחת, רק כשהשחקנים נכנסו למשחק עצמו</small></div>
               </div>
               <div class="bar"><span class="muted">{{ rl.rows.length }} קישורים · תאריכי „קישור נוצר” מסננים קישורים; תאריכי „רכישות שולמו” מסננים את הרכישות שנספרות</span>
                 <a class="btn small" [href]="referralsCsvUrl()" download>ייצוא CSV</a></div>
               <div class="table-wrap">
                 <table>
-                  <thead><tr><th>שם פרטי</th><th>שם משפחה</th><th>מייל</th><th>קישור אישי</th><th>תאריך יצירה</th><th>מספר רכישות</th><th>מכירות ברוטו</th><th>החזרים</th><th>הכנסה נטו</th><th>משחקים שנרכשו</th><th>רוכשים שונים (מבצע)</th><th>סטטוס</th><th></th></tr></thead>
+                  <thead><tr><th>שם פרטי</th><th>שם משפחה</th><th>מייל</th><th>קישור אישי</th><th>תאריך יצירה</th><th>מספר רכישות</th><th>מכירות ברוטו</th><th>החזרים</th><th>הכנסה נטו</th><th>כניסות</th><th>משחקים חינמיים</th><th>משחקים שנרכשו</th><th>סטטוס</th><th></th></tr></thead>
                   <tbody>
                     @for (r of rl.rows; track r.id) {
                       <tr class="click" (click)="showReferral(r.id)">
@@ -492,12 +498,12 @@ const ACTIONS: Record<string, string> = {
                         <td>{{ r.createdAt | date: 'd.M.yy HH:mm' }}</td>
                         <td>{{ r.purchases }}</td>
                         <td>{{ money(r.money, 'gross') }}</td><td>{{ money(r.money, 'refunds') }}</td><td><b>{{ money(r.money, 'net') }}</b></td>
+                        <td>{{ r.visits }}</td><td>{{ r.freeGames }}</td>
                         <td class="wrap">@for (g of r.games; track g.productId) { <span>{{ g.name }} ({{ g.purchases }})</span>@if (!$last) {<span> · </span>} } @empty { — }</td>
-                        <td>{{ r.drawBuyers }} @if (r.drawEligible) { <span class="st" data-s="paid">זכאי להגרלה</span> }</td>
                         <td><span class="st" [attr.data-s]="r.status === 'active' ? 'paid' : 'failed'">{{ r.status === 'active' ? 'פעיל' : 'מושבת' }}</span></td>
                         <td><button type="button" class="btn small" (click)="$event.stopPropagation(); showReferral(r.id)">פרטים</button></td>
                       </tr>
-                    } @empty { <tr><td colspan="13" class="muted">אין קישורים בסינון הזה.</td></tr> }
+                    } @empty { <tr><td colspan="14" class="muted">אין קישורים בסינון הזה.</td></tr> }
                   </tbody>
                 </table>
               </div>
@@ -517,6 +523,7 @@ const ACTIONS: Record<string, string> = {
                     <li>מייל הקישור: {{ emailStatusLabel(d.lastEmailStatus) }}@if (d.lastEmailAt) { · אחרון {{ d.lastEmailAt | date: 'd.M.yy HH:mm' }} } · נשלח {{ d.emailsSent }} פעמים</li>
                     <li>הסכמה שיווקית: {{ consentLabel(d.consent) }}@if (d.consentAt) { · {{ d.consentAt | date: 'd.M.yy HH:mm' }} }@if (d.consentRevokedAt) { · בוטלה {{ d.consentRevokedAt | date: 'd.M.yy HH:mm' }} }</li>
                     <li>רכישות שנספרו: <b>{{ d.purchases }}</b> · הכנסה נטו: <b>{{ money(d.money, 'net') }}</b></li>
+                    <li>כניסות דרך הקישור: <b>{{ d.visits }}</b> · משחקים חינמיים שנפתחו ושוחקו: <b>{{ d.freeGames }}</b> · כרטיסי הגרלה: <b>{{ d.drawTickets }}</b></li>
                     <li class="muted">עמלות: לא פעילות (אין חישוב ואין תשלום).</li>
                   </ul>
                   <div class="table-wrap">
@@ -540,7 +547,7 @@ const ACTIONS: Record<string, string> = {
                   </div>
                 </section>
               }
-              <p class="muted small">רכישה נספרת לקישור רק אם התחילה באותו ביקור שבו נפתח הקישור, אושרה בתשלום אמיתי, אינה רכישת בדיקה ואינה רכישה של בעל הקישור עצמו. אין תגמול כספי ואין הנחה לרוכשים.</p>
+              <p class="muted small">רכישה נספרת לקישור רק אם התחילה באותו ביקור שבו נפתח הקישור, אושרה בתשלום אמיתי, אינה רכישת בדיקה ואינה רכישה של בעל הקישור עצמו. כל רכישה כזאת מזכה את בעל הקישור בכרטיס אחד להגרלה (בלשונית „הגרלה”). אין תגמול כספי ואין הנחה לרוכשים.</p>
             }
           }
           @case ('coupons') {
@@ -712,8 +719,8 @@ export class AdminPage {
   private api = inject(AdminApiService);
   private router = inject(Router);
   tabs: { id: Tab; label: string }[] = [
-    { id: 'dashboard', label: 'לוח בקרה' }, { id: 'orders', label: 'רכישות' }, { id: 'games', label: 'משחקים' },
-    { id: 'products', label: 'מוצרים ומחירים' }, { id: 'faq', label: 'שאלות ותשובות' }, { id: 'coupons', label: 'קופונים והנחות' }, { id: 'mailing', label: 'מיילים ותוצאות' }, { id: 'referrals', label: 'קישורים שיווקיים' }, { id: 'email-setup', label: 'הגדרת שליחת מיילים' },
+    { id: 'dashboard', label: 'לוח בקרה' }, { id: 'statistics', label: 'סטטיסטיקות' }, { id: 'orders', label: 'רכישות' }, { id: 'games', label: 'משחקים' },
+    { id: 'products', label: 'מוצרים ומחירים' }, { id: 'faq', label: 'שאלות ותשובות' }, { id: 'coupons', label: 'קופונים והנחות' }, { id: 'mailing', label: 'מיילים ותוצאות' }, { id: 'referrals', label: 'קישורים שיווקיים' }, { id: 'draw', label: 'הגרלה' }, { id: 'email-setup', label: 'הגדרת שליחת מיילים' },
     { id: 'audit', label: 'יומן פעולות' },
   ];
   state = signal<'loading' | 'denied' | 'ok'>('loading');

@@ -51,6 +51,7 @@ public class ReferralTests
                 ["RateLimits:ReferralPer10Minutes"] = "100000",
                 ["RateLimits:ReferralResendPer10Minutes"] = "100000",
                 ["RateLimits:ReferralVisitsPerMinute"] = "100000",
+                ["RateLimits:FreeGamesPerHour"] = "100000",
             }));
             b.ConfigureTestServices(s =>
             {
@@ -560,5 +561,197 @@ public class ReferralTests
         await NewLinkAsync(f.CreateClient(), email);
         Assert.Equal("active", Assert.Single((await Body(await admin.GetAsync($"/api/admin/mailing?search={Uri.EscapeDataString(email.ToLowerInvariant())}"))).GetProperty("rows").EnumerateArray()).GetProperty("consent").GetString());
         Assert.Equal(3, await DbAsync(f, db => db.MarketingConsentEvents.CountAsync(e => e.Email == email.ToLowerInvariant())));
+    }
+
+    // ------------------------------------------------------------------ entries, free games and draw tickets per link
+
+    private static async Task<Guid> LinkIdAsync(WebApplicationFactory<Program> f, string email) =>
+        await DbAsync(f, db => db.ReferralLinks.Where(l => l.Email == email.ToLowerInvariant()).Select(l => l.Id).FirstAsync());
+
+    /// <summary>Opens the free game in this browser and returns its room.</summary>
+    private static async Task<Guid> FreeGameAsync(HttpClient browser, WebApplicationFactory<Program> f)
+    {
+        var r = await browser.PostAsync("/api/products/gate-of-secrets/free-game", null);
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        var code = (await Body(r)).GetProperty("code").GetString()!;
+        return await DbAsync(f, db => db.Rooms.Where(x => x.Code == code).Select(x => x.Id).FirstAsync());
+    }
+
+    /// <summary>A player takes a seat and connects: the lobby, nothing more.</summary>
+    private static async Task<Guid> SeatAsync(WebApplicationFactory<Program> f, Guid roomId)
+    {
+        using var scope = f.Services.CreateScope();
+        var rooms = scope.ServiceProvider.GetRequiredService<PortalX.Server.Game.RoomService>();
+        PlayerSession? created = null;
+        await rooms.ExecuteAsync(roomId, null, "join", null, null, r =>
+        {
+            var o = rooms.Engine.AddPlayer(r, "שחקן" + Random.Shared.Next(100, 999), "explorer", "{}",
+                PortalX.Server.Game.RoomService.Hash(Guid.NewGuid().ToString()), true, DateTime.UtcNow, out var p);
+            created = p;
+            return o;
+        });
+        var pid = created!.Id;
+        await rooms.ExecuteAsync(roomId, pid, "connect", null, null, r => rooms.Engine.Reconnect(r, pid, "conn-" + pid, DateTime.UtcNow));
+        return pid;
+    }
+
+    private static async Task<string> RunAsync(WebApplicationFactory<Program> f, Guid roomId, Guid playerId, string type,
+        Func<PortalX.Server.Game.GameEngine, GameRoom, PortalX.Server.Game.ActionOutcome> action)
+    {
+        using var scope = f.Services.CreateScope();
+        var rooms = scope.ServiceProvider.GetRequiredService<PortalX.Server.Game.RoomService>();
+        return (await rooms.ExecuteAsync(roomId, playerId, type, null, null, r => action(rooms.Engine, r))).Outcome.Code;
+    }
+
+    private static Task<DateTime?> FirstStartAsync(WebApplicationFactory<Program> f, Guid roomId) =>
+        DbAsync(f, db => db.Rooms.Where(r => r.Id == roomId).Select(r => r.FirstStartedAt).FirstAsync());
+
+    [Fact]
+    public async Task Entries_through_a_link_count_each_visit_once_and_never_a_refresh_of_the_same_visit()
+    {
+        var (f, _, _) = Site_();
+        using var __ = f;
+        var email = Unique("entries");
+        var token = await NewLinkAsync(f.CreateClient(), email);
+        var visitor = Browser(f);
+        await OpenLinkAsync(visitor, token);
+        await OpenLinkAsync(visitor, token);
+        await OpenLinkAsync(visitor, token);
+        await OpenLinkAsync(Browser(f), token);
+        var admin = await AdminAsync(f);
+        var row = await AdminRowAsync(admin, email);
+        Assert.Equal(2, row.GetProperty("visits").GetInt32());
+        // the short-lived visit records may be deleted later: the entries stay
+        var id = row.GetProperty("id").GetGuid();
+        await DbAsync(f, db => db.ReferralVisits.Where(v => v.ReferralLinkId == id).ExecuteDeleteAsync());
+        Assert.Equal(2, (await AdminRowAsync(admin, email)).GetProperty("visits").GetInt32());
+    }
+
+    [Fact]
+    public async Task A_free_game_counts_for_its_link_once_and_only_when_the_players_entered_the_game()
+    {
+        var (f, _, _) = Site_();
+        using var __ = f;
+        var email = Unique("freegame");
+        var token = await NewLinkAsync(f.CreateClient(), email);
+        var linkId = await LinkIdAsync(f, email);
+        var visitor = Browser(f);
+        await OpenLinkAsync(visitor, token);
+        var admin = await AdminAsync(f);
+
+        var room = await FreeGameAsync(visitor, f);
+        Assert.Equal(linkId, await DbAsync(f, db => db.Rooms.Where(r => r.Id == room).Select(r => r.ReferralLinkId).FirstAsync()));
+        // opening the game and waiting in the lobby is not playing it
+        var host = await SeatAsync(f, room);
+        Assert.Null(await FirstStartAsync(f, room));
+        Assert.Equal(0, (await AdminRowAsync(admin, email)).GetProperty("freeGames").GetInt32());
+
+        Assert.Equal("ok", await RunAsync(f, room, host, "start", (e, r) => e.StartGame(r, host, DateTime.UtcNow)));
+        Assert.Equal(1, (await AdminRowAsync(admin, email)).GetProperty("freeGames").GetInt32());
+        var first = await FirstStartAsync(f, room);
+        Assert.NotNull(first);
+
+        // a lost connection, a return to the same seat and a replay of the same game add nothing
+        await RunAsync(f, room, host, "disconnect", (e, r) => e.Disconnect(r, host, "conn-" + host, DateTime.UtcNow));
+        await RunAsync(f, room, host, "connect", (e, r) => e.Reconnect(r, host, "conn2-" + host, DateTime.UtcNow));
+        await DbAsync(f, db => db.Rooms.Where(r => r.Id == room).ExecuteUpdateAsync(s => s.SetProperty(r => r.Phase, RoomPhase.Completed)));
+        Assert.Equal("ok", await RunAsync(f, room, host, "replay", (e, r) => e.PlayAgain(r, host, DateTime.UtcNow)));
+        Assert.Equal("ok", await RunAsync(f, room, host, "start", (e, r) => e.StartGame(r, host, DateTime.UtcNow)));
+        Assert.Equal(first, await FirstStartAsync(f, room));
+        Assert.Equal(1, (await AdminRowAsync(admin, email)).GetProperty("freeGames").GetInt32());
+
+        // a second free game of the same visit is another game
+        var second = await FreeGameAsync(visitor, f);
+        var p2 = await SeatAsync(f, second);
+        await RunAsync(f, second, p2, "start", (e, r) => e.StartGame(r, p2, DateTime.UtcNow));
+        Assert.Equal(2, (await AdminRowAsync(admin, email)).GetProperty("freeGames").GetInt32());
+        // a free game opened without a personal link belongs to no link
+        var plain = await FreeGameAsync(Browser(f), f);
+        Assert.Null(await DbAsync(f, db => db.Rooms.Where(r => r.Id == plain).Select(r => r.ReferralLinkId).FirstAsync()));
+    }
+
+    [Fact]
+    public async Task Each_paid_purchase_through_a_link_is_one_ticket_and_a_repeated_notification_adds_none()
+    {
+        var (f, _, live) = Site_();
+        using var __ = f;
+        var email = Unique("tickets");
+        var token = await NewLinkAsync(f.CreateClient(), email);
+        var linkId = await LinkIdAsync(f, email);
+        var buyer = Browser(f);
+        await OpenLinkAsync(buyer, token);
+
+        var one = await OrderAsync(buyer, f, "friend@example.org");
+        Assert.Equal("applied:paid", await NotifyAsync(f, live, one, PaymentEventType.Succeeded, eventId: "evt_one_" + one.OrderId));
+        // the same notification delivered again
+        await NotifyAsync(f, live, one, PaymentEventType.Succeeded, eventId: "evt_one_" + one.OrderId);
+        // the same buyer buys again: a second ticket
+        var two = await OrderAsync(buyer, f, "friend@example.org");
+        Assert.Equal("applied:paid", await NotifyAsync(f, live, two, PaymentEventType.Succeeded));
+        // a failed payment and a free game never give a ticket
+        var failed = await OrderAsync(buyer, f, "friend@example.org");
+        await NotifyAsync(f, live, failed, PaymentEventType.Failed);
+        await FreeGameAsync(buyer, f);
+
+        var admin = await AdminAsync(f);
+        var draw = await Body(await admin.GetAsync("/api/admin/draw"));
+        var entry = Assert.Single(draw.GetProperty("entries").EnumerateArray(), e => e.GetProperty("linkId").GetGuid() == linkId);
+        Assert.Equal(2, entry.GetProperty("tickets").GetInt32());
+        var numbers = entry.GetProperty("ticketList").EnumerateArray().Select(t => t.GetProperty("orderNumber").GetInt64()).Order().ToList();
+        var expected = (await DbAsync(f, db => db.Orders.Where(o => o.Id == one.OrderId || o.Id == two.OrderId).Select(o => o.Number).ToListAsync())).Order().ToList();
+        Assert.Equal(expected, numbers);
+
+        // a refund takes its ticket away
+        Assert.Equal(HttpStatusCode.OK, (await admin.PostAsync($"/api/admin/orders/{one.OrderId}/mark-refunded", null)).StatusCode);
+        draw = await Body(await admin.GetAsync("/api/admin/draw"));
+        Assert.Equal(1, Assert.Single(draw.GetProperty("entries").EnumerateArray(), e => e.GetProperty("linkId").GetGuid() == linkId).GetProperty("tickets").GetInt32());
+        // the draw is for the admin only
+        Assert.Equal(HttpStatusCode.Unauthorized, (await f.CreateClient().GetAsync("/api/admin/draw")).StatusCode);
+    }
+
+    [Fact]
+    public async Task The_statistics_count_verified_payments_as_revenue_and_keep_orders_games_and_players_apart()
+    {
+        var (f, _, live) = Site_();
+        using var __ = f;
+        var email = Unique("stats");
+        var token = await NewLinkAsync(f.CreateClient(), email);
+        var linkId = await LinkIdAsync(f, email);
+        var visitor = Browser(f);
+        var admin = await AdminAsync(f);
+        var today = StatisticsService.ToIsrael(DateTime.UtcNow).ToString("yyyy-MM-dd");
+        async Task<JsonElement> Stats() => await Body(await admin.GetAsync($"/api/admin/statistics?from={today}&to={today}&bucket=day"));
+        var before = await Stats();
+
+        await OpenLinkAsync(visitor, token);
+        var paid = await OrderAsync(visitor, f);
+        await NotifyAsync(f, live, paid, PaymentEventType.Succeeded);
+        await OrderAsync(visitor, f);
+        var failed = await OrderAsync(visitor, f);
+        await NotifyAsync(f, live, failed, PaymentEventType.Failed);
+        var room = await FreeGameAsync(visitor, f);
+        var host = await SeatAsync(f, room);
+        await RunAsync(f, room, host, "start", (e, r) => e.StartGame(r, host, DateTime.UtcNow));
+
+        var after = await Stats();
+        int D(string group, string field) => after.GetProperty(group).GetProperty(field).GetInt32() - before.GetProperty(group).GetProperty(field).GetInt32();
+        Assert.Equal(3, D("sales", "ordersCreated"));
+        Assert.Equal(1, D("sales", "purchases"));
+        Assert.Equal(TestPurchase.Price, after.GetProperty("sales").GetProperty("net").GetDecimal() - before.GetProperty("sales").GetProperty("net").GetDecimal());
+        Assert.Equal(1, D("sales", "pending"));
+        Assert.Equal(1, D("sales", "failed"));
+        Assert.Equal(1, D("activity", "freeOpened"));
+        Assert.Equal(1, D("activity", "freeStarted"));
+        Assert.Equal(1, D("activity", "participants"));
+        Assert.Equal(1, D("referrals", "visits"));
+        Assert.Equal(1, D("referrals", "freeGames"));
+        // the chart of the day holds the same numbers as the totals
+        var day = Assert.Single(after.GetProperty("series").EnumerateArray());
+        Assert.Equal(after.GetProperty("sales").GetProperty("purchases").GetInt32(), day.GetProperty("purchases").GetInt32());
+        Assert.Equal(after.GetProperty("sales").GetProperty("net").GetDecimal(), day.GetProperty("revenue").GetDecimal());
+        var link = Assert.Single(after.GetProperty("referrals").GetProperty("links").EnumerateArray(), l => l.GetProperty("id").GetGuid() == linkId);
+        Assert.Equal(1, link.GetProperty("purchases").GetInt32());
+        Assert.Equal(1, link.GetProperty("freeGames").GetInt32());
+        Assert.Equal(1, link.GetProperty("visits").GetInt32());
     }
 }

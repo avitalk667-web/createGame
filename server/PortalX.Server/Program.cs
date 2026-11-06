@@ -49,6 +49,7 @@ builder.Services.AddScoped<SumitReconciler>();
 builder.Services.AddHostedService<SumitReconciliationService>();
 builder.Services.Configure<AdminOptions>(builder.Configuration.GetSection("Admin"));
 builder.Services.AddScoped<AdminService>();
+builder.Services.AddScoped<StatisticsService>();
 // email: the contact address, SMTP settings (environment only), results emails, consents and unsubscribe links
 builder.Services.AddSingleton(sp => PortalX.Server.Mail.SiteOptions.FromConfig(sp.GetRequiredService<IConfiguration>()));
 builder.Services.AddSingleton(sp => PortalX.Server.Mail.ResultsEmailPolicy.FromConfig(sp.GetRequiredService<IConfiguration>()));

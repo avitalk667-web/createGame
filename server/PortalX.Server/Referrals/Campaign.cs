@@ -30,8 +30,6 @@ public sealed class CampaignContent
     public string PopupBody { get; init; } = "";
     public string PopupCreateLabel { get; init; } = "";
     public string PopupLaterLabel { get; init; } = "";
-    /// <summary>Different paying buyers through one personal link needed to enter the draw.</summary>
-    public int MinBuyers { get; init; } = 4;
 
     public static CampaignContent LoadDefault()
     {
@@ -42,13 +40,17 @@ public sealed class CampaignContent
     }
 
     /// <summary>
-    /// Different buyers of a link who count for the draw: a real, verified payment that is still paid (not refunded,
-    /// cancelled or failed), not a test payment and not the owner's own purchase — the same rules as the link's numbers.
-    /// A buyer is known by the order's email; an order without one counts on its own.
+    /// Whether an order gives its link's owner a draw ticket: a real, verified payment through the link that is still paid
+    /// (not refunded, cancelled or failed), not a test payment and not the owner's own purchase — the same rules as the
+    /// link's numbers. One ticket per such order, so the same buyer buying again earns another one.
     /// </summary>
-    public static int QualifyingBuyers(IEnumerable<Order> linkOrders) =>
-        linkOrders.Where(o => ReferralAdmin.Counts(o) && o.Status == OrderStatus.Paid)
-            .Select(o => ResultsEmailService.NormalizeEmail(o.Email) ?? "order:" + o.Id).Distinct().Count();
+    public static bool IsTicket(Order o) => ReferralAdmin.Counts(o) && o.Status == OrderStatus.Paid;
+
+    /// <summary>
+    /// The draw tickets of a link: one per qualifying purchase, each tied to its order. They are read from the orders
+    /// themselves, so a payment notification that arrives twice (the order is paid once) never makes a second ticket.
+    /// </summary>
+    public static List<Order> Tickets(IEnumerable<Order> linkOrders) => linkOrders.Where(IsTicket).OrderBy(o => o.PaidAt).ThenBy(o => o.Number).ToList();
 
     /// <summary>
     /// The banner inside an email: a table with inline styles (no script, no background image, works with images off),
@@ -94,6 +96,6 @@ public sealed class CampaignContent
     {
         enabled = Enabled, title = Title, prize = Prize, lead = Lead, body = Body, drawLabel = DrawLabel, drawDate = DrawDate,
         buttonLabel = ButtonLabel, popupTitle = PopupTitle, popupBody = PopupBody, popupCreateLabel = PopupCreateLabel,
-        popupLaterLabel = PopupLaterLabel, minBuyers = MinBuyers, drawAt = DrawAt, serverNow = DateTimeOffset.UtcNow,
+        popupLaterLabel = PopupLaterLabel, drawAt = DrawAt, serverNow = DateTimeOffset.UtcNow,
     };
 }

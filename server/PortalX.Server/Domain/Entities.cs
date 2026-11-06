@@ -56,6 +56,13 @@ public class GameRoom
     public string AccessSource { get; set; } = "legacy";
     /// <summary>Participant limit of this game, host included, fixed when it was opened (see GameOptions.MaxPlayers).</summary>
     public int MaxPlayers { get; set; } = 4;
+    /// <summary>The personal link of the visit that opened this game (free games), copied on the server when it was opened.</summary>
+    public Guid? ReferralLinkId { get; set; }
+    /// <summary>
+    /// When the game first left the lobby (the players entered the game itself). Set once and never cleared, also by a
+    /// replay, so a game counts as started exactly once.
+    /// </summary>
+    public DateTime? FirstStartedAt { get; set; }
 
     public List<PlayerSession> Players { get; set; } = new();
     public List<PuzzleState> Puzzles { get; set; } = new();
@@ -684,6 +691,17 @@ public class ReferralVisit
     public Guid ReferralLinkId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime LastClickAt { get; set; }
+}
+
+/// <summary>
+/// One entry to the site through a personal link: a new visit, or a visit that switched to this link. Kept (unlike the
+/// short-lived visit itself) so the admin can count entries per link and over time. Holds no visitor details.
+/// </summary>
+public class ReferralClick
+{
+    public long Id { get; set; }
+    public Guid ReferralLinkId { get; set; }
+    public DateTime At { get; set; }
 }
 
 /// <summary>Append-only history of marketing consent: every grant and every revocation, kept for audit.</summary>

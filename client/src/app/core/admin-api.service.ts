@@ -81,17 +81,18 @@ export interface ReferralRow {
   id: string; firstName: string; lastName: string; email: string; url: string; createdAt: string; status: 'active' | 'disabled';
   purchases: number; refunded: number; money: MoneyTotals[]; games: { productId: string; name: string; purchases: number }[];
   lastEmailStatus?: string | null; lastEmailAt?: string | null; consent: string;
-  /** "Friend brings a friend": different paying buyers through the link, and whether that enters the draw. */
-  drawBuyers: number; drawEligible: boolean;
+  /** Entries through the link, and free games opened through it that the players really entered (each game once). */
+  visits: number; freeGames: number;
 }
 export interface ReferralList {
-  summary: { links: number; activeLinks: number; purchases: number; refunded: number; money: MoneyTotals[]; drawEligible: number; drawMinBuyers: number };
+  summary: { links: number; activeLinks: number; purchases: number; refunded: number; money: MoneyTotals[]; visits: number; freeGames: number };
   rows: ReferralRow[];
 }
 export interface ReferralDetails {
   id: string; firstName: string; lastName: string; email: string; url: string; createdAt: string; status: 'active' | 'disabled'; disabledAt?: string | null;
   lastEmailStatus?: string | null; lastEmailAt?: string | null; emailsSent: number; consent: string; consentAt?: string | null; consentRevokedAt?: string | null;
-  purchases: number; money: MoneyTotals[]; commission: { mode: string; enabled: boolean }; drawBuyers: number; drawMinBuyers: number;
+  purchases: number; money: MoneyTotals[]; commission: { mode: string; enabled: boolean };
+  visits: number; freeGames: number; drawTickets: number;
   orders: {
     id: string; number: number; createdAt: string; paidAt?: string | null; productId: string; productName: string; amount: number; currency: string;
     status: string; isTest: boolean; refundedAt?: string | null; refunded: number; referralAttributedAt?: string | null; counted: boolean; excluded?: string | null;
@@ -146,6 +147,34 @@ export function filterQuery(f: AdminFilters): string {
 }
 
 /** Admin API. The session is an HttpOnly cookie; every call also sends the admin header the server requires. */
+/** The draw (admin only): one ticket for every qualifying purchase through a personal link, kept with its order. */
+export interface DrawList {
+  campaign: { enabled: boolean; title: string; prize: string; drawDate: string; drawAt?: string | null };
+  totalTickets: number; participants: number;
+  entries: {
+    linkId: string; firstName: string; lastName: string; email: string; status: string; tickets: number;
+    ticketList: { orderNumber: number; productName: string; amount: number; currency: string; paidAt?: string | null }[];
+  }[];
+}
+
+/** One chart group of the statistics: a day, a week from Sunday or a month (Israel time), by its first day. */
+export interface StatPoint {
+  start: string; revenue: number; purchases: number; gamesOpened: number; gamesStarted: number;
+  freeOpened: number; freeStarted: number; participants: number; visits: number;
+}
+export interface Statistics {
+  range: { from: string; to: string; bucket: 'day' | 'week' | 'month' };
+  currency: string;
+  sales: {
+    ordersCreated: number; purchases: number; gross: number; refunds: number; net: number; refundCount: number;
+    pending: number; failed: number; cancelled: number; paidGamesOpened: number; paidGamesStarted: number;
+  };
+  activity: { gamesOpened: number; gamesStarted: number; participants: number; freeOpened: number; freeStarted: number; freeParticipants: number; adminOpened: number };
+  byProduct: { productId: string; name: string; isFree: boolean; purchases: number; net: number; opened: number; started: number; participants: number }[];
+  referrals: { visits: number; purchases: number; freeGames: number; links: { id: string; name: string; visits: number; purchases: number; freeGames: number }[] };
+  series: StatPoint[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class AdminApiService {
   private async request<T>(method: string, url: string, body?: unknown): Promise<T> {
@@ -191,6 +220,10 @@ export class AdminApiService {
   mailingCsvUrl(f: MailingFilters) { return '/api/admin/mailing.csv' + mailingQuery(f); }
   referrals(f: ReferralFilters) { return this.request<ReferralList>('GET', '/api/admin/referrals' + mailingQuery(f)); }
   referralsCsvUrl(f: ReferralFilters) { return '/api/admin/referrals.csv' + mailingQuery(f); }
+  statistics(from: string, to: string, bucket: string) {
+    return this.request<Statistics>('GET', '/api/admin/statistics?' + new URLSearchParams({ from, to, bucket }).toString());
+  }
+  draw() { return this.request<DrawList>('GET', '/api/admin/draw'); }
   referral(id: string) { return this.request<ReferralDetails>('GET', `/api/admin/referrals/${id}`); }
   setReferralActive(id: string, active: boolean) { return this.request<void>('POST', `/api/admin/referrals/${id}/status`, { active }); }
   /** Every question of the home page, the ones the site shipped with included. */

@@ -23,7 +23,7 @@ export interface ReferralReply {
 /** The "friend brings a friend" campaign texts (from the server's content file). */
 export interface Campaign {
   enabled: boolean; title: string; prize: string; lead: string; body: string; drawLabel: string; drawDate: string; buttonLabel: string;
-  popupTitle: string; popupBody: string; popupCreateLabel: string; popupLaterLabel: string; minBuyers: number;
+  popupTitle: string; popupBody: string; popupCreateLabel: string; popupLaterLabel: string;
   /** The exact moment of the draw (ISO with its offset) and the server's time when this was read, for the countdown. */
   drawAt?: string | null; serverNow?: string;
 }

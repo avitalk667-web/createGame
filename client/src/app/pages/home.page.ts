@@ -62,10 +62,10 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
         <div class="share-text">
           <h2 id="share-title">אהבתם? שתפו את PORTAL X</h2>
           @if (campaignOn()) {
-            <!-- the "friend brings a friend" draw (same terms as the campaign: different, really paid buyers) -->
+            <!-- the "friend brings a friend" draw (same terms as the campaign: one ticket for every paid purchase through the link) -->
             <p class="promo">
               <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M20 7h-2.2A3 3 0 0 0 12 3.8 3 3 0 0 0 6.2 7H4a1 1 0 0 0-1 1v3a1 1 0 0 0 1 1h7V7h2v5h7a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1Zm-11-.1a1.1 1.1 0 1 1 2-.6V7H9.5a1 1 0 0 1-.5-.1ZM15 7h-2v-.7A1.1 1.1 0 1 1 15 7ZM4 13.5V20a1 1 0 0 0 1 1h6v-7.5H4Zm9 7.5h6a1 1 0 0 0 1-1v-6.5h-7V21Z"/></svg>
-              <span>4 רוכשים שונים דרך הקישור האישי = כניסה להגרלה על <b>{{ campaign()?.prize || '888 ₪' }}</b>!</span>
+              <span>כל רכישה דרך הקישור האישי = כרטיס להגרלה על <b>{{ campaign()?.prize || '888 ₪' }}</b>!</span>
             </p>
             <p class="draw">ההגרלה: יום ראשון, ג׳ בטבת תשפ״ז, 13.12.2026, 20:00</p>
           } @else {

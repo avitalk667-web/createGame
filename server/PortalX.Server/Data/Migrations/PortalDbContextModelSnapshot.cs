@@ -553,6 +553,9 @@ namespace PortalX.Server.Data.Migrations
                     b.Property<Guid?>("EntitlementId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("FirstStartedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("HostClaimHash")
                         .IsRequired()
                         .HasColumnType("text");
@@ -573,6 +576,9 @@ namespace PortalX.Server.Data.Migrations
 
                     b.Property<string>("ProductId")
                         .HasColumnType("text");
+
+                    b.Property<Guid?>("ReferralLinkId")
+                        .HasColumnType("uuid");
 
                     b.Property<int>("Round")
                         .HasColumnType("integer");
@@ -599,6 +605,10 @@ namespace PortalX.Server.Data.Migrations
                     b.HasIndex("EntitlementId")
                         .IsUnique()
                         .HasFilter("\"EntitlementId\" IS NOT NULL");
+
+                    b.HasIndex("FirstStartedAt");
+
+                    b.HasIndex("ReferralLinkId");
 
                     b.ToTable("Rooms");
                 });
@@ -1319,6 +1329,29 @@ namespace PortalX.Server.Data.Migrations
                     b.ToTable("PuzzleStates");
                 });
 
+            modelBuilder.Entity("PortalX.Server.Domain.ReferralClick", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ReferralLinkId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("At");
+
+                    b.HasIndex("ReferralLinkId", "At");
+
+                    b.ToTable("ReferralClicks");
+                });
+
             modelBuilder.Entity("PortalX.Server.Domain.ReferralLink", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1573,6 +1606,15 @@ namespace PortalX.Server.Data.Migrations
                     b.HasOne("PortalX.Server.Domain.GameRoom", null)
                         .WithMany("Puzzles")
                         .HasForeignKey("RoomId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.ReferralClick", b =>
+                {
+                    b.HasOne("PortalX.Server.Domain.ReferralLink", null)
+                        .WithMany()
+                        .HasForeignKey("ReferralLinkId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

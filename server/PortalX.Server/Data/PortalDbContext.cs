@@ -31,6 +31,7 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
     public DbSet<MarketingConsentEvent> MarketingConsentEvents => Set<MarketingConsentEvent>();
     public DbSet<ReferralLink> ReferralLinks => Set<ReferralLink>();
     public DbSet<ReferralVisit> ReferralVisits => Set<ReferralVisit>();
+    public DbSet<ReferralClick> ReferralClicks => Set<ReferralClick>();
     public DbSet<CommunityLinkRequest> CommunityLinkRequests => Set<CommunityLinkRequest>();
     public DbSet<AppSecret> AppSecrets => Set<AppSecret>();
     public DbSet<MailAccount> MailAccounts => Set<MailAccount>();
@@ -53,6 +54,8 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.HasIndex(x => x.EntitlementId).IsUnique().HasFilter("\"EntitlementId\" IS NOT NULL");
             e.Property(x => x.AccessSource).HasDefaultValue("legacy");
             e.Property(x => x.MaxPlayers).HasDefaultValue(4);
+            e.HasIndex(x => x.ReferralLinkId);
+            e.HasIndex(x => x.FirstStartedAt);
         });
 
         b.Entity<PlayerSession>(e =>
@@ -160,6 +163,13 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.HasOne<ReferralLink>().WithMany().HasForeignKey(x => x.ReferralLinkId).OnDelete(DeleteBehavior.Cascade);
         });
 
+        b.Entity<ReferralClick>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.ReferralLinkId, x.At });
+            e.HasIndex(x => x.At);
+            e.HasOne<ReferralLink>().WithMany().HasForeignKey(x => x.ReferralLinkId).OnDelete(DeleteBehavior.Cascade);
+        });
         b.Entity<MarketingConsentEvent>(e =>
         {
             e.HasKey(x => x.Id);

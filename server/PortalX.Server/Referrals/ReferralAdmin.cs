@@ -34,7 +34,11 @@ public sealed record GameCount(string ProductId, string Name, int Purchases);
 public sealed record ReferralRow(
     Guid Id, string FirstName, string LastName, string Email, string Url, DateTime CreatedAt, string Status,
     int Purchases, int Refunded, IReadOnlyList<MoneyTotals> Money, IReadOnlyList<GameCount> Games,
-    string? LastEmailStatus, DateTime? LastEmailAt, string Consent, int DrawBuyers = 0, bool DrawEligible = false);
+    string? LastEmailStatus, DateTime? LastEmailAt, string Consent, int Visits = 0, int FreeGames = 0);
+
+/// <summary>One person in the draw: the owner of a personal link and the tickets their link earned (one per qualifying purchase).</summary>
+public sealed record DrawTicket(long OrderNumber, string ProductName, decimal Amount, string Currency, DateTime? PaidAt);
+public sealed record DrawEntry(Guid LinkId, string FirstName, string LastName, string Email, string Status, int Tickets, IReadOnlyList<DrawTicket> TicketList);
 
 /// <summary>
 /// The admin's view of personal links. A purchase counts for a link only when: it came through the link (set at checkout),
@@ -70,8 +74,9 @@ public sealed class ReferralAdmin(PortalDbContext db, CampaignContent campaign)
         var counted = orders.Where(Counts)
             .Where(o => (f.PaidFrom == null || o.PaidAt >= f.PaidFrom) && (f.PaidTo == null || o.PaidAt < f.PaidTo)).ToList();
         var byLink = counted.GroupBy(o => o.ReferralLinkId!.Value).ToDictionary(g => g.Key, g => g.ToList());
-        // the campaign counts every qualifying purchase of the link, whatever the purchase dates filtered above
-        var drawBuyers = orders.GroupBy(o => o.ReferralLinkId!.Value).ToDictionary(g => g.Key, g => CampaignContent.QualifyingBuyers(g));
+        // entries through the link and free games really started from it, in the same date range as the purchases
+        var visits = await VisitsAsync(ids, f.PaidFrom, f.PaidTo);
+        var freeGames = await FreeGamesAsync(ids, f.PaidFrom, f.PaidTo);
         var consents = await db.MarketingConsents.AsNoTracking().Where(c => links.Select(l => l.Email).Contains(c.Email))
             .ToDictionaryAsync(c => c.Email, c => c.Status == ConsentStatus.Active ? "active" : c.Status == ConsentStatus.Revoked ? "revoked" : "pending");
 
@@ -82,7 +87,7 @@ public sealed class ReferralAdmin(PortalDbContext db, CampaignContent campaign)
             return new ReferralRow(l.Id, l.FirstName, l.LastName, l.Email, ReferralService.LinkUrl(l, siteUrl), l.CreatedAt,
                 l.Status == ReferralLinkStatus.Active ? "active" : "disabled", mine.Count, mine.Count(o => o.Status == OrderStatus.Refunded),
                 Money(mine), games, l.LastEmailStatus, l.LastEmailAt, consents.GetValueOrDefault(l.Email, "none"),
-                drawBuyers.GetValueOrDefault(l.Id), drawBuyers.GetValueOrDefault(l.Id) >= campaign.MinBuyers);
+                visits.GetValueOrDefault(l.Id), freeGames.GetValueOrDefault(l.Id));
         });
         if (f.Game != null) rows = rows.Where(r => r.Games.Any(g => g.ProductId == f.Game));
         if (f.MinPurchases is { } minP) rows = rows.Where(r => r.Purchases >= minP);
@@ -95,8 +100,8 @@ public sealed class ReferralAdmin(PortalDbContext db, CampaignContent campaign)
         {
             links = list.Count,
             activeLinks = list.Count(r => r.Status == "active"),
-            drawEligible = list.Count(r => r.DrawEligible),
-            drawMinBuyers = campaign.MinBuyers,
+            visits = list.Sum(r => r.Visits),
+            freeGames = list.Sum(r => r.FreeGames),
             purchases = shownOrders.Count,
             refunded = shownOrders.Count(o => o.Status == OrderStatus.Refunded),
             money = Money(shownOrders),
@@ -119,7 +124,9 @@ public sealed class ReferralAdmin(PortalDbContext db, CampaignContent campaign)
             consent = consent == null ? "none" : consent.Status == ConsentStatus.Active ? "active" : consent.Status == ConsentStatus.Revoked ? "revoked" : "pending",
             consentAt = l.ConsentAt, consentRevokedAt = consent?.RevokedAt,
             purchases = counted.Count, money = Money(counted),
-            drawBuyers = CampaignContent.QualifyingBuyers(orders), drawMinBuyers = campaign.MinBuyers,
+            visits = (await VisitsAsync([id], null, null)).GetValueOrDefault(id),
+            freeGames = (await FreeGamesAsync([id], null, null)).GetValueOrDefault(id),
+            drawTickets = CampaignContent.Tickets(orders).Count,
             // a commission plan is prepared but off: nothing is calculated or paid
             commission = new { mode = l.CommissionMode.ToString().ToLowerInvariant(), enabled = l.CommissionEnabled },
             // only what managing the links needs: no buyer details, no payment details
@@ -142,16 +149,62 @@ public sealed class ReferralAdmin(PortalDbContext db, CampaignContent campaign)
         sb.AppendLine(string.Join(",", new[]
         {
             "שם פרטי", "שם משפחה", "מייל", "קישור אישי", "תאריך יצירה", "מספר רכישות", "מכירות ברוטו", "החזרים", "הכנסה נטו",
-            "משחקים שנרכשו", "סטטוס", "הסכמה שיווקית", "מייל קישור אחרון", "רוכשים שונים (מבצע)", "זכאות להגרלה",
+            "משחקים שנרכשו", "סטטוס", "הסכמה שיווקית", "מייל קישור אחרון", "כניסות דרך הקישור", "משחקים חינמיים שנפתחו",
         }.Select(CsvText.Cell)));
         foreach (var r in rows)
             sb.AppendLine(string.Join(",", new object?[]
             {
                 r.FirstName, r.LastName, r.Email, r.Url, r.CreatedAt, r.Purchases, Money(r.Money, x => x.Gross), Money(r.Money, x => x.Refunds), Money(r.Money, x => x.Net),
                 string.Join(" · ", r.Games.Select(g => $"{g.Name} ({g.Purchases})")), r.Status == "active" ? "פעיל" : "מושבת",
-                r.Consent switch { "active" => "פעילה", "revoked" => "בוטלה", _ => "אין" }, r.LastEmailAt, r.DrawBuyers, r.DrawEligible ? "כן" : "לא",
+                r.Consent switch { "active" => "פעילה", "revoked" => "בוטלה", _ => "אין" }, r.LastEmailAt, r.Visits, r.FreeGames,
             }.Select(CsvText.Cell)));
         return Encoding.UTF8.GetBytes(sb.ToString());
+    }
+
+    /// <summary>Entries through each link (new visits, or a visit that switched to the link), optionally in a date range.</summary>
+    public async Task<Dictionary<Guid, int>> VisitsAsync(IReadOnlyCollection<Guid> linkIds, DateTime? from, DateTime? to)
+    {
+        var q = db.ReferralClicks.AsNoTracking().Where(c => linkIds.Contains(c.ReferralLinkId));
+        if (from is { } a) q = q.Where(c => c.At >= a);
+        if (to is { } b) q = q.Where(c => c.At < b);
+        return await q.GroupBy(c => c.ReferralLinkId).Select(g => new { g.Key, N = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.N);
+    }
+
+    /// <summary>
+    /// Free games opened through each link and really played: counted once per game (its room), when the players first
+    /// entered the game itself. Opening the page, the lobby alone, a refresh, a reconnect or a replay never add to it.
+    /// </summary>
+    public async Task<Dictionary<Guid, int>> FreeGamesAsync(IReadOnlyCollection<Guid> linkIds, DateTime? from, DateTime? to)
+    {
+        var q = db.Rooms.AsNoTracking().Where(r => r.AccessSource == "free-sample" && r.FirstStartedAt != null
+            && r.ReferralLinkId != null && linkIds.Contains(r.ReferralLinkId.Value));
+        if (from is { } a) q = q.Where(r => r.FirstStartedAt >= a);
+        if (to is { } b) q = q.Where(r => r.FirstStartedAt < b);
+        return await q.GroupBy(r => r.ReferralLinkId!.Value).Select(g => new { g.Key, N = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.N);
+    }
+
+    /// <summary>
+    /// The draw (admin only): every link owner with their tickets — one per qualifying purchase through their link, each
+    /// shown with the order it came from. Read from the orders at the moment of asking, so it always follows refunds.
+    /// </summary>
+    public async Task<object> DrawAsync()
+    {
+        var links = await db.ReferralLinks.AsNoTracking().ToListAsync();
+        var orders = await db.Orders.AsNoTracking().Where(o => o.ReferralLinkId != null).ToListAsync();
+        var byLink = orders.GroupBy(o => o.ReferralLinkId!.Value).ToDictionary(g => g.Key, g => CampaignContent.Tickets(g));
+        var entries = links.Select(l =>
+        {
+            var tickets = byLink.GetValueOrDefault(l.Id) ?? [];
+            return new DrawEntry(l.Id, l.FirstName, l.LastName, l.Email, l.Status == ReferralLinkStatus.Active ? "active" : "disabled", tickets.Count,
+                tickets.Select(o => new DrawTicket(o.Number, o.ProductName, o.PriceSnapshot, o.Currency, o.PaidAt)).ToList());
+        }).Where(e => e.Tickets > 0).OrderByDescending(e => e.Tickets).ThenBy(e => e.FirstName).ToList();
+        return new
+        {
+            campaign = new { campaign.Enabled, campaign.Title, campaign.Prize, campaign.DrawDate, campaign.DrawAt },
+            totalTickets = entries.Sum(e => e.Tickets),
+            participants = entries.Count,
+            entries,
+        };
     }
 
     public async Task<bool> SetStatusAsync(Guid id, bool active)

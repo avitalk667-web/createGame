@@ -200,12 +200,20 @@ public sealed partial class ReferralService(
         if (!string.IsNullOrEmpty(visitToken) && visitToken.Length <= 64)
         {
             var hash = RoomService.Hash(visitToken);
-            var updated = await db.ReferralVisits.Where(v => v.TokenHash == hash && v.LastClickAt > now - VisitLifetime)
-                .ExecuteUpdateAsync(s => s.SetProperty(v => v.ReferralLinkId, linkId.Value).SetProperty(v => v.LastClickAt, now));
-            if (updated > 0) return visitToken;
+            var visit = await db.ReferralVisits.FirstOrDefaultAsync(v => v.TokenHash == hash && v.LastClickAt > now - VisitLifetime);
+            if (visit != null)
+            {
+                // the same visit opening the same link again (a refresh, the back button) is not a new entry
+                if (visit.ReferralLinkId != linkId.Value) db.ReferralClicks.Add(new ReferralClick { ReferralLinkId = linkId.Value, At = now });
+                visit.ReferralLinkId = linkId.Value;
+                visit.LastClickAt = now;
+                await db.SaveChangesAsync();
+                return visitToken;
+            }
         }
         var token = RoomService.NewToken();
         db.ReferralVisits.Add(new ReferralVisit { Id = Guid.NewGuid(), TokenHash = RoomService.Hash(token), ReferralLinkId = linkId.Value, CreatedAt = now, LastClickAt = now });
+        db.ReferralClicks.Add(new ReferralClick { ReferralLinkId = linkId.Value, At = now });
         await db.SaveChangesAsync();
         return token;
     }

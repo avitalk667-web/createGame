@@ -31,13 +31,14 @@ public class UpgradeTests
     }
 
     [Fact]
-    public void The_draw_counts_different_real_buyers_only()
+    public void Every_qualifying_purchase_through_a_link_is_one_draw_ticket()
     {
-        Assert.Equal(4, CampaignContent.QualifyingBuyers([Paid("a@x.test"), Paid("b@x.test"), Paid("c@x.test"), Paid("d@x.test")]));
-        // the same buyer twice (any letter case) counts once
-        Assert.Equal(1, CampaignContent.QualifyingBuyers([Paid("a@x.test"), Paid("A@X.test")]));
-        // test payments, refunds, failed, cancelled, unpaid orders and the owner's own purchase never count
-        Assert.Equal(0, CampaignContent.QualifyingBuyers([
+        // one ticket per purchase: four buyers, four tickets
+        Assert.Equal(4, CampaignContent.Tickets([Paid("a@x.test"), Paid("b@x.test"), Paid("c@x.test"), Paid("d@x.test")]).Count);
+        // the same buyer buying twice (any letter case) earns two tickets
+        Assert.Equal(2, CampaignContent.Tickets([Paid("a@x.test"), Paid("A@X.test")]).Count);
+        // test payments, refunds, failed, cancelled, unpaid orders and the owner own purchase never give a ticket
+        Assert.Empty(CampaignContent.Tickets([
             Paid("t@x.test", o => o.IsTest = true),
             Paid("r@x.test", o => o.Status = OrderStatus.Refunded),
             Paid("f@x.test", o => { o.Status = OrderStatus.Failed; o.PaidAt = null; }),
@@ -45,13 +46,15 @@ public class UpgradeTests
             Paid("p@x.test", o => { o.Status = OrderStatus.Pending; o.PaidAt = null; }),
             Paid("owner@x.test", o => o.ReferralExclusion = "self-purchase"),
         ]));
-        Assert.Equal(2, CampaignContent.QualifyingBuyers([Paid(null), Paid(null)]));
+        // a purchase that did not come through a personal link is not a ticket either
+        Assert.Empty(CampaignContent.Tickets([Paid("n@x.test", o => o.ReferralLinkId = null)]));
+        Assert.Equal(2, CampaignContent.Tickets([Paid(null), Paid(null)]).Count);
     }
 
     private static CampaignContent Campaign => new()
     {
         Enabled = true, Title = "חבר מביא חבר — ואולי זוכים ב־888 ₪!", Prize = "888 ₪", Lead = "יש לכם קישור אישי ל-PORTAL X?", Body = "גוף", DrawLabel = "תאריך ההגרלה",
-        DrawDate = "יום ראשון, ג׳ בטבת תשפ״ז — 13/12/2026", ButtonLabel = "לקישור האישי שלי", MinBuyers = 4,
+        DrawDate = "יום ראשון, ג׳ בטבת תשפ״ז — 13/12/2026", ButtonLabel = "לקישור האישי שלי",
     };
 
     [Fact]
@@ -62,7 +65,9 @@ public class UpgradeTests
         Assert.Equal("חבר מביא חבר — ואולי זוכים ב־888 ₪!", c.Title);
         Assert.Equal("יום ראשון, ג׳ בטבת תשפ״ז — 13/12/2026", c.DrawDate);
         Assert.Equal("לקישור האישי שלי", c.ButtonLabel);
-        Assert.Equal(4, c.MinBuyers);
+        // the rule of the draw: one ticket for every purchase through the personal link, never "4 different buyers"
+        Assert.Contains("כרטיס אחד", c.Body);
+        Assert.DoesNotContain("4 רוכשים", c.Body + c.PopupBody);
         Assert.Equal("חברים מביאים חברים — ואולי זוכים ב־888 ₪!", c.PopupTitle);
     }
 

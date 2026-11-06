@@ -75,6 +75,9 @@ public static class ReferralEndpoints
             return Results.File(bytes, "text/csv; charset=utf-8", $"portalx-personal-links-{DateTime.UtcNow:yyyy-MM-dd}.csv");
         });
 
+        // the draw: how many tickets each link owner has (admin only; never shown on the public site)
+        secured.MapGet("/draw", async (ReferralAdmin admin) => Results.Ok(await admin.DrawAsync()));
+
         secured.MapGet("/referrals/{id:guid}", async (Guid id, HttpRequest r, ReferralAdmin admin, SiteOptions site) =>
             await admin.DetailsAsync(id, MailEndpoints.SiteUrl(site, r)) is { } d ? Results.Ok(d) : Results.NotFound(new ApiError("no-link", "הקישור לא נמצא.")));
 

@@ -846,13 +846,13 @@ public class SumitPaymentTests
 
         var paid = await s.Order(b.Id);
         paid.ReferralLinkId = Guid.NewGuid();
-        Assert.Equal(1, CampaignContent.QualifyingBuyers([paid]));
+        Assert.Single(CampaignContent.Tickets([paid]));
 
         var admin = await AdminAsync(s);
         Assert.Equal(HttpStatusCode.OK, (await admin.PostAsync($"/api/admin/orders/{b.Id}/mark-refunded", null)).StatusCode);
         var refunded = await s.Order(b.Id);
         refunded.ReferralLinkId = paid.ReferralLinkId;
-        Assert.Equal(0, CampaignContent.QualifyingBuyers([refunded]));
+        Assert.Empty(CampaignContent.Tickets([refunded]));
     }
 
     [Fact]
@@ -864,7 +864,7 @@ public class SumitPaymentTests
         var order = await s.Order(b.Id);
         order.ReferralLinkId = Guid.NewGuid();
         Assert.True(order.IsTest);
-        Assert.Equal(0, CampaignContent.QualifyingBuyers([order]));
+        Assert.Empty(CampaignContent.Tickets([order]));
     }
 
     // ------------------------------------------------------------------ the real connection check and the trial purchase

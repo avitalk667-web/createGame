@@ -173,6 +173,8 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
         ResetProgress(room, scenario);
         room.Phase = RoomPhase.Intro;
         room.IntroStartedAt = now;
+        // the first time the players enter the game itself; a replay or a reconnect never sets it again
+        room.FirstStartedAt ??= now;
         room.StartedAt = null;
         room.EndedAt = null;
         room.UpdatedAt = now;

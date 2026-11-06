@@ -3,16 +3,17 @@ import { GameService } from '../core/game.service';
 import { characterInfo } from '../core/models';
 import { IconComponent } from '../ui/icon.component';
 import { ResultsEmailComponent } from '../ui/results-email.component';
+import { ResultShareComponent } from '../ui/result-share.component';
 
 /** Step 6–7: success scene result — time, achievements, the personal ranking and the group result; back home (spec §4). */
 @Component({
   selector: 'px-result',
-  imports: [IconComponent, ResultsEmailComponent],
+  imports: [IconComponent, ResultsEmailComponent, ResultShareComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @let r = game.snapshot()?.result;
     <div class="wrap">
-      <section class="result card">
+      <section #card class="result card">
         <h1 class="gold-title">תוצאת המשחק</h1>
         @if (r) {
           <div class="stats">
@@ -48,11 +49,13 @@ import { ResultsEmailComponent } from '../ui/results-email.component';
               <div class="a"><span class="trophy">🏆</span><div><b>{{ a.title }}</b><p>{{ a.description }}</p></div></div>
             }
           </div>
-          <px-results-email />
+          <!-- a picture of this card as it is shown (without the buttons and the email form) to copy, share or save -->
+          <px-result-share [target]="card" [ready]="!!r" fileName="PORTAL-X-הפורטל-האחרון.png" />
+          <px-results-email class="no-capture" />
         } @else {
           <p class="muted">מחשבים את התוצאה...</p>
         }
-        <div class="actions">
+        <div class="actions no-capture">
           <button class="btn" (click)="home.emit()">חזרה לדף הבית</button>
         </div>
       </section>

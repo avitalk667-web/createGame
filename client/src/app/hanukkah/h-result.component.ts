@@ -2,16 +2,17 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, output } f
 import { RouterLink } from '@angular/router';
 import { GameService } from '../core/game.service';
 import { ResultsEmailComponent } from '../ui/results-email.component';
+import { ResultShareComponent } from '../ui/result-share.component';
 
 /** Results of the Hanukkah journey (spec Part G §21): group score, personal ranking, contributions, time, hints, winner. */
 @Component({
   selector: 'px-h-result',
-  imports: [RouterLink, ResultsEmailComponent],
+  imports: [RouterLink, ResultsEmailComponent, ResultShareComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="wrap">
       <div class="confetti" aria-hidden="true">@for (i of confetti; track i) { <i [style.--i]="i"></i> }</div>
-      <section class="card result" aria-labelledby="res-title">
+      <section #card class="card result" aria-labelledby="res-title">
         <h1 id="res-title" class="gold-title">{{ freeGame() ? 'עברתם את שער הסודות!' : 'השלמתם את מסע החנוכה!' }}</h1>
         <p class="sub">מי גילה הכי הרבה, פתר הכי הרבה והוביל את הקבוצה לניצחון?</p>
 
@@ -69,9 +70,12 @@ import { ResultsEmailComponent } from '../ui/results-email.component';
           </details>
         }
 
-        <px-results-email />
+        <!-- a picture of this card as it is shown (without the buttons and the email form) to copy, share or save -->
+        <px-result-share [target]="card" [ready]="!!score()" [fileName]="freeGame() ? 'PORTAL-X-שער-הסודות.png' : 'PORTAL-X-סוד-פך-השמן.png'" />
 
-        <div class="actions">
+        <px-results-email class="no-capture" />
+
+        <div class="actions no-capture">
           @if (freeGame()) { <a class="btn primary" routerLink="/" fragment="games">גלו את שאר המשחקים</a> }
           <button class="btn" (click)="home.emit()">לדף הבית</button>
         </div>
