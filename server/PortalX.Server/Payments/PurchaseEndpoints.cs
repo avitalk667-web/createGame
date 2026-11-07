@@ -57,7 +57,7 @@ public static class PurchaseEndpoints
         api.MapGet("/orders/{id:guid}", async (Guid id, HttpRequest http, PurchaseService purchases) =>
             await purchases.FindOrderAsync(id, http.Headers[OrderKeyHeader]) is { } order
                 ? Results.Ok(await purchases.OrderViewAsync(order))
-                : Results.NotFound(NoOrder)).RequireRateLimiting("join");
+                : Results.NotFound(NoOrder)).AddEndpointFilter(PortalX.Server.Security.UsageLimits.Join);
 
         api.MapPost("/orders/{id:guid}/game", async (Guid id, HttpRequest http, PurchaseService purchases) =>
         {

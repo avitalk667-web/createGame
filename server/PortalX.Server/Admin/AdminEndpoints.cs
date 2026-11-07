@@ -64,6 +64,20 @@ public static class AdminEndpoints
 
         secured.MapGet("/me", (HttpContext ctx) => Results.Ok(new { name = AdminAuth.Name(ctx.User) }));
 
+        // How the server sees this request's address behind Render's proxies — to confirm, from a phone network and
+        // from a Wi-Fi, that each one is told apart correctly. Only the admin's own request is shown.
+        secured.MapGet("/diagnostics/client", (HttpContext ctx) => Results.Ok(new
+        {
+            clientIp = ctx.Connection.RemoteIpAddress?.ToString(),
+            limitKey = PortalX.Server.Security.ClientIp.Key(ctx),
+            directPeer = ctx.Items[PortalX.Server.Security.ClientIp.OriginalPeerItem] as string,
+            forwardedFor = ctx.Request.Headers["X-Forwarded-For"].ToString(),
+            cfConnectingIp = ctx.Request.Headers["CF-Connecting-IP"].ToString(),
+            trueClientIp = ctx.Request.Headers["True-Client-IP"].ToString(),
+            realIp = ctx.Request.Headers["X-Real-IP"].ToString(),
+            browserId = PortalX.Server.Security.BrowserIdentity.Of(ctx) != null ? "valid" : "none",
+        }));
+
         secured.MapGet("/dashboard", async (HttpRequest r, AdminService s) => Results.Ok(await s.DashboardAsync(AdminFilter.Parse(r))));
 
         // the statistics tab: sales, activity, games and personal links in a range of Israel days

@@ -91,33 +91,40 @@ builder.Services.AddSignalR(o =>
     o.PayloadSerializerOptions.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
 });
 
-// Behind a cloud proxy (Render) the real client IP and https scheme arrive in X-Forwarded-* headers;
-// needed so rate limiting is per player and not per proxy.
+// Behind a cloud proxy (Render) the https scheme arrives in X-Forwarded-Proto. The visitor's address is read from
+// X-Forwarded-For by ClientIp (right to left, past Render's and Cloudflare's own hops), not by this middleware.
 builder.Services.Configure<ForwardedHeadersOptions>(o =>
 {
-    o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    o.ForwardedHeaders = ForwardedHeaders.XForwardedProto;
     o.KnownNetworks.Clear();
     o.KnownProxies.Clear();
 });
+// per-browser limits for the free game and for entering games (see Security/ClientIdentity.cs)
+builder.Services.AddSingleton<PortalX.Server.Security.BrowserIdentity>();
+builder.Services.AddSingleton<PortalX.Server.Security.UsageLimiter>();
+builder.Services.AddSingleton<PortalX.Server.Security.FreeGameReuse>();
 
 // Rate limiting for the public API (spec §19). Limits per IP per minute, configurable (tests raise them).
 static int Limit(HttpContext ctx, string key, int fallback) => ctx.RequestServices.GetRequiredService<IConfiguration>().GetValue(key, fallback);
 builder.Services.AddRateLimiter(o =>
 {
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    // a clear message with the real wait, instead of an empty answer
+    o.OnRejected = async (ctx, token) =>
+    {
+        var wait = ctx.Lease.TryGetMetadata(MetadataName.RetryAfter, out var after) ? after : TimeSpan.FromMinutes(1);
+        ctx.HttpContext.Response.Headers.RetryAfter = Math.Max(1, (int)Math.Ceiling(wait.TotalSeconds)).ToString();
+        await ctx.HttpContext.Response.WriteAsJsonAsync(new ApiError("rate", $"יותר מדי ניסיונות בזמן קצר. נסו שוב {PortalX.Server.Security.UsageLimiter.Wait(wait)}."), token);
+    };
     o.AddPolicy("create", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:CreatePerMinute", 10), Window = TimeSpan.FromMinutes(1) }));
-    o.AddPolicy("join", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
-        _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:JoinPerMinute", 40), Window = TimeSpan.FromMinutes(1) }));
     o.AddPolicy("payment-check", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:PaymentCheckPerMinute", 10), Window = TimeSpan.FromMinutes(1) }));
     o.AddPolicy("payment-ipn", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:PaymentIpnPerMinute", 60), Window = TimeSpan.FromMinutes(1) }));
     o.AddPolicy("coupon", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:CouponPerMinute", 20), Window = TimeSpan.FromMinutes(1) }));
-    // free trial games: a few per address per hour, so the free game cannot be used to flood the server
-    o.AddPolicy("free-game", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
-        _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:FreeGamesPerHour", 6), Window = TimeSpan.FromHours(1) }));
+    // the free game and entering games are limited per browser and per address by UsageLimits (Security/ClientIdentity.cs)
     o.AddPolicy("results-email", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:ResultsEmailPer10Minutes", 10), Window = TimeSpan.FromMinutes(10) }));
     o.AddPolicy("unsubscribe", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
@@ -142,6 +149,7 @@ if (!await DatabaseStartup.TryInitializeAsync(app.Services, app.Logger))
     DatabaseStartup.RetryInBackground(app.Services, app.Logger, app.Lifetime.ApplicationStopping);
 
 app.UseForwardedHeaders();
+PortalX.Server.Security.ClientIp.UseClientIp(app);
 // Until the database is ready, game endpoints answer 503 with a Hebrew message instead of failing.
 app.Use(async (ctx, next) =>
 {
@@ -159,6 +167,9 @@ app.Use(async (ctx, next) =>
     }
     await next();
 });
+// the anonymous browser id of API requests (read, or given to a browser that has none)
+var browserIds = app.Services.GetRequiredService<PortalX.Server.Security.BrowserIdentity>();
+app.Use((ctx, next) => browserIds.HandleAsync(ctx, () => next()));
 app.UseDefaultFiles();
 app.UseStaticFiles(StaticCaching.Options);
 app.UseRateLimiter();
@@ -226,7 +237,7 @@ api.MapGet("/rooms/{code}", async (string code, RoomService rooms, ScenarioCatal
         // open until the game is finished, also in the middle of it, while a seat is free (spec 3)
         canJoin = GameEngine.IsOpenForJoining(room) && taken < rooms.Engine.MaxPlayers(room) && closure == null,
     });
-}).RequireRateLimiting("join");
+}).AddEndpointFilter(PortalX.Server.Security.UsageLimits.Join);
 
 // "Is there already a seat for me in this game?" — read from this game's HttpOnly seat cookie, so a player who
 // closed the tab or the browser returns to the same participant instead of joining again (spec 4).
@@ -250,7 +261,7 @@ api.MapGet("/rooms/{code}/seat", async (string code, HttpRequest http, RoomServi
             status = state.ToString().ToLowerInvariant(), canReturn, isHost = room.HostPlayerId == player.Id,
         },
     });
-}).RequireRateLimiting("join");
+}).AddEndpointFilter(PortalX.Server.Security.UsageLimits.Join);
 
 api.MapPost("/rooms/{code}/players", async (string code, JoinRequest req, HttpContext http, RoomService rooms, Microsoft.AspNetCore.SignalR.IHubContext<GameHub> hub) =>
 {
@@ -272,7 +283,7 @@ api.MapPost("/rooms/{code}/players", async (string code, JoinRequest req, HttpCo
     // the seat survives closing the tab or the browser (HttpOnly, this game only)
     http.Response.Cookies.Append(RoomService.SeatCookie(room.Id), token, RoomService.SeatCookieOptions(http.Request));
     return Results.Ok(new { playerId = created.Id, token, roomId = room.Id });
-}).RequireRateLimiting("join");
+}).AddEndpointFilter(PortalX.Server.Security.UsageLimits.Join);
 
 app.MapHub<GameHub>("/hubs/game");
 // personal links: "/r/{token}" starts this visit's referral session and opens the home page

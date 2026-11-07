@@ -38,6 +38,15 @@ export const myLinkStore = {
   },
 };
 
+/** "Try again in 23 minutes", from a Retry-After header in seconds. */
+export function waitMessage(retryAfter: string | null): string {
+  const s = Number(retryAfter);
+  if (!Number.isFinite(s) || s <= 0) return 'יותר מדי ניסיונות בזמן קצר. נסו שוב בעוד כמה דקות.';
+  const m = Math.ceil(s / 60);
+  const when = s < 60 ? 'בעוד פחות מדקה' : m === 1 ? 'בעוד דקה' : m === 2 ? 'בעוד שתי דקות' : m >= 60 ? 'בעוד שעה' : `בעוד ${m} דקות`;
+  return `יותר מדי ניסיונות בזמן קצר. נסו שוב ${when}.`;
+}
+
 export interface RoomInfo {
   code: string;
   scenarioId: string;
@@ -66,7 +75,8 @@ export class ApiService {
       throw new ApiError('network', 'אין חיבור לשרת. בדקו את החיבור לאינטרנט ונסו שוב.');
     }
     const data = await res.json().catch(() => null);
-    if (res.status === 429) throw new ApiError('rate', data?.message ?? 'יותר מדי ניסיונות. המתינו דקה ונסו שוב.');
+    // the server says how long to wait; without its message, the wait comes from Retry-After (never a fixed "minute")
+    if (res.status === 429) throw new ApiError(data?.code ?? 'rate', data?.message ?? waitMessage(res.headers.get('Retry-After')));
     if (!res.ok) throw new ApiError(data?.code ?? 'error', data?.message ?? 'אירעה שגיאה. נסו שוב.');
     return data as T;
   }

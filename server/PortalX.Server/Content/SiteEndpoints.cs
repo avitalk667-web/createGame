@@ -4,6 +4,7 @@ using PortalX.Server.Data;
 using PortalX.Server.Domain;
 using PortalX.Server.Game;
 using PortalX.Server.Payments;
+using PortalX.Server.Security;
 
 namespace PortalX.Server.Content;
 
@@ -32,7 +33,7 @@ public static class SiteEndpoints
 
         // The free trial game (spec 1.5): no payment, no account, no entitlement — and never revenue.
         api.MapPost("/products/{id}/free-game", async (string id, HttpRequest http, PortalDbContext db, ScenarioCatalog scenarios, RoomService rooms,
-            PortalX.Server.Referrals.ReferralService referrals, ILoggerFactory logs) =>
+            PortalX.Server.Referrals.ReferralService referrals, UsageLimiter limiter, FreeGameReuse reuse, ILoggerFactory logs) =>
         {
             var product = await db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id && p.Status == ProductStatus.Published);
             if (product == null) return Results.NotFound(new ApiError("no-product", "המשחק לא נמצא."));
@@ -40,17 +41,49 @@ public static class SiteEndpoints
             if (!product.IsFree) return Results.Json(new ApiError("not-free", "המשחק הזה אינו חינמי. אפשר לרכוש אותו בעמוד המשחק."), statusCode: 403);
             if (!PurchaseService.IsPlayable(product, scenarios)) return Results.Json(new ApiError("not-available", "המשחק עדיין לא זמין."), statusCode: 409);
             if (SaleWindow.Refusal(product, DateTime.UtcNow) is { } closed) return Results.Json(new ApiError(closed.Code, closed.Message), statusCode: closed.Status);
-            // the personal link of this visit, read from the server-side visit record (never from the request), kept on the game
-            var referral = await referrals.ResolveVisitAsync(http.Cookies[PortalX.Server.Referrals.ReferralService.VisitCookie]);
-            var (room, claim) = await rooms.CreateRoomAsync(product.ScenarioId!, r =>
+
+            var ctx = http.HttpContext;
+            var browser = BrowserIdentity.Of(ctx);
+            var gate = browser != null ? reuse.LockFor(browser) : null;
+            if (gate != null) await gate.WaitAsync();
+            try
             {
-                r.ProductId = product.Id;
-                r.AccessSource = "free-sample";
-                r.MaxPlayers = rooms.Engine.MaxPlayersFor(product.MaxPlayers);
-                r.ReferralLinkId = referral;
-            });
-            logs.CreateLogger("FreeGame").LogInformation("Free game {Code} opened for {Product}", room.Code, product.Id);
-            return Results.Ok(new { code = room.Code, hostClaim = claim });
-        }).RequireRateLimiting("free-game");
+                // the same browser pressing again before its game started (back, refresh, a retry): the same game, not
+                // another one, and it is not counted again
+                if (browser != null && reuse.Find(browser, product.Id, DateTime.UtcNow) is { } prev)
+                {
+                    var still = await db.Rooms.AsNoTracking().Where(r => r.Id == prev.RoomId)
+                        .Select(r => new { r.Phase, r.FirstStartedAt, r.ProductId }).FirstOrDefaultAsync();
+                    if (still != null && still.Phase == RoomPhase.Lobby && still.FirstStartedAt == null && still.ProductId == product.Id)
+                        return Results.Ok(new { code = prev.Code, hostClaim = prev.HostClaim });
+                    reuse.Forget(browser, product.Id);
+                }
+
+                // per browser first, per address only as a looser safety net (many people share one address)
+                var v = UsageLimits.FreeGame(ctx, limiter, out var code, out var message);
+                if (!v.Allowed)
+                {
+                    logs.CreateLogger("FreeGame").LogInformation("Free game refused ({Code}) for {Product}", code, product.Id);
+                    return UsageLimiter.TooMany(ctx, code, message, v.RetryAfter);
+                }
+
+                // the personal link of this visit, read from the server-side visit record (never from the request), kept on the game
+                var referral = await referrals.ResolveVisitAsync(http.Cookies[PortalX.Server.Referrals.ReferralService.VisitCookie]);
+                var (room, claim) = await rooms.CreateRoomAsync(product.ScenarioId!, r =>
+                {
+                    r.ProductId = product.Id;
+                    r.AccessSource = "free-sample";
+                    r.MaxPlayers = rooms.Engine.MaxPlayersFor(product.MaxPlayers);
+                    r.ReferralLinkId = referral;
+                });
+                if (browser != null) reuse.Remember(browser, product.Id, new FreeGameReuse.Opened(room.Id, room.Code, claim, DateTime.UtcNow));
+                logs.CreateLogger("FreeGame").LogInformation("Free game {Code} opened for {Product}", room.Code, product.Id);
+                return Results.Ok(new { code = room.Code, hostClaim = claim });
+            }
+            finally
+            {
+                gate?.Release();
+            }
+        });
     }
 }

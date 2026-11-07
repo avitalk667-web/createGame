@@ -34,6 +34,9 @@ public class HubIntegrationTests
                 ["RateLimits:JoinPerMinute"] = "100000",
                 ["RateLimits:AdminLoginPerMinute"] = "100000",
                 ["RateLimits:FreeGamesPerHour"] = "100000",
+                ["RateLimits:FreeGamesPerBrowserPerHour"] = "100000",
+                ["RateLimits:FreeGamesNewBrowserPerHour"] = "100000",
+                ["RateLimits:JoinPerBrowserPerMinute"] = "100000",
                 ["RateLimits:CouponPerMinute"] = "100000",
                 ["Admin:Username"] = AdminTests.Username,
                 ["Admin:PasswordHash"] = PortalX.Server.Admin.AdminAuth.HashPassword(AdminTests.Password),
@@ -317,7 +320,8 @@ public class HubIntegrationTests
         var browser = _factory.CreateClient();
         var join = await browser.PostAsJsonAsync($"/api/rooms/{code}/players", new { nickname = "דוד", characterId = "scholar", appearance = "{}" });
         join.EnsureSuccessStatusCode();
-        var setCookie = join.Headers.GetValues("Set-Cookie").Single();
+        // the seat cookie (a browser's first request also gets its anonymous browser id)
+        var setCookie = join.Headers.GetValues("Set-Cookie").Single(c => !c.StartsWith(PortalX.Server.Security.BrowserIdentity.Cookie + "="));
         Assert.Contains("httponly", setCookie.ToLowerInvariant());
         var joined = await join.Content.ReadFromJsonAsync<JsonElement>(Json);
         var guestId = joined.GetProperty("playerId").GetString();
