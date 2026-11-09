@@ -139,6 +139,42 @@ public class ProductCatalogTests
     }
 
     [Fact]
+    public async Task The_stone_maze_card_never_tells_how_many_rooms_and_admin_texts_stay()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PortalDbContext>();
+        var p = await db.Products.FirstAsync(x => x.Id == "stone-maze");
+        var original = p.FeaturesJson;
+        try
+        {
+            // a row seeded with the room count (as on the live site): the line is replaced in its place, the others stay
+            p.FeaturesJson = "[\"חדש!\",\"2 חדרים · 6 חידות\",\"1–4 משתתפים\",\"ניקוד אישי וקבוצתי\"]";
+            await db.SaveChangesAsync();
+            await ProductSeed.ApplyFeatureFixesAsync(db);
+            await db.Entry(p).ReloadAsync();
+            Assert.Equal(["חדש!", "חידות חשיבה ושיתוף פעולה", "1–4 משתתפים", "ניקוד אישי וקבוצתי"], JsonSerializer.Deserialize<List<string>>(p.FeaturesJson));
+            Assert.DoesNotContain("חדרים", p.FeaturesJson);
+            // only that line: the price, the name and the rest of the row are untouched
+            Assert.Equal(39m, p.PriceIls);
+            Assert.Equal("מבוך האבן", p.Name);
+            // a text the admin wrote is never touched
+            p.FeaturesJson = "[\"חדר מאתגר\"]";
+            await db.SaveChangesAsync();
+            await ProductSeed.ApplyFeatureFixesAsync(db);
+            await db.Entry(p).ReloadAsync();
+            Assert.Equal(["חדר מאתגר"], JsonSerializer.Deserialize<List<string>>(p.FeaturesJson));
+        }
+        finally
+        {
+            p.FeaturesJson = original;
+            await db.SaveChangesAsync();
+        }
+        // the default catalog file never names the rooms on the card either
+        var seed = ProductSeed.LoadDefault().Single(x => x.Id == "stone-maze");
+        Assert.DoesNotContain(seed.Features, f => f.Contains("חדר"));
+    }
+
+    [Fact]
     public async Task The_last_portal_card_shows_its_scoring_instead_of_its_length_and_admin_texts_stay()
     {
         using var scope = _factory.Services.CreateScope();

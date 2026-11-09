@@ -64,6 +64,8 @@ public sealed class ProductSeed
     [
         // the last portal's card shows its scoring instead of its length
         ("last-portal", "25–35 דקות", "ניקוד אישי וקבוצתי"),
+        // the Stone Maze's card speaks of the challenge, never of how many rooms it has
+        ("stone-maze", "2 חדרים · 6 חידות", "חידות חשיבה ושיתוף פעולה"),
     ];
 
     public static async Task ApplyFeatureFixesAsync(PortalDbContext db)

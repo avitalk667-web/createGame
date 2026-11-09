@@ -106,10 +106,11 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
             <button class="btn" (click)="load()">נסו שוב</button>
           </div>
         } @else {
-          <div class="grid">
+          <div class="grid" [style.--cols]="cols()" [class.two]="cols() === 2" [class.one]="cols() === 1">
             @for (p of products(); track p.id) {
               <article class="product card" [class.free]="p.isFree">
                 @if (p.isFree) { <span class="ribbon">חינם</span> }
+                @else if (RIBBON[p.id]; as r) { <span class="ribbon challenge"><span aria-hidden="true">✦</span> {{ r }}</span> }
                 <a class="cover" [routerLink]="['/games', p.id]" [attr.aria-label]="'פרטים על ' + p.name">
                   <img [src]="p.coverImage" [alt]="p.name" loading="lazy" />
                 </a>
@@ -267,7 +268,15 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
     .big { font-size:1.15rem; padding:.85em 2em; }
     h2 { font-family:var(--font-title); font-size:2rem; margin:0 0 1rem; }
     .games { padding-block:1rem 2rem; scroll-margin-top:84px; }
-    .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:1.25rem; }
+    /* the cards in balanced rows: as many per row as cols() says (4 games → 2 + 2, 6 → 3 + 3), all the same width and
+       height, a last short row centred; fewer columns on a tablet, one on a phone */
+    .grid { --cols:3; --gap:clamp(1.25rem, 2.2vw, 2rem); display:flex; flex-wrap:wrap; justify-content:center; gap:var(--gap); }
+    .grid.two { max-width:1120px; margin-inline:auto; }
+    .grid.one { max-width:560px; margin-inline:auto; }
+    .grid > .product { flex:0 0 calc((100% - (var(--cols) - 1) * var(--gap)) / var(--cols)); min-width:0; }
+    .ribbon.challenge { background:linear-gradient(180deg, #1d3c74, #0f1f45); color:#ffe39a; border:1px solid rgba(255,214,120,.85);
+      box-shadow:0 0 0 1px rgba(110,180,255,.35), 0 0 18px rgba(90,170,255,.45), 0 4px 14px rgba(0,0,0,.45); letter-spacing:.02em; }
+    .ribbon.challenge span { color:#8fd0ff; }
     .product { position:relative; }
     .product.free { border-color: var(--gold); box-shadow: 0 0 0 1px rgba(224,185,92,.4), var(--shadow); }
     .ribbon { position:absolute; top:12px; inset-inline-start:12px; z-index:2; background:linear-gradient(180deg,#ffe08a,#c9a24d); color:#2a1606;
@@ -379,8 +388,13 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
       .links, .wide-only { display:none !important; }
       .menu-btn { display:inline-flex !important; }
     }
+    @media (max-width: 1100px) {
+      .grid > .product { flex-basis:calc((100% - var(--gap)) / 2); }
+    }
+    @media (max-width: 680px) {
+      .grid > .product { flex-basis:100%; }
+    }
     @media (max-width: 760px) {
-      .grid { grid-template-columns:1fr; }
       .hero { padding-block:1rem 1.75rem; gap:1.1rem; }
       .hero-art { border-radius:16px; }
       .hero-cta { width:100%; max-width:420px; }
@@ -402,6 +416,13 @@ export class HomePage {
   products = signal<Product[]>([]);
   /** The free trial game, for the "want to try first?" box of how it works. */
   freeGameId = computed(() => this.products().find((p) => p.isFree)?.id ?? 'gate-of-secrets');
+  /** A design ribbon on some games' cards (the free game has its own "חינם"). */
+  readonly RIBBON: Record<string, string> = { 'stone-maze': 'חדר מאתגר' };
+  /** Cards in a row on a wide screen, by how many games are published: 4 → two rows of 2, 6 → two rows of 3. */
+  cols = computed(() => {
+    const n = this.products().length;
+    return n <= 1 ? 1 : n === 2 || n === 4 ? 2 : 3;
+  });
   loading = signal(true);
   error = signal<string | null>(null);
   showSettings = signal(false);
