@@ -185,6 +185,29 @@ public sealed class ScenarioCatalog
                 if (!s.ZoneDifficulty.TryGetValue(z.Id, out var d) || !s.Scoring.Room.ContainsKey(d))
                     throw new InvalidDataException($"{s.Id}: zone {z.Id} has no scored difficulty");
         if (s.Puzzles.Count == 0) throw new InvalidDataException($"{s.Id}: no puzzles");
+        // a game whose rooms are left through doors (the free game, 2.0): only a door opens a room; every room before the
+        // last has exactly one, it opens the next room, and it waits for the room's puzzles (the engine checks that too)
+        if (s.Puzzles.Any(p => p.Type == "exitdoor"))
+        {
+            foreach (var p in s.Puzzles.Where(p => p.UnlocksZone != null && p.Type != "exitdoor"))
+                throw new InvalidDataException($"{p.Id}: only the room's door may open the next room");
+            var zones = s.Zones.OrderBy(z => z.Order).ToList();
+            for (var i = 0; i < zones.Count; i++)
+            {
+                // every room has one door: to the next room, or (the last room) the exit gate, which opens no room
+                var last = i == zones.Count - 1;
+                var doors = s.Puzzles.Where(p => p.Type == "exitdoor" && p.Zone == zones[i].Id).ToList();
+                if (last && doors.Count == 0) continue;
+                if (doors.Count != 1 || doors[0].UnlocksZone != (last ? null : zones[i + 1].Id))
+                    throw new InvalidDataException($"{zones[i].Id}: needs exactly one door, " + (last ? "the exit gate" : $"to {zones[i + 1].Id}"));
+                var door = doors[0];
+                var rest = s.Puzzles.Where(p => p.Zone == door.Zone && p.Id != door.Id && !p.Bonus).ToList();
+                if (rest.Any(p => p.Order > door.Order) || door.RequiresPuzzle == null || rest.All(p => p.Id != door.RequiresPuzzle))
+                    throw new InvalidDataException($"{door.Id}: the door must come after every puzzle of its room");
+                if (door.PublicData["needsItem"]?.GetValue<string>() is { } key && s.Item(key) == null)
+                    throw new InvalidDataException($"{door.Id}: unknown key {key}");
+            }
+        }
         foreach (var t in s.PersonalTasks)
             if (s.Zones.All(z => z.Id != t.Zone)) throw new InvalidDataException($"task {t.Id}: unknown zone {t.Zone}");
         if (s.PersonalTasks.Select(t => t.Id).Distinct().Count() != s.PersonalTasks.Count) throw new InvalidDataException($"{s.Id}: duplicate task id");
@@ -203,6 +226,46 @@ public sealed class ScenarioCatalog
                     throw new InvalidDataException($"{p.Id}: an inspection needs targets");
                 foreach (var t in targets)
                     if (t!["item"]?.GetValue<string>() is { } item && s.Item(item) == null) throw new InvalidDataException($"{p.Id}: unknown item {item}");
+            }
+            if (p.Type == "pendulum")
+            {
+                if (p.PublicData["rounds"] is not System.Text.Json.Nodes.JsonArray { Count: > 0 } rounds)
+                    throw new InvalidDataException($"{p.Id}: a pendulum needs rounds");
+                foreach (var r in rounds)
+                {
+                    var kind = r!["kind"]?.GetValue<string>() ?? "steady";
+                    if (kind is not ("steady" or "varying" or "pause")) throw new InvalidDataException($"{p.Id}: unknown swing {kind}");
+                    if ((r["period"]?.GetValue<double>() ?? 0) <= 0 || (r["amplitude"]?.GetValue<double>() ?? 0) <= 0)
+                        throw new InvalidDataException($"{p.Id}: every round needs a period and an amplitude");
+                    // a larger drift would make the swing run backwards for a moment
+                    if (kind == "varying" && (r["vary"]?.GetValue<double>() ?? 0.9) >= 2.7) throw new InvalidDataException($"{p.Id}: vary must stay under 2.7");
+                }
+                var window = p.PublicData["window"]?.GetValue<double>() ?? 7;
+                if (rounds.Any(r => window >= r!["amplitude"]!.GetValue<double>())) throw new InvalidDataException($"{p.Id}: the target zone is wider than the swing");
+            }
+            if (p.Type == "runechain")
+            {
+                var symbols = p.PublicData["symbols"]?.AsArray().Select(n => n!["id"]!.GetValue<string>()).ToHashSet() ?? [];
+                var stages = p.Solution["stages"]?.AsArray() ?? [];
+                var shapes = p.PublicData["stages"]?.AsArray() ?? [];
+                if (stages.Count == 0 || stages.Count != shapes.Count) throw new InvalidDataException($"{p.Id}: every stage needs its sequence and its public shape");
+                for (var i = 0; i < stages.Count; i++)
+                {
+                    var seq = stages[i]!.AsArray().Select(n => n!.GetValue<string>()).ToList();
+                    if (seq.Count != shapes[i]!["length"]?.GetValue<int>() || seq.Any(x => !symbols.Contains(x)))
+                        throw new InvalidDataException($"{p.Id}: stage {i + 1} must be {shapes[i]!["length"]} known symbols");
+                    if (shapes[i]!["dark"]?.GetValue<int>() is { } dark && (dark < 0 || dark >= seq.Count || p.PersonalClues.Count == 0))
+                        throw new InvalidDataException($"{p.Id}: a light in the dark needs a place in the stage and a private clue that tells it");
+                }
+            }
+            if (p.Type == "assembly")
+            {
+                var pieces = p.PublicData["pieces"]?.AsArray().Select(n => n!["id"]!.GetValue<string>()).OrderBy(x => x).ToList() ?? [];
+                var start = p.PublicData["start"]?["order"]?.AsArray().Select(n => n!.GetValue<string>()).OrderBy(x => x).ToList() ?? [];
+                var goal = p.Solution["order"]?.AsArray().Select(n => n!.GetValue<string>()).OrderBy(x => x).ToList() ?? [];
+                var turns = p.PublicData["start"]?["turns"]?.AsArray().Count ?? -1;
+                if (pieces.Count == 0 || !pieces.SequenceEqual(start) || !pieces.SequenceEqual(goal) || turns != pieces.Count)
+                    throw new InvalidDataException($"{p.Id}: the start and the solution must place every piece once, with a turn for each");
             }
             if (p.Bonus && (p.UnlocksZone != null || s.Puzzles.Any(x => x.RequiresPuzzle == p.Id)))
                 throw new InvalidDataException($"{p.Id}: a bonus puzzle may not open a room or be required by another puzzle");

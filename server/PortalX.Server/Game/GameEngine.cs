@@ -295,6 +295,14 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
         {
             ["index"] = c.Index, ["title"] = c.Title, ["text"] = c.Text, ["visual"] = c.Visual,
         }).ToArray());
+        // the free game: a clue held by a player who has been away a while (or gave up the seat) is shown to the others
+        // too, so a group is never stuck without it; its owner keeps it and gets it back on return
+        foreach (var (clue, owner) in AwayClues(room, puzzle, playerId, now))
+            arr.Add(new JsonObject
+            {
+                ["index"] = clue.Index, ["title"] = clue.Title, ["text"] = clue.Text, ["visual"] = clue.Visual,
+                ["away"] = true, ["from"] = owner,
+            });
         var key = new JsonArray(KeyForPlayer(room, puzzle, playerId).Select(k => (JsonNode)new JsonObject
         {
             ["symbol"] = k.Symbol, ["letter"] = k.Letter,
@@ -322,8 +330,39 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
         return Enumerable.Range(0, shareCount).Where(k => n >= shareCount ? idx % shareCount == k : k % n == idx).ToList();
     }
 
+    /// <summary>How long a player must be gone before the clues they hold are shown to the rest (puzzles with "shareWhenAway").</summary>
+    public static readonly TimeSpan AwayAfter = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// The clues of other players who are away — disconnected for <see cref="AwayAfter"/> or with their seat given up —
+    /// when the puzzle asks for it ("shareWhenAway"). Each clue once, with the nickname of the player who holds it.
+    /// </summary>
+    public IReadOnlyList<(PersonalClue Clue, string Owner)> AwayClues(GameRoom room, PuzzleContent puzzle, Guid playerId, DateTime now)
+    {
+        if (puzzle.PublicData["shareWhenAway"]?.GetValue<bool>() != true || puzzle.PersonalClues.Count == 0) return [];
+        var mine = CluesForPlayer(room, puzzle, playerId).Select(c => c.Index).ToHashSet();
+        var result = new List<(PersonalClue, string)>();
+        foreach (var other in ActivePlayers(room).Where(p => p.Id != playerId).OrderBy(p => p.Seat))
+        {
+            var away = other.SeatReleasedAt != null
+                || (!other.IsConnected && other.DisconnectedAt is { } since && now - since >= AwayAfter);
+            if (!away) continue;
+            foreach (var c in CluesForPlayer(room, puzzle, other.Id))
+                if (mine.Add(c.Index)) result.Add((c, other.Nickname));
+        }
+        return result;
+    }
+
     public IReadOnlyList<PersonalClue> CluesForPlayer(GameRoom room, PuzzleContent puzzle, Guid playerId)
     {
+        // "oneHolder": the puzzle's private clues all go to one player only — the second seat when there are several
+        // (so it is not always the host), the only player when alone — and the others must hear it from them
+        if (puzzle.PublicData["oneHolder"]?.GetValue<bool>() == true)
+        {
+            var order = ActivePlayers(room).OrderBy(p => p.Seat).Select(p => p.Id).ToList();
+            var holder = order.Count == 0 ? Guid.Empty : order[Math.Min(1, order.Count - 1)];
+            return holder == playerId ? puzzle.PersonalClues : [];
+        }
         var shares = SharesForPlayer(room, puzzle.PersonalClues.Count, playerId);
         return puzzle.PersonalClues.Where(c => shares.Contains(c.Index)).ToList();
     }

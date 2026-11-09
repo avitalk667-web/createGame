@@ -12,7 +12,7 @@ namespace PortalX.Server.Game;
 /// </summary>
 public sealed partial class GameEngine
 {
-    public static readonly string[] MechanismTypes = ["slots", "maze", "mosaic", "balance", "inspect", "spinner"];
+    public static readonly string[] MechanismTypes = ["slots", "maze", "mosaic", "balance", "inspect", "spinner", "pendulum", "assembly", "runechain", "exitdoor", "cabinetlock", "keychest", "levers", "railway", "gravity"];
 
     // ---------------------------------------------------------------- clues
 
@@ -48,7 +48,10 @@ public sealed partial class GameEngine
 
     public ActionOutcome Operate(GameRoom room, Guid playerId, string puzzleId, JsonElement action, DateTime now)
     {
-        var check = CheckPuzzleAccess(room, playerId, puzzleId, now, out var scenario, out var puzzle, out var state, out var player);
+        // the free game's gravity rod still turns the room back after its cell has opened (only that puzzle type)
+        var flipBack = catalog.Find(room.ScenarioId)?.Puzzles.FirstOrDefault(p => p.Id == puzzleId)?.Type == "gravity"
+            && action.ValueKind == JsonValueKind.Object && action.TryGetProperty("op", out var fop) && fop.GetString() == "flip";
+        var check = CheckPuzzleAccess(room, playerId, puzzleId, now, out var scenario, out var puzzle, out var state, out var player, allowSolved: flipBack);
         if (check != null) return check;
         if (!MechanismTypes.Contains(puzzle!.Type)) return ActionOutcome.Fail("wrong-action", "את החידה הזאת פותרים בהזנת תשובה.");
         string op;
@@ -74,6 +77,15 @@ public sealed partial class GameEngine
                 "balance" => OperateBalance(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
                 "inspect" => OperateInspect(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
                 "spinner" => OperateSpinner(room, scenario!, puzzle, state!, player!, world, mech, op, now),
+                "pendulum" => OperatePendulum(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
+                "assembly" => OperateAssembly(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
+                "runechain" => OperateSequence(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
+                "exitdoor" => OperateExitDoor(room, scenario!, puzzle, state!, player!, world, op, action, now),
+                "cabinetlock" => OperateCabinet(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
+                "keychest" => OperateKeyChest(room, scenario!, puzzle, state!, player!, world, op, now),
+                "levers" => OperateLevers(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
+                "railway" => OperateRailway(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
+                "gravity" => OperateGravity(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
                 _ =>ActionOutcome.Fail("wrong-action", "פעולה לא מוכרת."),
             };
         }
@@ -119,6 +131,8 @@ public sealed partial class GameEngine
             "reset" => "החזיר את כל הפריטים למקומם",
             "lever" when after != null && action.TryGetProperty("index", out var i) && i.GetInt32() is var k && k >= 0 && k < after.Levers.Count
                 => $"הזיז את „{puzzle.PublicData["levers"]![k]!["label"]!.GetValue<string>()}” — השער {(after.Levers[k] ? "נפתח" : "נסגר")}",
+            "rotate" when puzzle.Type == "assembly" => "סובב חלק מפה",
+            "swap" when puzzle.Type == "assembly" => "החליף בין שני חלקי מפה",
             "rotate" => "סובב אבן בפסיפס",
             _ => null,
         };
@@ -143,6 +157,14 @@ public sealed partial class GameEngine
                 break;
             case "mosaic":
                 m.Rotations = puzzle.PublicData["start"]!.AsArray().Select(n => n!.GetValue<int>()).ToList();
+                break;
+            case "cabinetlock" or "levers":
+                m.Rotations = puzzle.PublicData["start"]!.AsArray().Select(n => n!.GetValue<int>()).ToList();
+                break;
+            case "assembly":
+                var order = puzzle.PublicData["start"]!["order"]!.AsArray().Select(n => n!.GetValue<string>()).ToList();
+                for (var i = 0; i < order.Count; i++) m.Slots[$"p{i + 1}"] = order[i];
+                m.Rotations = puzzle.PublicData["start"]!["turns"]!.AsArray().Select(n => n!.GetValue<int>()).ToList();
                 break;
         }
         return m;

@@ -143,6 +143,14 @@ export interface MechanismState {
   symbols?: string[];
   /** Goes up with every change the server accepts; who made the last one (a change based on an older version is refused). */
   rev?: number;
+  /** The free game's pendulum: when the round's swing started (server time), whether it swings, misses, where it stopped. */
+  startedAt?: string | null;
+  running?: boolean;
+  misses?: number;
+  frozenAngle?: number | null;
+  /** The free game's rune chain: the stage as everyone may see it ('?' = a light in the dark) and the symbols pressed. */
+  shown?: string[] | null;
+  input?: string[] | null;
   lastBy?: string | null;
   lastById?: string | null;
 }

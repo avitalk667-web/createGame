@@ -151,6 +151,12 @@ public sealed class GameHub(RoomService rooms, RoomRuntime runtime, PortalDbCont
     public Task<HubResult> DiscoverClue(string clueId, string clientActionId) =>
         Run("clue", clientActionId, (room, pid) => rooms.Engine.DiscoverClue(room, pid, clueId, DateTime.UtcNow), new JsonObject { ["clueId"] = clueId });
 
+    /// <summary>
+    /// The server's clock, nothing else (no database): the browser times the round trip of a few calls and keeps the
+    /// quickest, so it knows the server's time to within a few milliseconds (the free game's pendulum is drawn and timed by it).
+    /// </summary>
+    public HubResult Clock() => !Allow("clock", 20, 5) ? TooFast() : new HubResult(true, "ok", "", new JsonObject { ["serverNow"] = DateTime.UtcNow });
+
     public Task<HubResult> GetTune(string puzzleId) => Read((room, pid) => rooms.Engine.GetTune(room, pid, puzzleId, DateTime.UtcNow));
 
     public Task<HubResult> GetPersonalClues(string puzzleId) => Read((room, pid) => rooms.Engine.GetPersonalClues(room, pid, puzzleId, DateTime.UtcNow));

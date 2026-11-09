@@ -50,6 +50,42 @@ export class GameService {
     return Date.now() + this.serverOffsetMs;
   }
 
+  /**
+   * A precise server clock (the free game's pendulum is drawn and timed by it): every call that returns the server's time
+   * is a sample — offset = server time − the middle of the round trip — and the quickest recent round trip wins, since
+   * its middle is the least uncertain. serverNow() above stays as it was for everything else.
+   */
+  private clockSamples: { offset: number; rtt: number; at: number }[] = [];
+  private sampleClock(serverIso: string | undefined, sentAt: number, receivedAt: number) {
+    if (!serverIso) return;
+    const rtt = receivedAt - sentAt;
+    this.clockSamples.push({ offset: Date.parse(serverIso) - (sentAt + receivedAt) / 2, rtt, at: receivedAt });
+    // keep the last two minutes, at most 16 samples
+    this.clockSamples = this.clockSamples.filter((x) => receivedAt - x.at < 120_000).slice(-16);
+  }
+  private bestClock() {
+    return this.clockSamples.reduce<{ offset: number; rtt: number } | null>((b, x) => (!b || x.rtt < b.rtt ? x : b), null);
+  }
+  /** The server's time now, in ms, as precisely as the samples allow. */
+  preciseServerNow() {
+    return Date.now() + (this.bestClock()?.offset ?? this.serverOffsetMs);
+  }
+  /** The quickest recent round trip (ms), sent along with timed actions so the server can be fair to a slow connection. */
+  roundTripMs() {
+    return Math.round(this.bestClock()?.rtt ?? 300);
+  }
+  /** A few quick clock calls (when a timed puzzle opens). */
+  async syncClock(times = 4) {
+    for (let i = 0; i < times; i++) {
+      if (!this.hub || this.connection() !== 'connected') return;
+      const sent = Date.now();
+      try {
+        const r = await this.hub.invoke<HubResult<{ serverNow: string }>>('Clock');
+        this.sampleClock(r.data?.serverNow, sent, Date.now());
+      } catch { return; }
+    }
+  }
+
   playerName(id: string | undefined) {
     return this.snapshot()?.players.find((p) => p.id === id)?.nickname ?? '';
   }
@@ -156,7 +192,9 @@ export class GameService {
       return { ok: false, code: 'not-connected', message: 'אין חיבור לשרת כרגע. מתחברים מחדש...' };
     }
     try {
+      const sent = Date.now();
       const r = await this.hub.invoke<HubResult<T>>(method, ...args);
+      this.sampleClock(r.snapshot?.serverNow, sent, Date.now());
       if (r.snapshot) this.applySnapshot(r.snapshot);
       return r;
     } catch {
@@ -181,7 +219,7 @@ export class GameService {
   discoverClue = (clueId: string) => this.invoke<never>('DiscoverClue', clueId, this.actionId());
   getTune = (puzzleId: string) => this.invoke<{ sequence: string[] }>('GetTune', puzzleId);
   getPersonalClues = (puzzleId: string) =>
-    this.invoke<{ clues: { index: number; title: string; text: string; visual: string }[] }>('GetPersonalClues', puzzleId);
+    this.invoke<{ clues: { index: number; title: string; text: string; visual: string; away?: boolean; from?: string }[] }>('GetPersonalClues', puzzleId);
   /** The caller's own secret task in the current room (only they receive it). */
   getPersonalTask = () => this.invoke<{ id?: string; zone?: string; text?: string; done?: boolean; found?: string | null }>('GetPersonalTask');
   /** The caller found what their secret task asked for; the server checks it is their own task and scores it once. */

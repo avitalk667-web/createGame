@@ -221,6 +221,22 @@ public sealed class MechanismState
     /// </summary>
     public string? Controller { get; set; }
     public DateTime? ControlUntil { get; set; }
+    /// <summary>
+    /// The pendulum (free game): when the current round's swing started (server time — every client draws the swing from
+    /// it), whether it is swinging, the misses so far (after a few the target zone widens) and where it stopped.
+    /// Progress counts the successful stops (one per round).
+    /// </summary>
+    public DateTime? StartedAt { get; set; }
+    public bool Running { get; set; }
+    public int Misses { get; set; }
+    public double? FrozenAngle { get; set; }
+    /// <summary>
+    /// The rune chain (free game): the sequence of the current stage as everyone may see it (a symbol shown "in the dark"
+    /// is "?" — only its holder knows it), and the symbols pressed so far in this attempt. StartedAt is when the stage's
+    /// lights begin (every client plays them from it on the server's clock); Progress is the stage; Misses the wrong tries.
+    /// </summary>
+    public List<string>? Shown { get; set; }
+    public List<string>? Input { get; set; }
 }
 
 /// <summary>Personal and group score of a round. The server is the only authority (spec Part G §19).</summary>

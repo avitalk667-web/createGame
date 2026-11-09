@@ -7,11 +7,12 @@ import { GameService } from '../core/game.service';
 import { LobbyComponent } from './lobby.component';
 import { PlayComponent } from './play.component';
 import { HPlayComponent } from '../hanukkah/h-play.component';
+import { SmPlayComponent } from '../stone-maze/sm-play.component';
 
 /** Connects to the room with this tab's player token and shows the screen for the current phase. */
 @Component({
   selector: 'px-room',
-  imports: [RouterLink, LobbyComponent, PlayComponent, HPlayComponent],
+  imports: [RouterLink, LobbyComponent, PlayComponent, HPlayComponent, SmPlayComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @switch (game.connection()) {
@@ -31,6 +32,7 @@ import { HPlayComponent } from '../hanukkah/h-play.component';
     @if (game.snapshot(); as s) {
       @if (s.phase === 'lobby') { <px-lobby (leave)="leave(true)" /> }
       @else if (s.scenarioId === 'hanukkah-oil' || s.scenarioId === 'gate-of-secrets') { <px-h-play (leave)="leave(false)" (leaveForGood)="leave(true)" /> }
+      @else if (s.scenarioId === 'stone-maze') { <px-sm-play (leave)="leave(false)" (leaveForGood)="leave(true)" /> }
       @else { <px-play (leave)="leave(false)" (leaveForGood)="leave(true)" /> }
     }
     @if (game.connection() === 'reconnecting' || game.connection() === 'disconnected') {
