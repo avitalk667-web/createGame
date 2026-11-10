@@ -227,7 +227,8 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
         if (MechanismTypes.Contains(puzzle.Type)) return ActionOutcome.Fail("wrong-action", "את החידה הזאת פותרים בעזרת המנגנון שבחדר.");
 
         bool correct;
-        try { correct = IsCorrect(puzzle, answer, World(room).Questions.GetValueOrDefault(puzzle.Id)); }
+        // a lock whose code is drawn for each game (the free game's cabinet) is checked against this game's code
+        try { correct = GeneratedAnswer(room, scenario!, puzzle, answer, now) ?? IsCorrect(puzzle, answer, World(room).Questions.GetValueOrDefault(puzzle.Id)); }
         catch (Exception) { return ActionOutcome.Fail("bad-answer", "התשובה לא נשלחה בצורה תקינה. נסו שוב."); }
 
         state!.Attempts++;
@@ -288,7 +289,9 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
     {
         var check = CheckPuzzleAccess(room, playerId, puzzleId, now, out _, out var puzzle, out _, out _, ignoreCooldown: true, allowSolved: true);
         if (check != null) return check;
-        if (puzzle!.PersonalClues.Count == 0 && puzzle.PersonalKey.Count == 0)
+        // the free game's compass: only its holder, only while it flashes
+        if (puzzle!.Type == "compass") return CompassFlash(room, puzzle, playerId, now);
+        if (puzzle.PersonalClues.Count == 0 && puzzle.PersonalKey.Count == 0)
             return ActionOutcome.Fail("wrong-action", "לחידה הזאת אין רמזים אישיים.");
         var clues = CluesForPlayer(room, puzzle, playerId);
         var arr = new JsonArray(clues.Select(c => (JsonNode)new JsonObject
@@ -490,13 +493,15 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
         var solvedAll = room.Puzzles.Count(p => p.Status == PuzzleStatus.Solved);
         var wrong = room.Puzzles.Sum(p => p.Attempts) - solvedAll;
         // the game's own puzzles; a bonus puzzle is extra and is not part of "solved X of Y"
-        var main = scenario.Puzzles.Where(p => !p.Bonus).Select(p => p.Id).ToHashSet();
+        // (nor is the free game's finale, the golden key in the gate: it is the end, not a puzzle)
+        var main = scenario.Puzzles.Where(p => !p.Bonus && !IsFinale(p)).Select(p => p.Id).ToHashSet();
         var solved = room.Puzzles.Count(p => p.Status == PuzzleStatus.Solved && main.Contains(p.PuzzleId));
         var players = ActivePlayers(room).ToList();
 
         var earned = new List<string> { "team" };
         if (hints == 0) earned.Add("no-hints");
-        if (duration < options.FastFinishMinutes * 60) earned.Add("fast");
+        // a short game (the free one) sets its own "fast"; the others keep the general one
+        if (duration < (scenario.FastMinutes ?? options.FastFinishMinutes) * 60) earned.Add("fast");
         if (players.Count > 1 && players.All(p => world.Contributions.GetValueOrDefault(p.Id.ToString()) > 0)) earned.Add("everyone");
         if (wrong <= 2) earned.Add("precise");
         var achievements = scenario.Achievements.Where(a => earned.Contains(a.Id)).ToList();
@@ -733,6 +738,8 @@ public sealed partial class GameEngine(ScenarioCatalog catalog, GameOptions opti
             Score = scenario.Scoring != null ? new ScoreBoard() : null,
             CurrentZone = first,
         };
+        // the free game draws its code for each game; every other scenario keeps no secrets
+        GenerateSecrets(scenario, world);
         room.WorldJson = JsonSerializer.Serialize(world, ScenarioCatalog.JsonOptions);
     }
 

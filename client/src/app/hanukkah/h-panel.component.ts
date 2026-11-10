@@ -10,7 +10,7 @@ import { MazePadComponent } from './maze-pad.component';
 const PANEL_PUZZLE: Record<HPanel, string> = {
   riddle: 'h1-riddle', lamp: 'h2-lamp', maze: 'h3-maze', box: 'h3-box', wheel: 'h4-wheel', stand: 'h5-stand',
   lock: 'h5-lock', jugs: 'h6-jugs', mosaic: 'h7-mosaic', pedestals: 'h8-pedestals', final: 'h8-final',
-  map: 'g1-map', symbols: 'g1-symbols', cabinet: 'g1-cabinet', gears: 'g2-gears', scales: 'h7-scales',
+  map: 'g1-map', symbols: 'g1-books', compass: 'g1-compass', cabinet: 'g1-cabinet', scales: 'h7-scales', pipes: 'g2-pipes', weights: 'g2-weights', gatelock: 'g2-gate',
   evidence: 'h1-evidence', board: 'h1-board', book: 'h1-book', wicks: 'h2-wicks', lamptest: 'h2-test', blueprint: 'h2-blueprint',
   sequence: 'h4-sequence', mirror: 'h4-mirror', spin: 'h5-spin', memory: 'h5-memory', corners: 'h5-corners', shelf: 'h6-shelf', oilscale: 'h6-scales',
 };
@@ -19,8 +19,8 @@ export const ITEM_EMOJI: Record<string, string> = {
   'antique-key': '🗝️', 'lamp-base': '⚱️', 'lamp-tank': '🫙', 'lamp-wick': '🧵', 'lamp-glass': '🔮', 'lamp-cover': '🔔',
   'menorah-symbol': '🕎', 'golden-key': '🔑', 'light-stone': '💎', 'dreidel-nun': 'נ', 'dreidel-gimel': 'ג', 'dreidel-he': 'ה',
   'dreidel-pe': 'פ', 'flame-symbol': '🔥', 'golden-jug': '🏺', 'blue-crystal': '🔷',
-  'map-left': '🗺️', 'map-middle': '🗺️', 'map-right': '🗺️', 'sym-compass': '🧭', 'sym-key': '🗝️', 'sym-book': '📖', 'sym-lamp': '🪔',
-  'gs-golden-key': '🔑', 'gear-large': '⚙️', 'gear-small': '⚙️', 'gear-medium': '⚙️',
+  'map-ridge': '🗺️', 'map-river': '🗺️', 'map-rose': '🗺️', 'book-red': '📕', 'book-green': '📗', 'book-blue': '📘', 'book-brown': '📙',
+  'gs-golden-key': '🔑', 'w-book': '📖', 'w-candle': '🕯️', 'w-clock': '🕰️', 'w-cube': '🧊',
   'sc-feather': '🪶', 'sc-key': '🗝️', 'sc-crystal': '💎', 'sc-hourglass': '⏳',
   'ev-book': '📖', 'ev-hourglass': '⏳', 'ev-lamp': '🪔', 'ev-scroll': '📜',
   'w-short': '🧵', 'w-medium': '🧵', 'w-long': '🧵', 'w-star': '⭐',
@@ -29,6 +29,10 @@ export const ITEM_EMOJI: Record<string, string> = {
 };
 
 const LETTERS = 'אבגדהוזחטיכלמנסעפצקרשת'.split('');
+/** The free game's cabinet: the digits typed so far, by game (closing the window keeps them). */
+const CABINET_DRAFT = new Map<string, string>();
+/** The colours of the free game's four books (the compass's marks too). */
+const BOOK_CSS: Record<string, string> = { 'book-red': '#c0392b', 'book-green': '#2e8b4a', 'book-blue': '#2f5fb3', 'book-brown': '#8a5a2b' };
 const MAZE_SYMBOLS: Record<string, string> = { '*': '⭐', F: '🔥', M: '🕎', E: '📦', S: '·' };
 
 /**
@@ -302,8 +306,66 @@ const MAZE_SYMBOLS: Record<string, string> = { '*': '⭐', F: '🔥', M: '🕎',
             }
             @case ('box') { <ng-container *ngTemplateOutlet="digits" /> }
             @case ('cabinet') {
-              @if (backsLine()) { <p class="reveal">בגב הסמלים, לפי סדר המקומות: <b dir="ltr">{{ backsLine() }}</b></p> }
               <ng-container *ngTemplateOutlet="digits" />
+            }
+            @case ('pipes') {
+              <div class="pipes" dir="ltr" role="group" aria-label="קיר הצינורות: מקור המים משמאל, המיכל מימין">
+                @for (cell of pipeCells(); track cell.i) {
+                  <button class="pp" [style.grid-row]="cell.r + 1" [style.grid-column]="cell.c + 2" [class.fixed]="!cell.turn" [class.wet]="cell.wet" [class.leak]="cell.leak"
+                    (click)="operate({ op: 'rotate', index: cell.i })" [disabled]="busy() || !cell.turn || state()?.status === 'solved'"
+                    [attr.aria-label]="cell.turn ? 'סיבוב צינור בשורה ' + (cell.r + 1) + ', עמודה ' + (cell.c + 1) : (cell.kind === 'X' ? 'צינור סדוק' : 'צינור מקובע')">
+                    <svg viewBox="0 0 100 100" aria-hidden="true"><g [attr.transform]="'rotate(' + cell.deg + ' 50 50)'">
+                      @switch (cell.kind) {
+                        @case ('S') { <path d="M0 50 H100" /> }
+                        @case ('L') { <path d="M50 0 Q50 50 100 50" /> }
+                        @default { <path d="M0 50 H34 M66 50 H100" /><path class="crack" d="M40 30 L48 46 L42 54 L52 70" /> }
+                      }
+                    </g></svg>
+                  </button>
+                }
+                <span class="pp-end src" [style.grid-row]="(data().source?.row ?? 0) + 1" style="grid-column:1">💧</span>
+                <span class="pp-end tank" [class.full]="state()?.status === 'solved'" [style.grid-row]="(data().tank?.row ?? 0) + 1" style="grid-column:7">🛢️</span>
+              </div>
+              @if (state()?.status !== 'solved') {
+                <div class="valves">
+                  <button class="btn" [class.on]="mech()?.levers?.[1]" (click)="operate({ op: 'valve', id: 'drain' })" [disabled]="busy()">
+                    {{ mech()?.levers?.[1] ? 'סגירת ברז הניקוז' : 'פתיחת ברז הניקוז' }}</button>
+                  <button class="btn primary" (click)="operate({ op: 'valve', id: 'main' })" [disabled]="busy()">פתיחת הברז הראשי</button>
+                </div>
+                <p class="muted small">ברז הניקוז {{ mech()?.levers?.[1] ? 'פתוח' : 'סגור' }} · {{ mech()?.found?.length ? 'בניסיון האחרון המים עברו ' + mech()!.found!.length + ' צינורות ונעצרו (מסומן בכתום)' : (state()?.attempts ? 'בניסיון האחרון המים לא נכנסו אפילו לצינור הראשון' : 'המים עוד לא זרמו') }}</p>
+              }
+            }
+            @case ('gatelock') {
+              <div class="gatelock">
+                <span class="lock-icon" aria-hidden="true">🔒</span>
+                @if (state()?.status === 'solved') {
+                  <p>המפתח המוזהב מסתובב במנעול — השער נפתח!</p>
+                } @else if (hasGoldenKey()) {
+                  <button class="btn primary big" (click)="operate({ op: 'use' })" [disabled]="busy()">🔑 הכנסת המפתח המוזהב וסיבובו</button>
+                } @else {
+                  <p class="muted">המפתח המוזהב לא נמצא בתיק.</p>
+                }
+              </div>
+            }
+            @case ('compass') {
+              <div class="compass-ui">
+                <div class="dial" [class.awake]="state()?.status === 'solved'" aria-hidden="true">
+                  @for (mk of data().marks; track mk.id; let i = $index) {
+                    <span class="mk" [style.--a]="(i * 90) + 'deg'" [style.--c]="markColor(mk.id)"></span>
+                  }
+                  <span class="needle" [style.--a]="((mech()?.progress ?? 0) * 90) + 'deg'"></span>
+                </div>
+                <p class="points">המחט מצביעה על: <b>{{ data().marks[mech()?.progress ?? 0]?.label }}</b></p>
+                @if (state()?.status !== 'solved') {
+                  <div class="turns">
+                    <button class="btn" (click)="operate({ op: 'turn', dir: -1 })" [disabled]="busy()" aria-label="סיבוב המחט נגד כיוון השעון">↺ סיבוב</button>
+                    <button class="btn" (click)="operate({ op: 'turn', dir: 1 })" [disabled]="busy()" aria-label="סיבוב המחט עם כיוון השעון">סיבוב ↻</button>
+                  </div>
+                  <button class="btn primary big" (click)="operate({ op: 'press' })" [disabled]="busy()">לחיצה על המצפן</button>
+                } @else {
+                  <button class="btn primary" (click)="operate({ op: 'press' })" [disabled]="busy()">הפעלת ההבזק שוב</button>
+                }
+              </div>
             }
             @case ('lock') {
               @if (backsLine()) { <p class="reveal">בגב הסביבונים: <b dir="ltr">{{ backsLine() }}</b></p> }
@@ -410,7 +472,7 @@ const MAZE_SYMBOLS: Record<string, string> = { '*': '⭐', F: '🔥', M: '🕎',
           <ng-template #digits>
             @if (state()?.status !== 'solved') {
               <form class="row" (submit)="$event.preventDefault(); answer(text())">
-                <input [value]="text()" (input)="text.set(digitsOnly($any($event.target).value))" inputmode="numeric" [attr.maxlength]="data().digits"
+                <input [value]="text()" (input)="setText(digitsOnly($any($event.target).value))" inputmode="numeric" [attr.maxlength]="data().digits"
                   dir="ltr" class="code" placeholder="{{ '•'.repeat(data().digits ?? 3) }}" aria-label="קוד" />
                 <button class="btn primary" type="submit" [disabled]="text().length !== data().digits || busy()">פתיחה</button>
               </form>
@@ -471,6 +533,27 @@ const MAZE_SYMBOLS: Record<string, string> = { '*': '⭐', F: '🔥', M: '🕎',
     .pad { display:grid; grid-template-columns: repeat(3, 52px); gap:4px; } .pad .mid { display:grid; place-items:center; font-size:1.4rem; }
     .levers { display:flex; flex-direction:column; gap:.3rem; } .lever.on { border-color: var(--ok); color:#9be3b4; }
     .progress span { margin-inline-end:.6rem; color: var(--muted); } .progress span.ok { color:#9be3b4; }
+    .pipes { display:grid; grid-template-columns:2rem repeat(5, minmax(0, 58px)) 2rem; gap:4px; justify-content:center; align-items:center; margin:.3rem 0; }
+    .pipes .pp { aspect-ratio:1; padding:0; border-radius:8px; border:2px solid #b8862f; background:#3a2a16; cursor:pointer; }
+    .pipes .pp.fixed { border-color:#555; background:#2a2622; cursor:default; }
+    .pipes .pp:disabled { opacity:1; }
+    .pipes .pp svg { width:100%; height:100%; display:block; }
+    .pipes .pp path { fill:none; stroke:#8d8d96; stroke-width:16; stroke-linecap:butt; }
+    .pipes .pp .crack { stroke:#1a1208; stroke-width:4; }
+    .pipes .pp.wet path:not(.crack) { stroke:#3d9be0; }
+    .pipes .pp.leak { box-shadow:0 0 0 3px #e08a2a; }
+    .pipes .pp-end { font-size:1.4rem; text-align:center; }
+    .pipes .tank.full { filter:drop-shadow(0 0 6px #3d9be0); }
+    .valves { display:flex; gap:.5rem; justify-content:center; flex-wrap:wrap; }
+    .valves .btn.on { border-color:#e05545; }
+    .gatelock { display:flex; flex-direction:column; align-items:center; gap:.6rem; }
+    .gatelock .lock-icon { font-size:2.6rem; }
+    .compass-ui { display:flex; flex-direction:column; align-items:center; gap:.6rem; }
+    .compass-ui .dial { position:relative; width:170px; height:170px; border-radius:50%; background:radial-gradient(circle, #f3e7c8 0 62%, #c9a24e 63% 70%, #6a4a1a 71%); box-shadow:0 0 0 3px #3a2410 inset; }
+    .compass-ui .dial.awake { box-shadow:0 0 0 3px #3a2410 inset, 0 0 26px 4px rgba(180,92,255,.55); }
+    .compass-ui .mk { position:absolute; left:50%; top:50%; width:22px; height:22px; margin:-11px; border-radius:50%; background:var(--c); border:2px solid #2a1606; transform:rotate(var(--a)) translateY(-58px); }
+    .compass-ui .needle { position:absolute; left:50%; top:50%; width:8px; height:62px; margin-left:-4px; margin-top:-56px; background:linear-gradient(#2a1606 0 70%, transparent 70%); clip-path:polygon(50% 0, 100% 70%, 50% 100%, 0 70%); transform-origin:50% 56px; transform:rotate(var(--a)); transition:transform .35s ease; }
+    .compass-ui .points { margin:0; } .compass-ui .turns { display:flex; gap:.5rem; }
     .reveal { font-size:1.2rem; background: rgba(224,185,92,.12); border:1px solid var(--gold); border-radius:10px; padding:.5rem .8rem; }
     .reveal b { font-size:1.6rem; letter-spacing:.2em; color: var(--gold-2); }
     .tablets { display:flex; gap:1rem; justify-content:center; font-size:2rem; font-weight:900; color:#9fd0ff; margin:.4rem 0; }
@@ -570,6 +653,11 @@ export class HPanelComponent {
   lit = signal<number | null>(null);
 
   text = signal('');
+  /** What was typed so far in the free game's cabinet lock: kept while the players go back to the books. */
+  setText(v: string) {
+    this.text.set(v);
+    if (this.puzzleId() === 'g1-cabinet') CABINET_DRAFT.set(this.game.snapshot()?.roomId ?? '', v);
+  }
   busy = signal(false);
   selected = signal<string | null>(null);
   candidate = signal<string | null>(null);
@@ -618,6 +706,24 @@ export class HPanelComponent {
     const sec = Math.ceil((Date.parse(until) - this.game.serverNow()) / 1000);
     return sec > 0 ? `המנגנון נעול עוד ${sec} שניות — נצלו את הזמן לחשוב יחד.` : null;
   });
+  markColor = (id: string) => BOOK_CSS[id] ?? '#888';
+  hasGoldenKey = computed(() => !!this.game.snapshot()?.inventory.includes('gs-golden-key'));
+  /** The free game's pipe wall, piece by piece: its kind, how it lies, whether it turns, and the last flow through it. */
+  pipeCells = computed(() => {
+    const d = this.data();
+    const tiles: string[] = d.tiles ?? [];
+    const turnable: string[] = d.turnable ?? [];
+    const m = this.mech();
+    const found: string[] = m?.found ?? [];
+    const solved = this.state()?.status === 'solved';
+    const cells: { i: number; r: number; c: number; kind: string; turn: boolean; deg: number; wet: boolean; leak: boolean }[] = [];
+    tiles.forEach((row, r) => [...row].forEach((kind, c) => {
+      const i = r * row.length + c;
+      const k = found.indexOf(`${r},${c}`);
+      cells.push({ i, r, c, kind, turn: turnable.includes(`${r},${c}`), deg: (m?.rotations?.[i] ?? 0) * 90, wet: k >= 0, leak: !solved && k >= 0 && k === found.length - 1 });
+    }));
+    return cells;
+  });
   backsLine = computed(() => {
     // the digits appear only once the arrangement is right
     const src = this.panel() === 'cabinet' ? { id: 'g1-symbols', order: ['s1', 's2', 's3', 's4'] } : { id: 'h5-stand', order: ['tl', 'tr', 'bl', 'br'] };
@@ -656,6 +762,12 @@ export class HPanelComponent {
   private inspected = new Set<string>();
 
   constructor() {
+    // the free game's cabinet opens with what was typed before the players went back to the books
+    effect(() => {
+      if (this.puzzleId() !== 'g1-cabinet') return;
+      const room = this.game.snapshot()?.roomId ?? '';
+      untracked(() => { if (!this.text()) this.text.set(CABINET_DRAFT.get(room) ?? ''); });
+    });
     // opening an object's window examines it (once; the server scores only the first time anyone does)
     effect(() => {
       const id = this.panel() === 'evidence' ? this.ref() : undefined;
@@ -803,7 +915,7 @@ export class HPanelComponent {
       // a code lock turns for the player who opened it; the group hears the box or cabinet open with the celebration
       if (r.ok && ['box', 'lock', 'cabinet'].includes(this.panel() ?? '')) this.audio.sfx('key');
       this.message.set({ ok: r.ok, text: r.message });
-      if (r.ok) this.text.set('');
+      if (r.ok) { this.text.set(''); CABINET_DRAFT.delete(this.game.snapshot()?.roomId ?? ''); }
     } finally {
       this.busy.set(false);
     }

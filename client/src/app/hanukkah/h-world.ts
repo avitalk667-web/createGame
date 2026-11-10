@@ -33,13 +33,18 @@ export interface HWorldCallbacks {
   onMazeLever?(index: number): void;
   onMazeBlocked?(text: string): void;
   onMazeBox?(): void;
-  /** The lever by the gear axles was pulled (while at the bench). */
-  onBenchLever?(): void;
 }
 
 /** Raise when tools/blender/library_build.py is run again, so browsers fetch the new model. */
 const LIBRARY_MODEL_VERSION = 3;
 const DOOR_W = 2.4;
+/** The free game's room 2: the height of the weight pads, the pipe wall (row 0 on top) and the central tank. */
+const WEIGHT_TOP = 0.5;
+const PIPE_X0 = -6.4;
+const PIPE_STEP = 0.8;
+const PIPE_Y = [2.75, 1.95, 1.15];
+const PIPE_Z = -6.72;
+const TANK_X = -2.15;
 const DOOR_H = 3.4;
 const INTERACT_DISTANCE = 4.2;
 const SPAWN = new THREE.Vector3(0, 0, 4.6);
@@ -98,23 +103,25 @@ const ASSEMBLIES: Record<string, Assembly> = {
   'g1-map': {
     zone: 'maproom', slots: ['m1', 'm2', 'm3'],
     pad: { m1: [-1.0, -1.5], m2: [0, -1.5], m3: [1.0, -1.5] },
-    tray: { 'map-right': [-1.0, -0.72], 'map-left': [0, -0.72], 'map-middle': [1.0, -0.72] },
-    top: 1.0, rest: { 'map-left': 0.012, 'map-middle': 0.012, 'map-right': 0.012 },
+    tray: { 'map-rose': [-1.0, -0.72], 'map-ridge': [0, -0.72], 'map-river': [1.0, -0.72] },
+    top: 1.0, rest: { 'map-ridge': 0.012, 'map-river': 0.014, 'map-rose': 0.016 },
     look: [0, -1.15], halfWidth: 2.1, bounds: [-2.3, 2.3, -2.1, -0.5], stand: [3.0, -1.2, -Math.PI / 2], snap: 0.48,
   },
-  'g1-symbols': {
+  // the four secret books, laid on the board in places 1–4
+  'g1-books': {
     zone: 'maproom', slots: ['s1', 's2', 's3', 's4'],
     pad: { s1: [3.1, -3.5], s2: [3.7, -3.5], s3: [4.3, -3.5], s4: [4.9, -3.5] },
-    tray: { 'sym-book': [3.1, -2.85], 'sym-lamp': [3.7, -2.85], 'sym-compass': [4.3, -2.85], 'sym-key': [4.9, -2.85] },
-    top: 1.015, rest: { 'sym-compass': 0.14, 'sym-key': 0.14, 'sym-book': 0.14, 'sym-lamp': 0.14 },
+    tray: { 'book-blue': [3.1, -2.85], 'book-brown': [3.7, -2.85], 'book-red': [4.3, -2.85], 'book-green': [4.9, -2.85] },
+    top: 1.015, rest: { 'book-red': 0.035, 'book-green': 0.035, 'book-blue': 0.035, 'book-brown': 0.035 },
     look: [4.0, -3.2], halfWidth: 1.7, bounds: [2.8, 5.2, -3.9, -2.7], stand: [2.3, -3.0, Math.PI / 2], snap: 0.28,
   },
-  'g2-gears': {
-    zone: 'gearworks', slots: ['a1', 'a2', 'a3'],
-    pad: { a1: [-0.9, -1.5], a2: [0, -1.5], a3: [0.9, -1.5] },
-    tray: { 'gear-medium': [-0.9, -0.72], 'gear-large': [0, -0.72], 'gear-small': [0.9, -0.72] },
-    top: 1.0, rest: { 'gear-large': 0.03, 'gear-small': 0.03, 'gear-medium': 0.03 },
-    look: [0, -1.15], halfWidth: 2.1, bounds: [-2.3, 2.3, -2.1, -0.5], stand: [3.0, -1.2, -Math.PI / 2], snap: 0.42,
+  // the hidden weights (free game): four stone pads in a row, from the lightest (1) to the heaviest (4)
+  'g2-weights': {
+    zone: 'gearworks', slots: ['p1', 'p2', 'p3', 'p4'],
+    pad: { p1: [2.6, 0.55], p2: [3.4, 0.55], p3: [4.2, 0.55], p4: [5.0, 0.55] },
+    tray: { 'w-book': [2.6, 1.3], 'w-cube': [3.4, 1.3], 'w-candle': [4.2, 1.3], 'w-clock': [5.0, 1.3] },
+    top: WEIGHT_TOP, rest: { 'w-book': 0.11, 'w-candle': 0.11, 'w-clock': 0.11, 'w-cube': 0.11 },
+    look: [3.8, 0.85], halfWidth: 1.9, bounds: [2.0, 5.6, 0.05, 1.65], stand: [3.8, 2.6, Math.PI], snap: 0.34,
   },
   // the ancient scales: two places in each pan (l = the left pan, r = the right one, as the players see it)
   'h7-scales': {
@@ -126,7 +133,7 @@ const ASSEMBLIES: Record<string, Assembly> = {
   },
 };
 /** Where the digits of a solved arrangement appear, relative to each place (dreidels: beside; symbols: in front). */
-const BACKS_OFFSET: Record<string, [number, number, number]> = { 'h5-stand': [0.2, 0.03, 0.08], 'g1-symbols': [0, 0.02, 0.24] };
+const BACKS_OFFSET: Record<string, [number, number, number]> = { 'h5-stand': [0.2, 0.03, 0.08], 'g1-books': [0, 0.02, 0.24] };
 const LETTERS = 'אבגדהוזחטיכלמנסעפצקרשת'.split('');
 /** Symbols carved on each door, by the room it leads to. */
 const DOOR_SYMBOL: Partial<Record<HZone, string>> = {
@@ -203,10 +210,10 @@ function lampDrawingTexture() {
 let MAX_ANISO = 1;
 
 /**
- * The four symbols of the free game's first room, drawn as sharp vector icons (not emoji, which differ between
+ * The symbols of the free game (the weight stones: book, candle, clock, cube), drawn as sharp vector icons (not emoji, which differ between
  * devices and blur when small): dark ink on parchment in a gold ring, 512 px.
  */
-function symbolTexture(kind: 'compass' | 'key' | 'book' | 'lamp') {
+function symbolTexture(kind: 'book' | 'candle' | 'clock' | 'cube') {
   const s = 512;
   const c = document.createElement('canvas');
   c.width = c.height = s;
@@ -218,25 +225,6 @@ function symbolTexture(kind: 'compass' | 'key' | 'book' | 'lamp') {
   const ink = '#1d1408';
   g.strokeStyle = ink; g.fillStyle = ink; g.lineCap = 'round'; g.lineJoin = 'round';
   switch (kind) {
-    case 'compass': {
-      g.lineWidth = 16; g.beginPath(); g.arc(m, m, 150, 0, Math.PI * 2); g.stroke();
-      for (let k = 0; k < 8; k++) { const a = (k * Math.PI) / 4; g.lineWidth = k % 2 ? 8 : 14; g.beginPath(); g.moveTo(m + Math.cos(a) * 128, m + Math.sin(a) * 128); g.lineTo(m + Math.cos(a) * 150, m + Math.sin(a) * 150); g.stroke(); }
-      // the needle: north half red, south half ink
-      g.beginPath(); g.moveTo(m, m - 125); g.lineTo(m + 30, m); g.lineTo(m - 30, m); g.closePath(); g.fillStyle = '#b3261e'; g.fill();
-      g.beginPath(); g.moveTo(m, m + 125); g.lineTo(m + 30, m); g.lineTo(m - 30, m); g.closePath(); g.fillStyle = ink; g.fill();
-      g.beginPath(); g.arc(m, m, 14, 0, Math.PI * 2); g.fillStyle = '#b8862f'; g.fill();
-      break;
-    }
-    case 'key': {
-      g.lineWidth = 26;
-      g.beginPath(); g.arc(m - 95, m, 62, 0, Math.PI * 2); g.stroke();                       // bow
-      g.beginPath(); g.arc(m - 95, m, 20, 0, Math.PI * 2); g.fill();
-      g.beginPath(); g.moveTo(m - 33, m); g.lineTo(m + 160, m); g.stroke();                   // shaft
-      g.beginPath(); g.moveTo(m + 160, m); g.lineTo(m + 160, m + 62); g.stroke();             // bit
-      g.beginPath(); g.moveTo(m + 110, m); g.lineTo(m + 110, m + 44); g.stroke();
-      g.beginPath(); g.moveTo(m + 62, m); g.lineTo(m + 62, m + 30); g.stroke();
-      break;
-    }
     case 'book': {
       g.lineWidth = 14;
       // an open book: two pages meeting at the spine, with lines of text
@@ -253,32 +241,32 @@ function symbolTexture(kind: 'compass' | 'key' | 'book' | 'lamp') {
       }
       break;
     }
-    case 'lamp': {
-      // a classic oil lamp seen from the side: a round body, a long spout to the right with its flame, a handle and a lid
-      g.save();
-      g.translate(-48, -10);
-      const y0 = m + 70;
-      g.beginPath();
-      g.moveTo(m - 150, y0 - 20);
-      g.bezierCurveTo(m - 150, y0 + 55, m + 40, y0 + 60, m + 85, y0 - 5);
-      g.lineTo(m + 185, y0 - 55);
-      g.lineTo(m + 175, y0 - 75);
-      g.bezierCurveTo(m + 110, y0 - 55, m + 60, y0 - 45, m + 30, y0 - 50);
-      g.bezierCurveTo(m - 20, y0 - 60, m - 120, y0 - 60, m - 150, y0 - 20);
-      g.closePath(); g.fill();
-      g.beginPath(); g.ellipse(m - 45, y0 - 62, 62, 14, 0, 0, Math.PI * 2); g.fill();                 // lid
-      g.beginPath(); g.arc(m - 45, y0 - 88, 16, 0, Math.PI * 2); g.fill();                              // knob
-      g.lineWidth = 18;
-      g.beginPath(); g.moveTo(m - 145, y0 - 30); g.bezierCurveTo(m - 230, y0 - 50, m - 225, y0 + 40, m - 135, y0 + 15); g.stroke(); // handle
-      g.beginPath(); g.ellipse(m - 30, y0 + 52, 70, 14, 0, 0, Math.PI * 2); g.fill();                  // foot
-      // the flame above the tip of the spout
-      const fx = m + 182;
-      const fy = y0 - 78;
-      g.beginPath(); g.moveTo(fx, fy); g.bezierCurveTo(fx - 55, fy - 50, fx - 10, fy - 120, fx + 5, fy - 175);
-      g.bezierCurveTo(fx + 30, fy - 110, fx + 55, fy - 55, fx, fy); g.closePath(); g.fillStyle = '#d9640f'; g.fill();
-      g.beginPath(); g.moveTo(fx, fy - 8); g.bezierCurveTo(fx - 25, fy - 40, fx - 5, fy - 80, fx + 3, fy - 110);
-      g.bezierCurveTo(fx + 18, fy - 75, fx + 28, fy - 40, fx, fy - 8); g.closePath(); g.fillStyle = '#ffd36b'; g.fill();
-      g.restore();
+    case 'candle': {
+      // a candle on a holder, with its flame
+      g.fillRect(m - 45, m - 70, 90, 190);
+      g.beginPath(); g.ellipse(m, m + 125, 120, 26, 0, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.moveTo(m, m - 85); g.lineTo(m, m - 100); g.lineWidth = 8; g.stroke();
+      g.beginPath(); g.moveTo(m, m - 100); g.bezierCurveTo(m - 45, m - 140, m - 10, m - 200, m + 2, m - 235);
+      g.bezierCurveTo(m + 25, m - 190, m + 45, m - 140, m, m - 100); g.closePath(); g.fillStyle = '#d9640f'; g.fill();
+      break;
+    }
+    case 'clock': {
+      // a round clock face with hour marks and two hands
+      g.lineWidth = 18; g.beginPath(); g.arc(m, m, 160, 0, Math.PI * 2); g.stroke();
+      for (let k = 0; k < 12; k++) { const a = (k * Math.PI) / 6; g.lineWidth = k % 3 ? 8 : 16; g.beginPath(); g.moveTo(m + Math.cos(a) * 125, m + Math.sin(a) * 125); g.lineTo(m + Math.cos(a) * 148, m + Math.sin(a) * 148); g.stroke(); }
+      g.lineWidth = 18; g.beginPath(); g.moveTo(m, m); g.lineTo(m, m - 105); g.stroke();
+      g.lineWidth = 14; g.beginPath(); g.moveTo(m, m); g.lineTo(m + 75, m + 30); g.stroke();
+      g.beginPath(); g.arc(m, m, 16, 0, Math.PI * 2); g.fill();
+      break;
+    }
+    case 'cube': {
+      // a cube drawn in perspective: the top, the front and the side
+      g.lineWidth = 14;
+      const p = [[m - 115, m - 45], [m + 15, m - 120], [m + 140, m - 50], [m + 10, m + 25]];
+      g.beginPath(); p.forEach(([x, y], k) => (k ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); g.stroke();
+      g.beginPath(); g.moveTo(m - 115, m - 45); g.lineTo(m - 115, m + 105); g.lineTo(m + 10, m + 180); g.lineTo(m + 140, m + 105); g.lineTo(m + 140, m - 50); g.stroke();
+      g.beginPath(); g.moveTo(m + 10, m + 25); g.lineTo(m + 10, m + 180); g.stroke();
+      g.globalAlpha = 0.25; g.beginPath(); g.moveTo(m + 10, m + 25); g.lineTo(m + 140, m - 50); g.lineTo(m + 140, m + 105); g.lineTo(m + 10, m + 180); g.closePath(); g.fill(); g.globalAlpha = 1;
       break;
     }
   }
@@ -544,77 +532,211 @@ function wheelBandTexture() {
   return t;
 }
 
-/** The torn map of the free game: one drawing, cut into three pieces (each with its straight edge), or whole with its riddle. */
-function mapTexture(kind: 'left' | 'middle' | 'right' | 'whole' | 'wall') {
-  const W = 900;
-  const H = 300;
-  const full = document.createElement('canvas');
-  full.width = W;
-  full.height = H;
-  const g = full.getContext('2d')!;
+/** The free game's torn map: mountains on the left, the river and its bridge, the sea with a compass rose on the right. */
+type MapPiece = 'ridge' | 'river' | 'rose';
+const MAP_W = 900;
+const MAP_H = 300;
+/** Extra paper drawn beyond a piece's cut, so its teeth can stick out past it. */
+const MAP_MARGIN = 44;
+
+/**
+ * Where a torn edge runs, at height y: the cut between the ridge and the river (k = 1) has one big tooth of the ridge,
+ * the cut between the river and the rose (k = 2) three small teeth of the river. Positive = further right.
+ */
+function tornEdge(k: 1 | 2, y: number) {
+  const bump = (c: number, half: number, depth: number) => {
+    const d = Math.abs(y - c) / half;
+    return d >= 1 ? 0 : depth * Math.cos((d * Math.PI) / 2) ** 0.6;
+  };
+  const jag = Math.sin(y * 0.37 + k * 2.1) * 3 + Math.sin(y * 0.11 + k) * 2;
+  const shape = k === 1 ? bump(MAP_H * 0.5, 48, 36) : bump(MAP_H * 0.25, 20, 22) + bump(MAP_H * 0.5, 20, 22) + bump(MAP_H * 0.75, 20, 22);
+  return (k === 1 ? MAP_W / 3 : (MAP_W * 2) / 3) + shape + jag;
+}
+
+function drawWholeMap(g: CanvasRenderingContext2D) {
+  const W = MAP_W;
+  const H = MAP_H;
   g.fillStyle = '#e7d3a2';
   g.fillRect(0, 0, W, H);
-  g.strokeStyle = 'rgba(90,60,20,.55)';
+  // the sea on the right
+  const sea = g.createLinearGradient(600, 0, W, 0);
+  sea.addColorStop(0, 'rgba(70,120,150,0)');
+  sea.addColorStop(0.35, 'rgba(70,120,150,.35)');
+  sea.addColorStop(1, 'rgba(60,110,145,.5)');
+  g.fillStyle = sea;
+  g.fillRect(600, 0, W - 600, H);
+  // the mountain ridge on the left
+  g.fillStyle = '#8a6a44';
+  g.strokeStyle = '#4e3418';
   g.lineWidth = 3;
-  // coast, river and paths
+  for (const [x, y, s] of [[70, 150, 1.1], [140, 120, 1.4], [215, 160, 1.0], [95, 220, 0.9], [190, 235, 0.8]] as const) {
+    g.beginPath();
+    g.moveTo(x - 38 * s, y + 30 * s);
+    g.lineTo(x, y - 34 * s);
+    g.lineTo(x + 38 * s, y + 30 * s);
+    g.closePath();
+    g.fill();
+    g.stroke();
+    g.fillStyle = '#f4ead2';
+    g.beginPath();
+    g.moveTo(x - 10 * s, y - 22 * s);
+    g.lineTo(x, y - 34 * s);
+    g.lineTo(x + 10 * s, y - 22 * s);
+    g.fill();
+    g.fillStyle = '#8a6a44';
+  }
+  // the river: from the mountains, under the bridge, into the sea
+  g.strokeStyle = '#3f7fa8';
+  g.lineWidth = 9;
+  g.lineCap = 'round';
   g.beginPath();
-  g.moveTo(20, 220);
-  for (let x = 20; x < W - 20; x += 40) g.lineTo(x, 200 + Math.sin(x / 50) * 30);
+  g.moveTo(160, 175);
+  g.bezierCurveTo(280, 120, 360, 230, 450, 170);
+  g.bezierCurveTo(540, 110, 620, 210, 700, 175);
   g.stroke();
-  g.setLineDash([10, 8]);
+  // the bridge over it, in the middle
+  g.strokeStyle = '#5a3a10';
+  g.lineWidth = 6;
   g.beginPath();
-  g.moveTo(80, 80);
-  g.bezierCurveTo(300, 40, 500, 180, 820, 90);
+  g.moveTo(425, 138);
+  g.lineTo(425, 205);
+  g.moveTo(475, 136);
+  g.lineTo(475, 203);
+  g.stroke();
+  g.lineWidth = 3;
+  for (let y = 145; y <= 198; y += 9) {
+    g.beginPath();
+    g.moveTo(425, y);
+    g.lineTo(475, y - 2);
+    g.stroke();
+  }
+  // a dotted path over the bridge, and trees on both banks
+  g.setLineDash([8, 7]);
+  g.strokeStyle = 'rgba(90,60,20,.6)';
+  g.beginPath();
+  g.moveTo(330, 70);
+  g.quadraticCurveTo(450, 110, 450, 170);
+  g.quadraticCurveTo(450, 240, 560, 265);
   g.stroke();
   g.setLineDash([]);
-  g.font = '42px Segoe UI Emoji, Noto Color Emoji';
-  g.fillText('⛰️', 160, 140);
-  g.fillText('🌲', 420, 130);
-  g.fillText('🏰', 700, 150);
-  g.font = 'bold 30px Frank Ruhl Libre, serif';
-  g.fillStyle = '#5a3a10';
-  g.fillText('✕', 812, 100);
-  // ornamented outer border only on the outer edges
+  g.fillStyle = '#4c6a32';
+  for (const [x, y] of [[360, 95], [385, 245], [520, 85], [545, 240], [330, 205]] as const) {
+    g.beginPath();
+    g.arc(x, y, 11, 0, Math.PI * 2);
+    g.fill();
+  }
+  // the island in the sea, and the compass rose above it
+  g.fillStyle = '#c9a86a';
+  g.strokeStyle = '#6a4a1a';
+  g.lineWidth = 3;
+  g.beginPath();
+  g.ellipse(800, 225, 46, 24, -0.2, 0, Math.PI * 2);
+  g.fill();
+  g.stroke();
+  g.save();
+  g.translate(790, 92);
+  g.fillStyle = '#7a4a10';
+  for (let k = 0; k < 8; k++) {
+    g.rotate(Math.PI / 4);
+    g.beginPath();
+    g.moveTo(0, 0);
+    g.lineTo(k % 2 ? 9 : 12, k % 2 ? 26 : 50);
+    g.lineTo(0, k % 2 ? 34 : 60);
+    g.closePath();
+    g.fill();
+  }
+  g.beginPath();
+  g.arc(0, 0, 8, 0, Math.PI * 2);
+  g.fillStyle = '#f2d27a';
+  g.fill();
+  g.restore();
+  // the ornamented border: only the map's outer edges
   g.strokeStyle = '#7a4a10';
   g.lineWidth = 10;
   g.strokeRect(8, 8, W - 16, H - 16);
-  if (kind === 'whole' || kind === 'wall') {
-    if (kind === 'whole') {
-      g.fillStyle = 'rgba(250,240,210,.88)';
-      g.fillRect(40, 30, W - 80, 110);
-      g.fillStyle = '#3a2410';
-      g.direction = 'rtl';
-      g.textAlign = 'center';
-      g.font = 'bold 26px Frank Ruhl Libre, Heebo, serif';
-      g.fillText('„התחילו במה שמראה כיוון, המשיכו במה שפותח מנעול,', W / 2, 75);
-      g.fillText('אחר כך חפשו את מה שקוראים בו, וסיימו במה שמפיצה אור.”', W / 2, 115);
-    }
-    const t = new THREE.CanvasTexture(full);
-    t.colorSpace = THREE.SRGBColorSpace;
-    t.anisotropy = MAX_ANISO;
-    return t;
-  }
-  const i = kind === 'left' ? 0 : kind === 'middle' ? 1 : 2;
-  const c = document.createElement('canvas');
-  c.width = W / 3;
-  c.height = H;
-  const p = c.getContext('2d')!;
-  p.drawImage(full, -i * (W / 3), 0);
-  // torn inner edges
-  p.globalCompositeOperation = 'destination-out';
-  for (const side of [i > 0 ? 0 : -1, i < 2 ? W / 3 : -1]) {
-    if (side < 0) continue;
-    p.beginPath();
-    for (let y = 0; y <= H; y += 12) p.lineTo(side + (side === 0 ? 1 : -1) * (4 + Math.random() * 10), y);
-    p.lineTo(side, H);
-    p.lineTo(side, 0);
-    p.fill();
-  }
+  g.lineWidth = 2;
+  g.strokeRect(20, 20, W - 40, H - 40);
+}
+
+function mapCanvasTexture(c: HTMLCanvasElement) {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = MAX_ANISO;
   return t;
 }
+
+/**
+ * The torn map: one piece (its real torn edges, wider than its third by MAP_MARGIN where it tears), the whole map with
+ * the line written on it, or the sea chart that hangs on the wall (a different map, which tells nothing).
+ */
+function mapTexture(kind: MapPiece | 'whole' | 'wall') {
+  const W = MAP_W;
+  const H = MAP_H;
+  const full = document.createElement('canvas');
+  full.width = W;
+  full.height = H;
+  const g = full.getContext('2d')!;
+  if (kind === 'wall') {
+    g.fillStyle = '#dcc89a';
+    g.fillRect(0, 0, W, H);
+    g.strokeStyle = 'rgba(60,40,15,.5)';
+    g.lineWidth = 2;
+    for (let x = 60; x < W; x += 90) { g.beginPath(); g.moveTo(x, 20); g.lineTo(x, H - 20); g.stroke(); }
+    for (let y = 50; y < H; y += 70) { g.beginPath(); g.moveTo(20, y); g.lineTo(W - 20, y); g.stroke(); }
+    g.fillStyle = '#b89a62';
+    g.beginPath();
+    g.ellipse(300, 160, 120, 70, 0.3, 0, Math.PI * 2);
+    g.ellipse(640, 120, 80, 50, -0.4, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = '#7a4a10';
+    g.lineWidth = 10;
+    g.strokeRect(8, 8, W - 16, H - 16);
+    return mapCanvasTexture(full);
+  }
+  drawWholeMap(g);
+  if (kind === 'whole') {
+    g.fillStyle = 'rgba(250,240,210,.9)';
+    g.fillRect(150, 26, W - 300, 78);
+    g.fillStyle = '#3a2410';
+    g.direction = 'rtl';
+    g.textAlign = 'center';
+    g.font = 'bold 24px Frank Ruhl Libre, Heebo, serif';
+    g.fillText('„ארבעה ספרים שומרים על הקוד.', W / 2, 58);
+    g.fillText('הספר האדום אינו הראשון ואינו האחרון.”', W / 2, 92);
+    return mapCanvasTexture(full);
+  }
+  const i = kind === 'ridge' ? 0 : kind === 'river' ? 1 : 2;
+  const x0 = i * (W / 3) - MAP_MARGIN;
+  const c = document.createElement('canvas');
+  c.width = W / 3 + 2 * MAP_MARGIN;
+  c.height = H;
+  const p = c.getContext('2d')!;
+  // the piece's outline: its own outer edge (straight) or the torn edge it shares with its neighbour
+  p.beginPath();
+  const left = (y: number) => (i === 0 ? 0 : tornEdge(i as 1 | 2, y)) - x0;
+  const right = (y: number) => (i === 2 ? W : tornEdge((i + 1) as 1 | 2, y)) - x0;
+  p.moveTo(left(0), 0);
+  for (let y = 0; y <= H; y += 3) p.lineTo(right(y), y);
+  for (let y = H; y >= 0; y -= 3) p.lineTo(left(y), y);
+  p.closePath();
+  p.save();
+  p.clip();
+  p.drawImage(full, -x0, 0);
+  p.restore();
+  // a darker line along the torn paper
+  p.strokeStyle = 'rgba(120,85,40,.55)';
+  p.lineWidth = 2.5;
+  for (const edge of [i > 0 ? left : null, i < 2 ? right : null]) {
+    if (!edge) continue;
+    p.beginPath();
+    for (let y = 0; y <= H; y += 3) (y === 0 ? p.moveTo(edge(y), y) : p.lineTo(edge(y), y));
+    p.stroke();
+  }
+  return mapCanvasTexture(c);
+}
+
+/** The free game's four secret books. */
+const BOOK_COLOR: Record<string, string> = { 'book-red': '#9a2a1e', 'book-green': '#2a6a3a', 'book-blue': '#2a4a8a', 'book-brown': '#6a4a2a' };
 
 /** A digit on a gold disc, readable on dark and light surfaces alike. */
 function digitTexture(d: string) {
@@ -640,45 +762,6 @@ function digitTexture(d: string) {
   return t;
 }
 
-/** The diagram on the workshop wall: three gears, left to right — large, small, medium. */
-function gearDiagramTexture() {
-  const c = document.createElement('canvas');
-  c.width = 640;
-  c.height = 380;
-  const g = c.getContext('2d')!;
-  g.fillStyle = '#e9d8ad';
-  g.fillRect(0, 0, 640, 380);
-  g.strokeStyle = 'rgba(80,50,20,.6)';
-  g.lineWidth = 8;
-  g.strokeRect(10, 10, 620, 360);
-  g.fillStyle = '#3a2410';
-  g.textAlign = 'center';
-  g.direction = 'rtl';
-  g.font = 'bold 34px Frank Ruhl Libre, serif';
-  g.fillText('המנגנון — משמאל לימין', 320, 60);
-  const gear = (x: number, r: number) => {
-    g.beginPath();
-    for (let k = 0; k < 24; k++) {
-      const a = (k / 24) * Math.PI * 2;
-      const rr = k % 2 ? r : r + 14;
-      g.lineTo(x + Math.cos(a) * rr, 210 + Math.sin(a) * rr);
-    }
-    g.closePath();
-    g.lineWidth = 5;
-    g.strokeStyle = '#5a3a10';
-    g.stroke();
-    g.beginPath();
-    g.arc(x, 210, 10, 0, Math.PI * 2);
-    g.stroke();
-  };
-  gear(150, 95);
-  gear(320, 45);
-  gear(470, 70);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = MAX_ANISO;
-  return t;
-}
 
 /** Groove pattern of a mosaic stone at rotation 0 (openings: straight N–S, corner N–E, dead N only). */
 function stoneGrooveTexture(kind: string, lit: boolean) {
@@ -773,11 +856,39 @@ export class HanukkahWorld {
   private backPlates = new Map<string, THREE.Mesh>();
   // the free trial game
   private mapWhole?: THREE.Mesh;
+  /** The free game's compass: its needle, the glow that flashes, and its state as the server reports it. */
+  private compassNeedle?: THREE.Object3D;
+  private compassGlow?: THREE.Mesh;
+  private compassLight?: THREE.PointLight;
+  private compassMark = 0;
+  private compassAwake = false;
+  private compassReady = false;
+  private compassFlashEnd = 0;
+  private compassFlashAt = -1e9;
   private mapDrawer?: THREE.Object3D;
   private mapSolved = false;
   private cabinetDoors: THREE.Object3D[] = [];
-  private gearLever?: THREE.Object3D;
-  private gearsRunning = false;
+  /** The free game's room 2: pipes, valves, tank, weight pads, the portcullis and the golden key in the gate. */
+  private pipeTiles: { group: THREE.Group; kind: string; mat: THREE.MeshStandardMaterial; key: string; angle: number; turns: number }[] = [];
+  private pipeWet: string[] = [];
+  private pipeFlowAt = -1e9;
+  private pipeFlowStamp = 0;
+  private pipesSolved = false;
+  private valveOpen: [boolean, boolean] = [false, true];
+  private valveMain?: THREE.Object3D;
+  private valveDrain?: THREE.Object3D;
+  private drainSplash?: THREE.Mesh;
+  private drainSplashAt = -1e9;
+  private tankWater?: THREE.Mesh;
+  private weightPads: THREE.Mesh[] = [];
+  private weightFaces: THREE.MeshStandardMaterial[] = [];
+  private weightsSolved = false;
+  private portcullis?: THREE.Object3D;
+  private gateKey?: THREE.Object3D;
+  private gateKeyAt = -1;
+  private gateOpened = false;
+  private gateLight?: THREE.PointLight;
+  private scenarioRef: ScenarioContent | null = null;
   // the scales: the beam leans as the server says (-1 left heavier, 1 right heavier); the pans hang from its ends
   private scaleBeam?: THREE.Object3D;
   private scalePans: THREE.Object3D[] = [];
@@ -1687,31 +1798,44 @@ export class HanukkahWorld {
         g.add(new THREE.Mesh(new THREE.LatheGeometry(pts, 20), this.std('#e7b84a', { metalness: 0.9, roughness: 0.25, emissive: '#3a2604' })));
         break;
       }
-      case 'map-left':
-      case 'map-middle':
-      case 'map-right': {
-        const piece = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.9), new THREE.MeshStandardMaterial({
-          map: mapTexture(id.slice(4) as 'left' | 'middle' | 'right'), transparent: true, side: THREE.DoubleSide, roughness: 0.9,
+      case 'map-ridge':
+      case 'map-river':
+      case 'map-rose': {
+        // a third of the map plus the paper its teeth need on the torn sides (MAP_MARGIN on each side)
+        const piece = new THREE.Mesh(new THREE.PlaneGeometry(0.95 * (1 + (2 * MAP_MARGIN) / (MAP_W / 3)), 0.9), new THREE.MeshStandardMaterial({
+          map: mapTexture(id.slice(4) as MapPiece), transparent: true, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.9,
         }));
         piece.rotation.x = -Math.PI / 2;
         g.add(piece);
         break;
       }
-      case 'sym-compass':
-      case 'sym-key':
-      case 'sym-book':
-      case 'sym-lamp': {
-        const kind = ({ 'sym-compass': 'compass', 'sym-key': 'key', 'sym-book': 'book', 'sym-lamp': 'lamp' } as const)[id];
-        const face = symbolTexture(kind);
-        const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.04, 40), [
-          this.wood('#6a4422'), this.std('#ffffff', { map: face, emissive: '#ffffff', emissiveMap: face, emissiveIntensity: 0.45, roughness: 0.7 }), this.wood('#6a4422'),
-        ]);
-        disc.rotation.x = Math.PI / 2;
-        const rim = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.012, 6, 28), this.gold());
-        g.add(disc, rim);
+      case 'book-red':
+      case 'book-green':
+      case 'book-blue':
+      case 'book-brown': {
+        // a closed book lying on its back: the coloured cover, the pages, a gold band (its spine faces the players)
+        const color = BOOK_COLOR[id];
+        const cover = this.std(color, { roughness: 0.65 });
+        const pages = this.std('#efe3c2', { roughness: 0.95 });
+        const book = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.07, 0.26), [pages, pages, cover, cover, cover, pages]);
+        const band = new THREE.Mesh(new THREE.BoxGeometry(0.345, 0.012, 0.03), this.gold());
+        band.position.set(0, 0.036, 0.09);
+        g.add(book, band);
         break;
       }
       case 'gs-golden-key': return this.keyMesh('#ffd24a', 0.6);
+      case 'w-book':
+      case 'w-candle':
+      case 'w-clock':
+      case 'w-cube': {
+        const face = symbolTexture(({ 'w-book': 'book', 'w-candle': 'candle', 'w-clock': 'clock', 'w-cube': 'cube' } as const)[id]);
+        const glowing = this.std('#ffffff', { map: face, emissive: '#ffd36b', emissiveMap: face, emissiveIntensity: 0, roughness: 0.8 });
+        this.weightFaces.push(glowing);
+        const stone = this.std('#8a8478', { roughness: 0.95 });
+        const block = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.22, 0.3), [stone, stone, glowing, stone, stone, stone]);
+        g.add(block);
+        break;
+      }
       // the four things weighed on the ancient scales; each one stands on y = 0
       case 'sc-feather': {
         const vane = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 8), this.std('#f6f1e4', { roughness: 0.95, emissive: '#2a2620' }));
@@ -1761,25 +1885,6 @@ export class HanukkahWorld {
           post.position.set(Math.cos(a) * 0.075, 0.14, Math.sin(a) * 0.075);
           g.add(post);
         }
-        break;
-      }
-      case 'gear-large':
-      case 'gear-small':
-      case 'gear-medium': {
-        const r = id === 'gear-large' ? 0.34 : id === 'gear-small' ? 0.17 : 0.25;
-        const brass = this.std('#c9a24d', { metalness: 0.85, roughness: 0.3 });
-        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.05, 32), brass);
-        g.add(wheel);
-        const teeth = Math.round(r * 60);
-        for (let k = 0; k < teeth; k++) {
-          const a = (k / teeth) * Math.PI * 2;
-          const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.05), brass);
-          tooth.position.set(Math.cos(a) * (r + 0.02), 0, Math.sin(a) * (r + 0.02));
-          tooth.rotation.y = -a;
-          g.add(tooth);
-        }
-        const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.07, 12), this.std('#3a2414'));
-        g.add(hub);
         break;
       }
       default:
@@ -2858,16 +2963,7 @@ export class HanukkahWorld {
     this.mapWhole.rotation.x = -Math.PI / 2;
     this.mapWhole.position.set(0, 1.03, c - 1.5);
     this.scene.add(this.mapWhole);
-    const book = this.box(0.42, 0.08, 0.32, this.std('#7a2a1e'), -1.9, 1.06, c - 0.85);
-    book.rotation.y = 0.35;
-    const compass = new THREE.Group();
-    const caseMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.05, 24), this.gold());
-    const face = new THREE.Mesh(new THREE.CircleGeometry(0.11, 24), new THREE.MeshBasicMaterial({ map: glyphTexture('🧭', '#000', 128) }));
-    face.rotation.x = -Math.PI / 2;
-    face.position.y = 0.03;
-    compass.add(caseMesh, face);
-    compass.position.set(1.1, 1.03, c - 2.0);
-    this.scene.add(compass);
+    this.buildCompass(c);
     const glass = new THREE.Group();
     const lens = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.015, 8, 24), this.gold());
     lens.rotation.x = Math.PI / 2;
@@ -2899,15 +2995,14 @@ export class HanukkahWorld {
     globe.position.set(7.35, 1.65, c - 1.9);
     this.scene.add(globe);
     this.animated.push((t) => (globe.rotation.y = t * 0.3));
-    // the bookcase with four books of different covers and the book symbol between them
+    // the bookcase by the left wall (one of the four books waits on it)
     this.shelfWall(-7.6, c, -3.0, Math.PI / 2, 31);
-    ['#8a2a1e', '#2a6a3a', '#2a4a8a', '#6a4a2a'].forEach((col, k) => this.box(0.08, 0.32, 0.24, this.std(col), -7.25, 1.5, c - 2.3 - k * 0.12));
-    // the symbol board: four numbered places on a small table at the back right
+    // the books board: four numbered places on a small table at the back right
     this.box(2.6, 0.08, 1.4, this.wood('#5e3e22'), 4.0, 0.95, c - 3.3);
     for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) this.box(0.1, 0.9, 0.1, this.std('#3a2414'), 4.0 + sx * 1.15, 0.45, c - 3.3 + sz * 0.6);
     this.box(2.4, 0.03, 0.6, this.wood('#2e1a0c'), 4.0, 1.0, c - 3.5);
-    this.label('לוח הסמלים', 1.0, 0.24, 4.0, 1.3, c - 3.95, 0, { bg: '#2a2016', color: '#ffd36b' });
-    this.buildAssembly('g1-symbols', 'ring', (id) => this.itemModel(id), 0.14);
+    this.label('מדף הספרים', 1.0, 0.24, 4.0, 1.3, c - 3.95, 0, { bg: '#2a2016', color: '#ffd36b' });
+    this.buildAssembly('g1-books', 'ring', (id) => this.itemModel(id), 0.04);
     // the locked cabinet with a four-digit lock; a golden key waits inside
     const body = this.box(1.6, 2.6, 0.7, this.wood('#3a2010'), -4.2, 1.3, c - 6.45);
     body.castShadow = true;
@@ -2933,8 +3028,8 @@ export class HanukkahWorld {
     this.halo(plate, '#ffd36b', 0.8);
     // the symbols hidden around the room, maps on the walls, candles and a lamp
     const where: Record<string, [number, number, number]> = {
-      'map-left': [-1.9, 1.04, -0.95], 'map-middle': [-6.7, 0.98, 1.9], 'map-right': [7.25, 1.5, -2.45],
-      'sym-compass': [1.5, 1.18, -2.0], 'sym-key': [-2.4, 1.7, -6.6], 'sym-book': [-7.25, 1.5, -3.4], 'sym-lamp': [5.6, 1.18, 2.6],
+      'map-ridge': [-1.9, 1.04, -0.95], 'map-river': [-6.7, 0.98, 1.9], 'map-rose': [7.25, 1.5, -2.45],
+      'book-red': [-1.9, 1.08, -0.85], 'book-green': [-7.25, 1.47, -3.4], 'book-blue': [-7.0, 1.14, 1.75], 'book-brown': [5.75, 1.02, 2.75],
     };
     for (const [id, [x, y, z]] of Object.entries(where)) {
       const m = this.itemModel(id);
@@ -2953,68 +3048,345 @@ export class HanukkahWorld {
     this.addLight(-4.2, 2.8, c - 4.6, '#ffd59a', 4, 5, false);
   }
 
+  /**
+   * The crazy compass on the map table (free game): a brass case, four marks in the books' colours, a needle the group
+   * turns, and a purple glow for the moment it flashes. What the flash shows is never drawn here: only its holder is
+   * told, by the server, in the game's own panel.
+   */
+  private buildCompass(c: number) {
+    const g = new THREE.Group();
+    g.position.set(2.05, 1.03, c - 1.85);
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.23, 0.06, 32), this.gold());
+    const face = new THREE.Mesh(new THREE.CircleGeometry(0.185, 32), this.std('#efe3c2', { roughness: 0.8 }));
+    face.rotation.x = -Math.PI / 2;
+    face.position.y = 0.032;
+    g.add(base, face);
+    // the marks, in the order of the server's marks (the needle starts on the first): green, blue, brown, red
+    ['#2a6a3a', '#2a4a8a', '#6a4a2a', '#9a2a1e'].forEach((col, k) => {
+      const mark = new THREE.Mesh(new THREE.CircleGeometry(0.03, 16), this.std(col, { roughness: 0.5 }));
+      mark.rotation.x = -Math.PI / 2;
+      const a = (k * Math.PI) / 2;
+      mark.position.set(Math.sin(a) * 0.15, 0.034, -Math.cos(a) * 0.15);
+      g.add(mark);
+    });
+    const needle = new THREE.Group();
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.018, 0.13, 8), this.std('#2a1606', { metalness: 0.6, roughness: 0.3 }));
+    tip.rotation.x = -Math.PI / 2;
+    tip.position.z = -0.065;
+    const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.02, 12), this.gold());
+    needle.add(tip, pin);
+    needle.position.y = 0.045;
+    g.add(needle);
+    const glow = new THREE.Mesh(new THREE.CircleGeometry(0.34, 32), new THREE.MeshBasicMaterial({
+      color: '#b45cff', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+    }));
+    glow.rotation.x = -Math.PI / 2;
+    glow.position.y = 0.05;
+    g.add(glow);
+    const light = new THREE.PointLight('#b45cff', 0, 3.2, 2);
+    light.position.set(0, 0.35, 0);
+    g.add(light);
+    this.scene.add(g);
+    this.compassNeedle = needle;
+    this.compassGlow = glow;
+    this.compassLight = light;
+  }
+
+  private animateCompass(t: number, dt: number) {
+    if (!this.compassNeedle) return;
+    // the needle turns to its mark; while the compass waits to be woken it trembles a little
+    const target = -(this.compassMark * Math.PI) / 2;
+    const n = this.compassNeedle;
+    let d = target - n.rotation.y;
+    d = Math.atan2(Math.sin(d), Math.cos(d));
+    n.rotation.y += d * Math.min(1, dt * 8);
+    if (this.compassReady) n.rotation.y += Math.sin(t * 31) * 0.012;
+    const since = (performance.now() - this.compassFlashAt) / 1000;
+    const flash = since >= 0 && since < 2.2 ? Math.sin((since / 2.2) * Math.PI) : 0;
+    const rest = this.compassAwake ? 0.12 + Math.sin(t * 2) * 0.04 : 0;
+    (this.compassGlow!.material as THREE.MeshBasicMaterial).opacity = Math.max(rest, flash * 0.9);
+    this.compassLight!.intensity = flash * 6;
+  }
+
   // ---------------------------------------------------------------------- 2 · mechanism workshop
 
   private buildGearworks() {
     const c = hCenter('gearworks');
-    // the work bench with three axles; the lever on its right starts the mechanism
-    this.desk(c, 4.8, 1.8, -1.3, '#4e3420');
-    this.buildAssembly('g2-gears', 'ring', (id) => this.itemModel(id), 0.03);
-    for (const slot of ASSEMBLIES['g2-gears'].slots) {
-      const [x, z] = ASSEMBLIES['g2-gears'].pad[slot];
-      const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.16, 8), this.std('#9a9aa0', { metalness: 0.8 }));
-      axle.position.set(x, 1.08, c + z);
-      this.scene.add(axle);
+    const stone = this.std('#6f6a62', { roughness: 0.95 });
+    const iron = this.std('#4a4a50', { metalness: 0.7, roughness: 0.45 });
+    // ---- the water source on the left of the back wall: a stone basin fed from the wall, and its two valves
+    this.box(1.0, 0.9, 0.9, stone, -7.45, 0.45, c - 6.4);
+    const spring = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.5), new THREE.MeshBasicMaterial({ color: '#4fa8e0', transparent: true, opacity: 0.75, toneMapped: false }));
+    spring.rotation.x = -Math.PI / 2;
+    spring.position.set(-7.45, 0.91, c - 6.4);
+    this.scene.add(spring);
+    this.animated.push((t) => ((spring.material as THREE.MeshBasicMaterial).opacity = 0.6 + Math.sin(t * 3) * 0.1));
+    // the feed pipe from the basin up to the wall's middle row, with the drain dropping to the floor
+    const feed = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, PIPE_Y[1] - 0.9, 12), iron);
+    feed.position.set(-7.45, (PIPE_Y[1] + 0.9) / 2, c + PIPE_Z);
+    const across = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, PIPE_X0 - 0.4 + 7.45, 12), iron);
+    across.rotation.z = Math.PI / 2;
+    across.position.set((PIPE_X0 - 0.4 - 7.45) / 2, PIPE_Y[1], c + PIPE_Z);
+    const drain = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, PIPE_Y[1] - 0.15, 10), iron);
+    drain.position.set(-6.95, (PIPE_Y[1] + 0.15) / 2, c + PIPE_Z + 0.02);
+    this.scene.add(feed, across, drain);
+    this.valveDrain = this.valveWheel('#b03a2a', -6.95, PIPE_Y[1] - 0.45, c + PIPE_Z + 0.16);
+    this.valveMain = this.valveWheel('#d8a838', -6.75, PIPE_Y[1] + 0.32, c + PIPE_Z + 0.16);
+    const plaque = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.32), this.std('#b87333', { metalness: 0.7, roughness: 0.4 }));
+    plaque.position.set(-6.85, 1.05, c - 6.93);
+    this.scene.add(plaque);
+    this.drainSplash = new THREE.Mesh(new THREE.CircleGeometry(0.35, 20), new THREE.MeshBasicMaterial({ color: '#4fa8e0', transparent: true, opacity: 0, toneMapped: false }));
+    this.drainSplash.rotation.x = -Math.PI / 2;
+    this.drainSplash.position.set(-6.95, 0.02, c + PIPE_Z + 0.4);
+    this.scene.add(this.drainSplash);
+    // ---- the pipe wall: a stone frame with 3 × 5 pieces (the turning ones on brass discs, the fixed ones bolted)
+    this.box(PIPE_STEP * 5 + 0.3, PIPE_STEP * 3 + 0.3, 0.12, this.std('#4c463e', { roughness: 0.95 }), PIPE_X0 + PIPE_STEP * 2, PIPE_Y[1], c - 6.88);
+    this.label('הצינורות העתיקים', 1.6, 0.26, PIPE_X0 + PIPE_STEP * 2, PIPE_Y[0] + 0.62, c - 6.8, 0, { bg: '#2a2016', color: '#9fd4ff' });
+    // ---- the central tank on the right of the wall, filled by the bottom row
+    const tankMat = this.std('#9fb4c4', { metalness: 0.3, roughness: 0.2, transparent: true, opacity: 0.35 });
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 1.7, 28, 1, true), tankMat);
+    tank.position.set(TANK_X, 0.85, c - 6.3);
+    const rimTop = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.04, 8, 28), iron);
+    rimTop.rotation.x = Math.PI / 2;
+    rimTop.position.set(TANK_X, 1.7, c - 6.3);
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.56, 0.6, 0.12, 28), iron);
+    base.position.set(TANK_X, 0.06, c - 6.3);
+    this.scene.add(tank, rimTop, base);
+    this.tankWater = new THREE.Mesh(new THREE.CylinderGeometry(0.47, 0.47, 1, 28), new THREE.MeshStandardMaterial({ color: '#3d8fd0', emissive: '#12406a', transparent: true, opacity: 0.85, roughness: 0.15 }));
+    this.tankWater.position.set(TANK_X, 0.12, c - 6.3);
+    this.tankWater.scale.y = 0.02;
+    this.scene.add(this.tankWater);
+    const inlet = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, TANK_X - 0.5 - (PIPE_X0 + PIPE_STEP * 4.5), 12), iron);
+    inlet.rotation.z = Math.PI / 2;
+    inlet.position.set((TANK_X - 0.5 + PIPE_X0 + PIPE_STEP * 4.5) / 2, PIPE_Y[2], c + PIPE_Z);
+    this.scene.add(inlet);
+    // ---- the hidden weights: a low plinth with four pads (they rise once the water runs, and sink when the order is right)
+    this.box(3.6, WEIGHT_TOP - 0.06, 1.0, stone, 3.8, (WEIGHT_TOP - 0.06) / 2, c + 0.55);
+    for (const slot of ASSEMBLIES['g2-weights'].slots) {
+      const [x, z] = ASSEMBLIES['g2-weights'].pad[slot];
+      const pad = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.08, 0.62), this.std('#9a948a', { roughness: 0.9 }));
+      pad.position.set(x, WEIGHT_TOP - 0.04, c + z);
+      this.scene.add(pad);
+      this.weightPads.push(pad);
     }
-    const lever = new THREE.Group();
-    this.box(0.24, 0.12, 0.3, this.std('#3a2a1c'), 0, -0.06, 0, lever);
-    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.55, 8), this.std('#9a9aa0', { metalness: 0.8 }));
-    arm.position.y = 0.27;
-    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 8), this.std('#c03030'));
-    knob.position.y = 0.55;
-    const grip = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), new THREE.MeshBasicMaterial({ visible: false }));
-    grip.position.y = 0.4;
-    grip.userData['lever'] = true;
-    lever.add(arm, knob, grip);
-    lever.position.set(2.0, 1.06, c - 1.5);
-    lever.rotation.z = 0.5;
-    this.scene.add(lever);
-    this.gearLever = lever;
-    // the diagram of the gears on the back wall (large · small · medium, left to right)
-    const diagram = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 1.3), this.std('#ffffff', { map: gearDiagramTexture(), roughness: 0.8 }));
-    diagram.position.set(-4.0, 2.3, c - 6.93);
-    this.scene.add(diagram);
-    // the gears lying around the room: on a shelf, in a crate, on the floor
-    this.box(1.4, 0.06, 0.6, this.wood('#3a2414'), -7.5, 1.35, c - 3.0);
-    this.box(1.2, 0.7, 1.0, this.wood('#5a3a20'), 5.8, 0.35, c + 2.8);
+    this.buildAssembly('g2-weights', 'ring', (id) => this.itemModel(id), 0.11);
+    this.label('המשקל הנסתר', 1.2, 0.22, 3.8, 0.9, c + 0.02, 0, { bg: '#2a2016', color: '#ffd36b' });
+    // ---- the clues: an engraved stone pillar, and an hourglass with a note in its base on a small table
+    const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 2.4, 16), stone);
+    pillar.position.set(-5.6, 1.2, c + 2.6);
+    this.scene.add(pillar);
+    this.box(0.9, 0.06, 0.7, this.wood('#4a2e1a'), 5.9, 0.95, c - 4.0);
+    this.box(0.08, 0.95, 0.08, this.std('#3a2414'), 5.9, 0.47, c - 4.0);
+    const glassMat = this.std('#e8f2ff', { transparent: true, opacity: 0.4, roughness: 0.1 });
+    const top = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.2, 16), glassMat);
+    top.position.set(6.05, 1.29, c - 4.0);
+    top.rotation.x = Math.PI;
+    const bottom = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.2, 16), glassMat);
+    bottom.position.set(6.05, 1.09, c - 4.0);
+    const sand = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.1, 16), this.std('#d8b46a'));
+    sand.position.set(6.05, 1.04, c - 4.0);
+    this.scene.add(top, bottom, sand);
+    // ---- the stones, lying around the room
     const where: Record<string, [number, number, number]> = {
-      'gear-large': [-7.3, 1.42, -3.0], 'gear-small': [5.8, 0.75, 2.8], 'gear-medium': [-3.0, 0.08, 3.5],
+      'w-candle': [-7.2, 0.11, 3.2], 'w-clock': [5.6, 1.09, -4.0], 'w-cube': [-4.9, 0.11, 1.9], 'w-book': [6.8, 0.11, 4.6],
     };
     for (const [id, [x, y, z]] of Object.entries(where)) {
       const m = this.itemModel(id);
       m.position.set(x, y, c + z);
       this.addItem(id, m);
     }
-    // a small locked box
-    this.box(0.7, 0.45, 0.5, this.wood('#5a3416'), 3.6, 0.23, c - 4.6);
-    this.box(0.72, 0.06, 0.52, this.gold(), 3.6, 0.48, c - 4.6);
-    // the exit: a gilded door with the gate symbol, which glows once the mechanism turns
+    // ---- the gate: the exit door behind a heavy portcullis; a golden lock in its middle
     this.exitDoor = this.buildDoor('gearworks', c - H_HALF_D, '🚪');
     this.doors.set('exit' as HZone, this.exitDoor);
     this.doorOpen.set('exit' as HZone, 0);
     const beyond = new THREE.Mesh(new THREE.PlaneGeometry(DOOR_W, DOOR_H), new THREE.MeshBasicMaterial({ color: '#ffe9b0', toneMapped: false }));
     beyond.position.set(0, DOOR_H / 2, c - H_HALF_D - 1.2);
     this.scene.add(beyond);
+    const bars = new THREE.Group();
+    for (let k = 0; k < 7; k++) {
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, DOOR_H, 8), iron);
+      bar.position.set(-DOOR_W / 2 + 0.15 + k * ((DOOR_W - 0.3) / 6), DOOR_H / 2, 0);
+      bars.add(bar);
+    }
+    for (const y of [0.6, 1.7, 2.8]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(DOOR_W, 0.08, 0.06), iron);
+      rail.position.set(0, y, 0);
+      bars.add(rail);
+    }
+    bars.position.set(0, 0, c - H_HALF_D + 0.32);
+    this.scene.add(bars);
+    this.portcullis = bars;
+    const lock = new THREE.Group();
+    const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.05, 28), this.gold());
+    plate.rotation.x = Math.PI / 2;
+    const hole = new THREE.Mesh(new THREE.CircleGeometry(0.05, 16), this.std('#120c08'));
+    hole.position.z = 0.03;
+    lock.add(plate, hole);
+    lock.position.set(0, 1.35, c - H_HALF_D + 0.14);
+    this.scene.add(lock);
+    this.halo(lock, '#ffd36b', 0.5);
+    const key = this.keyMesh('#ffd24a', 0.6);
+    key.visible = false;
+    key.position.set(0, 1.35, c - H_HALF_D + 0.3);
+    key.rotation.y = Math.PI / 2;
+    this.scene.add(key);
+    this.gateKey = key;
     this.gateGlow = new THREE.Mesh(new THREE.CircleGeometry(0.42, 32), new THREE.MeshBasicMaterial({
       color: '#ffd98a', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
     }));
     this.gateGlow.position.set(0, DOOR_H + 0.42, c - H_HALF_D + 0.12);
     this.scene.add(this.gateGlow);
-    this.addLight(0, 3.0, c - 3.5, '#9ab8ff', 4, 7, false);
-    this.addLight(-4.0, 2.8, c - 5.0, '#ffd59a', 3.5, 5, false);
+    this.gateLight = new THREE.PointLight('#ffe2a0', 0, 12, 1.6);
+    this.gateLight.position.set(0, 2.0, c - H_HALF_D + 0.8);
+    this.scene.add(this.gateLight);
+    this.addLight(-4.2, 3.0, c - 4.0, '#9ab8ff', 4, 7, false);
+    // in front of the weights, not above them: their symbols stay readable
+    this.addLight(3.8, 2.6, c + 3.2, '#ffd59a', 2.2, 6, false);
+    this.addLight(0, 3.0, c - 3.0, '#ffd59a', 3, 6, false);
+  }
+
+  /** A valve wheel on the wall: a rim with four spokes, turned when it opens or shuts. */
+  private valveWheel(color: string, x: number, y: number, z: number) {
+    const g = new THREE.Group();
+    const mat = this.std(color, { metalness: 0.6, roughness: 0.35 });
+    g.add(new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.025, 8, 24), mat));
+    for (let k = 0; k < 2; k++) {
+      const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.025, 0.025), mat);
+      spoke.rotation.z = (k * Math.PI) / 2;
+      g.add(spoke);
+    }
+    g.position.set(x, y, z);
+    this.scene.add(g);
+    return g;
+  }
+
+  /** Builds the pipe pieces once the puzzle's layout is known (it comes with the scenario). */
+  private buildPipeTiles(data: { tiles: string[]; turnable: string[] }) {
+    if (this.pipeTiles.length || !data?.tiles) return;
+    const c = hCenter('gearworks');
+    const iron = () => this.std('#5a5a62', { metalness: 0.7, roughness: 0.4, emissive: '#000000' });
+    data.tiles.forEach((row, r) => [...row].forEach((kind, col) => {
+      const turn = data.turnable.includes(`${r},${col}`);
+      const x = PIPE_X0 + col * PIPE_STEP;
+      const y = PIPE_Y[r];
+      const back = new THREE.Mesh(new THREE.BoxGeometry(PIPE_STEP - 0.06, PIPE_STEP - 0.06, 0.06), this.std(turn ? '#8a6a3a' : '#3e3a34', { metalness: turn ? 0.5 : 0.1, roughness: 0.7 }));
+      back.position.set(x, y, c + PIPE_Z - 0.1);
+      this.scene.add(back);
+      const g = new THREE.Group();
+      g.position.set(x, y, c + PIPE_Z);
+      const mat = iron();
+      const half = PIPE_STEP / 2;
+      if (kind === 'S' || kind === 'X') {
+        if (kind === 'S') {
+          const p = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, PIPE_STEP, 12), mat);
+          p.rotation.z = Math.PI / 2;
+          g.add(p);
+        } else {
+          // the cracked pipe: two broken ends that do not meet
+          for (const side of [-1, 1]) {
+            const p = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.07, half * 0.6, 10), this.std('#6a4a3a', { roughness: 0.9 }));
+            p.rotation.z = Math.PI / 2;
+            p.position.x = side * half * 0.7;
+            g.add(p);
+          }
+        }
+      } else {
+        // an elbow joining the top and the right side (turned by its quarter turns)
+        const arc = new THREE.Mesh(new THREE.TorusGeometry(half, 0.09, 10, 16, Math.PI / 2), mat);
+        arc.position.set(half, half, 0);
+        arc.rotation.z = Math.PI;
+        g.add(arc);
+      }
+      if (!turn) for (const [bx, by] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        const bolt = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), this.std('#9a9aa0', { metalness: 0.8 }));
+        bolt.position.set(bx * (half - 0.08), by * (half - 0.08), -0.04);
+        g.add(bolt);
+      }
+      this.scene.add(g);
+      this.pipeTiles.push({ group: g, kind, mat, key: `${r},${col}`, angle: 0, turns: -1 });
+    }));
+  }
+
+  /** The pipes as the server reports them: how each piece lies, where the last flow ran, the valves and the tank. */
+  private applyPipes(s: RoomSnapshot, live: boolean) {
+    const m = s.mechanisms?.['g2-pipes'];
+    const data = this.scenarioRef?.puzzles.find((p) => p.id === 'g2-pipes')?.publicData;
+    if (data) this.buildPipeTiles(data as { tiles: string[]; turnable: string[] });
+    if (!m) return;
+    this.pipeTiles.forEach((tile, i) => {
+      const t = m.rotations?.[i] ?? 0;
+      if (tile.turns < 0) tile.angle = -t * (Math.PI / 2);
+      else if (t !== tile.turns) {
+        const mod = tile.kind === 'S' ? 2 : 4;
+        tile.angle -= (((t - tile.turns) % mod) + mod) % mod * (Math.PI / 2);
+      }
+      tile.turns = t;
+    });
+    this.pipesSolved = s.puzzles.find((p) => p.id === 'g2-pipes')?.status === 'solved';
+    const found = m.found ?? [];
+    const at = m.startedAt ? Date.parse(m.startedAt) : 0;
+    if (at && at !== this.pipeFlowStamp) {
+      this.pipeFlowStamp = at;
+      this.pipeFlowAt = live ? performance.now() : -1e9;
+      // the drain was open: the water spilled out at its foot
+      if (live && !found.length && !this.pipesSolved) this.drainSplashAt = performance.now();
+    }
+    this.pipeWet = found;
+    this.valveOpen = [!!m.levers?.[0], !!m.levers?.[1]];
+  }
+
+  private animatePipes(t: number, dt: number) {
+    const now = performance.now();
+    const since = (now - this.pipeFlowAt) / 1000;
+    this.pipeTiles.forEach((tile) => {
+      tile.group.rotation.z = THREE.MathUtils.lerp(tile.group.rotation.z, tile.angle, Math.min(1, dt * 10));
+      const k = this.pipeWet.indexOf(tile.key);
+      // water runs piece after piece; a flow that stopped short fades after a while (the last wet piece blinks where it leaks)
+      const reached = k >= 0 && (this.pipesSolved || since > k * 0.22);
+      const fading = !this.pipesSolved && since > 7;
+      const wet = reached && !fading;
+      const leak = wet && !this.pipesSolved && k === this.pipeWet.length - 1 && since > k * 0.22 + 0.3;
+      tile.mat.color.set(wet ? '#3d8fd0' : '#5a5a62');
+      tile.mat.emissive.set(leak ? '#a85a10' : wet ? '#103a66' : '#000000');
+      tile.mat.emissiveIntensity = leak ? 0.6 + Math.sin(t * 10) * 0.4 : 1;
+    });
+    if (this.valveMain) this.valveMain.rotation.z = THREE.MathUtils.lerp(this.valveMain.rotation.z, this.valveOpen[0] ? -Math.PI : 0, Math.min(1, dt * 4));
+    if (this.valveDrain) this.valveDrain.rotation.z = THREE.MathUtils.lerp(this.valveDrain.rotation.z, this.valveOpen[1] ? 0 : -Math.PI, Math.min(1, dt * 4));
+    if (this.tankWater) {
+      const want = this.pipesSolved ? 1.45 : 0.02;
+      this.tankWater.scale.y = THREE.MathUtils.lerp(this.tankWater.scale.y, want, Math.min(1, dt * 0.6));
+      this.tankWater.position.y = 0.12 + this.tankWater.scale.y / 2;
+    }
+    if (this.drainSplash) {
+      const d = (now - this.drainSplashAt) / 1000;
+      (this.drainSplash.material as THREE.MeshBasicMaterial).opacity = d >= 0 && d < 2.5 ? 0.7 * (1 - d / 2.5) : 0;
+    }
+    // the weights: the pads rise with the water, and sink and light up once the order is right
+    const def = ASSEMBLIES['g2-weights'];
+    if (def) {
+      const want = this.weightsSolved ? WEIGHT_TOP - 0.1 : this.pipesSolved ? WEIGHT_TOP : WEIGHT_TOP - 0.03;
+      def.top = THREE.MathUtils.lerp(def.top, want, Math.min(1, dt * 1.2));
+      for (const pad of this.weightPads) pad.position.y = def.top - 0.04;
+      for (const f of this.weightFaces) f.emissiveIntensity = THREE.MathUtils.lerp(f.emissiveIntensity, this.weightsSolved ? 1.1 + Math.sin(t * 3) * 0.2 : 0, Math.min(1, dt * 2));
+    }
+    // the gate: the portcullis rises once both mechanisms run; the key turns in the lock; light floods in when it opens
+    if (this.portcullis) this.portcullis.position.y = THREE.MathUtils.lerp(this.portcullis.position.y, this.weightsSolved ? DOOR_H - 0.2 : 0, Math.min(1, dt * 0.8));
+    if (this.gateKey) {
+      this.gateKey.visible = this.gateOpened;
+      const k = (now - this.gateKeyAt) / 1000;
+      const turned = this.gateKeyAt < 0 ? 1 : THREE.MathUtils.clamp((k - 0.4) / 0.8, 0, 1);
+      this.gateKey.position.z = THREE.MathUtils.lerp(this.gateKey.position.z, this.gateBaseZ() + (k < 0.4 && this.gateKeyAt >= 0 ? 0.3 : 0.12), Math.min(1, dt * 6));
+      this.gateKey.rotation.z = turned * (Math.PI / 2);
+    }
+    if (this.gateLight) this.gateLight.intensity = THREE.MathUtils.lerp(this.gateLight.intensity, this.gateOpened ? 9 + Math.sin(t * 2) * 1.5 : 0, Math.min(1, dt * 0.8));
+  }
+
+  private gateBaseZ() {
+    return hCenter('gearworks') - H_HALF_D;
   }
 
   /**
+   * The ancient scales on their own table  /**
    * The ancient scales on their own table: a post, a beam that leans toward the heavier pan (as the server says —
    * the weights never reach the client), two hanging pans, the three inscriptions on the wall beside them and the
    * four things to weigh, found around the room.
@@ -3097,7 +3469,7 @@ export class HanukkahWorld {
 
   /** The free game's lever follows the gears; the beam of the scales (room 7) leans toward the heavier pan and the pans follow it. */
   private updateSample(dt: number, t: number) {
-    if (this.gearLever) this.gearLever.rotation.z = THREE.MathUtils.lerp(this.gearLever.rotation.z, this.gearsRunning ? -0.5 : 0.5, Math.min(1, dt * 5));
+    if (this.pipeTiles.length || this.portcullis) this.animatePipes(t, dt);
     if (this.scaleBeam) {
       const goal = -this.scaleTilt * 0.16;
       // the beam settles slowly, with a faint breathing sway
@@ -3121,6 +3493,7 @@ export class HanukkahWorld {
       const mat = this.mapWhole.material as THREE.MeshBasicMaterial;
       mat.opacity = THREE.MathUtils.lerp(mat.opacity, this.mapSolved ? 1 : 0, Math.min(1, dt * 2));
     }
+    this.animateCompass(t, dt);
   }
 
   /** The library's evidence chain as the server reports it: glows, the board and its symbols, the beam, bookcase and drawer. */
@@ -3203,12 +3576,29 @@ export class HanukkahWorld {
     }
     // the free trial game
     this.mapSolved = solved('g1-map');
+    const compass = m['g1-compass'];
+    this.compassMark = compass?.progress ?? 0;
+    this.compassAwake = solved('g1-compass');
+    this.compassReady = s.puzzles.find((p) => p.id === 'g1-compass')?.status === 'active';
+    const flashEnd = compass?.controlUntil ? Date.parse(compass.controlUntil) : 0;
+    if (flashEnd && flashEnd !== this.compassFlashEnd) {
+      this.compassFlashEnd = flashEnd;
+      // a flash seen live; one already over when this player arrived is not played again
+      const offset = s.serverNow ? Date.parse(s.serverNow) - Date.now() : 0;
+      if (live && flashEnd - (Date.now() + offset) > 0) this.compassFlashAt = performance.now();
+    }
     this.setOpen(this.mapDrawer, !!s.clues?.['g1-note']);
     for (const d of this.cabinetDoors) this.setOpen(d, solved('g1-cabinet'));
-    this.gearsRunning = solved('g2-gears');
+    this.scenarioRef = scenario ?? this.scenarioRef;
+    this.applyPipes(s, live);
+    this.weightsSolved = solved('g2-weights');
+    const opened = solved('g2-gate');
+    // the key turns live for everyone; on arrival after the end it is simply in the lock
+    if (opened && !this.gateOpened) this.gateKeyAt = live ? performance.now() : -1;
+    this.gateOpened = opened;
     this.scaleTilt = m['h7-scales']?.tilt ?? 0;
     this.scalesDone = solved('h7-scales');
-    this.sampleDone = solved('g2-gears');
+    this.sampleDone = solved('g2-weights');
     if (this.exitDoor) this.doorOpen.set('exit' as HZone, s.phase === 'completed' ? 1 : 0);
     this.benchGuess.clear();
     const lampLit = solved('h2-lamp');
@@ -3600,8 +3990,7 @@ export class HanukkahWorld {
           if (age > 0.6) this.benchShake.delete(id);
           else part.position.x += Math.sin(age * 45) * 0.04 * (1 - age / 0.6);
         }
-        const spin = pid === 'g2-gears' && this.gearsRunning ? ({ 'gear-large': 0.6, 'gear-small': -1.2, 'gear-medium': 0.82 } as Record<string, number>)[id] ?? 0 : 0;
-        part.rotation.y = this.benchDrag?.id === id ? Math.sin(t * 3) * 0.2 : spin * t;
+        part.rotation.y = this.benchDrag?.id === id ? Math.sin(t * 3) * 0.2 : 0;
       }
       // zones: glow where the dragged part would land, gold where a part sits, a red blink after a wrong arrangement
       const flashing = t - a.flash < 1.2;
@@ -3683,14 +4072,6 @@ export class HanukkahWorld {
   private benchDown(e: PointerEvent) {
     if (!this.benchId || this.benchLocked(this.benchId)) return;
     this.benchPointer(e);
-    if (this.benchId === 'g2-gears' && this.gearLever) {
-      this.raycaster.setFromCamera(this.pointer, this.camera);
-      if (this.raycaster.intersectObject(this.gearLever, true).length) {
-        this.local?.reach(this.time);
-        this.cb.onBenchLever?.();
-        return;
-      }
-    }
     const id = this.benchPick();
     if (!id) {
       if (this.benchPicked) this.benchPlace(this.benchPicked);
@@ -4420,6 +4801,7 @@ export class HanukkahWorld {
 
   private available(def: HInteractable) {
     return this.unlocked.has(def.zone) && (!def.itemId || this.worldItems.has(def.itemId))
+      && (!def.under || !this.worldItems.has(def.under))
       && (!def.needs || (this.puzzleStatus.get(def.needs) ?? 'locked') !== 'locked')
       // a secret task's mark exists only for the player it was given to, until they find it
       && (def.kind !== 'task' || (def.ref === this.myTask && !this.myTaskDone));

@@ -164,7 +164,7 @@ import { CouponQuote, Product, formatPrice, playersLabel } from '../core/models'
     .cover { width:100%; aspect-ratio:16/9; object-fit:cover; border-radius:var(--radius); border:1px solid var(--line); display:block; box-shadow:var(--shadow); }
     h1 { font-family:var(--font-title); font-size:clamp(2.2rem, 5vw, 3.4rem); margin:.3rem 0; color:var(--gold-2); }
     .tagline { font-size:1.2rem; color:var(--blue); margin:0 0 .6rem; }
-    .desc { line-height:1.8; color:#e6e0cf; margin:0; }
+    .desc { line-height:1.8; color:#e6e0cf; margin:0; white-space:pre-line; }
     .features { list-style:none; padding:0; margin:1rem 0 0; display:flex; flex-wrap:wrap; gap:.4rem; }
     .layout { display:grid; grid-template-columns:1.6fr 1fr; gap:1.25rem; margin-top:1.75rem; align-items:start; }
     h2 { font-family:var(--font-title); margin:0 0 .6rem; }

@@ -23,7 +23,7 @@ interface Toast { id: number; text: string; kind: string }
 const PUZZLE_PANEL: Record<string, HPanel> = {
   'h1-board': 'board', 'h1-book': 'book', 'h2-wicks': 'wicks', 'h2-test': 'lamptest', 'h2-blueprint': 'blueprint', 'h4-sequence': 'sequence', 'h4-mirror': 'mirror', 'h5-spin': 'spin', 'h5-memory': 'memory', 'h5-corners': 'corners', 'h6-shelf': 'shelf', 'h6-scales': 'oilscale',
   'h1-riddle': 'riddle', 'h2-lamp': 'lamp', 'h3-maze': 'maze', 'h3-box': 'box', 'h4-wheel': 'wheel', 'h5-stand': 'stand',
-  'g1-cabinet': 'cabinet',
+  'g1-cabinet': 'cabinet', 'g1-compass': 'compass', 'g2-pipes': 'pipes', 'g2-gate': 'gatelock',
   'h5-lock': 'lock', 'h6-jugs': 'jugs', 'h7-mosaic': 'mosaic', 'h8-pedestals': 'pedestals', 'h8-final': 'final',
 };
 
@@ -34,23 +34,23 @@ const HANUKKAH_MUSIC: Partial<Record<HZone, ThemeId>> = {
 
 /** Tables used in the room itself (drag and drop), by puzzle — the object a task's guide arrow points at. */
 const BENCH_PANEL: Record<string, HPanel> = {
-  'h2-lamp': 'lamp', 'h5-stand': 'stand', 'h3-maze': 'maze', 'g1-map': 'map', 'g1-symbols': 'symbols', 'g2-gears': 'gears', 'h7-scales': 'scales',
+  'h2-lamp': 'lamp', 'h5-stand': 'stand', 'h3-maze': 'maze', 'g1-map': 'map', 'g1-books': 'symbols', 'g2-weights': 'weights', 'h7-scales': 'scales',
 };
 
 /** The Hanukkah game: opening scene, eight rooms, puzzles, scores, chat, finale and results. */
 /** The sound of each solved puzzle, heard once by every player with its celebration (spec 3, 4). */
 const SOLVE_SOUND: Record<string, Sfx> = {
-  'g1-map': 'decode', 'g1-symbols': 'success', 'g1-cabinet': 'cabinet', 'g2-gears': 'mechanism', 'h7-scales': 'gate',
+  'g1-map': 'decode', 'g1-books': 'success', 'g1-compass': 'beam', 'g1-cabinet': 'cabinet', 'g2-pipes': 'oil', 'g2-weights': 'mechanism', 'g2-gate': 'gate', 'h7-scales': 'gate',
   'h1-riddle': 'decode', 'h2-lamp': 'beam', 'h3-maze': 'success', 'h3-box': 'drawer', 'h4-wheel': 'decode',
   'h5-stand': 'success', 'h5-lock': 'codeOk', 'h6-jugs': 'oil', 'h7-mosaic': 'beam', 'h8-pedestals': 'success',
 };
 
-/** Laying a part in its place on a table: map paper, a gear on its axle, a dreidel on its stand. */
-const PLACE_SOUND: Record<string, Sfx> = { 'g1-map': 'paper', 'g2-gears': 'gear', 'h7-scales': 'scale', 'g1-symbols': 'place', 'h5-stand': 'place', 'h2-lamp': 'place' };
+/** Laying a part in its place on a table: map paper, a book, a weight stone, a dreidel on its stand. */
+const PLACE_SOUND: Record<string, Sfx> = { 'g1-map': 'paper', 'g2-weights': 'place', 'h7-scales': 'scale', 'g1-books': 'paper', 'h5-stand': 'place', 'h2-lamp': 'place' };
 
 function pickupSound(item: string): Sfx {
   if (item.startsWith('map-')) return 'find';
-  if (item.startsWith('gear-')) return 'metal';
+  if (item.startsWith('w-')) return 'metal';
   if (item.startsWith('dreidel-')) return 'spin';
   return 'pickup';
 }
@@ -262,7 +262,7 @@ function pickupSound(item: string): Sfx {
     @if (celebration(); as c) {
       <div class="celebrate" role="alert" aria-live="assertive">
         <div class="card-c">
-          <span class="emoji" aria-hidden="true">🕎</span>
+          <span class="emoji" aria-hidden="true">{{ isSample() ? '🗝️' : '🕎' }}</span>
           <h2>{{ c.name }} {{ c.verb }}!</h2>
           <p class="what">{{ c.what }}</p>
           @if (c.points) { <p class="pts">+{{ c.points }} נקודות אישיות על החידה</p> }
@@ -279,6 +279,13 @@ function pickupSound(item: string): Sfx {
     }
     @if (showLeave()) { <px-leave-dialog (later)="leave.emit()" (forGood)="leaveForGood.emit()" (cancel)="showLeave.set(false)" /> }
 
+    @if (compassFlash(); as cf) {
+      <div class="compass-flash" role="alert">
+        <span class="cf-arrow" aria-hidden="true" [style.--c]="cf.color">➤</span>
+        <b>{{ cf.text }}</b>
+        <p>{{ cf.note }}</p>
+      </div>
+    }
     <div class="toasts" aria-live="polite">
       @for (t of toasts(); track t.id) { <div class="toast" [class]="t.kind">{{ t.text }}</div> }
     </div>
@@ -306,6 +313,13 @@ function pickupSound(item: string): Sfx {
     :host { display:block; position:fixed; inset:0; overflow:hidden; }
     .stage { position:absolute; inset:0; } canvas { width:100%; height:100%; display:block; outline:none; touch-action:none; cursor:grab; }
     .loading { position:absolute; inset:0; display:grid; place-items:center; font-size:1.4rem; color: var(--gold-2); background: var(--bg); }
+    .compass-flash { position:fixed; z-index:400; left:50%; top:66%; transform:translate(-50%, -50%); width:min(440px, calc(100% - 32px)); text-align:center;
+      padding:1rem 1.2rem; border-radius:16px; background:rgba(28,10,48,.94); border:2px solid #b45cff; box-shadow:0 0 40px 8px rgba(180,92,255,.55);
+      color:#f3e6ff; animation:cf-in .25s ease-out; pointer-events:none; }
+    .compass-flash b { display:block; font-size:1.15rem; line-height:1.5; }
+    .compass-flash p { margin:.4rem 0 0; color:#e2c6ff; font-weight:600; }
+    .compass-flash .cf-arrow { display:inline-block; font-size:2.6rem; color:#c77dff; text-shadow:0 0 14px #b45cff; border-bottom:4px solid var(--c); padding:0 .3rem; }
+    @keyframes cf-in { from { opacity:0; transform:translate(-50%, -50%) scale(.85); } to { opacity:1; transform:translate(-50%, -50%) scale(1); } }
     .bench { position:fixed; z-index:20; inset-inline:0; margin-inline:auto; bottom:12px; width:min(560px, calc(100% - 24px)); display:flex; flex-direction:column; gap:.4rem;
       background: linear-gradient(180deg, rgba(40,30,8,.92), rgba(14,20,44,.94)); border:1px solid var(--gold); padding:.55rem .8rem; box-sizing:border-box; }
     /* moved by the player: placed by its top-left corner, always kept inside the screen */
@@ -458,18 +472,38 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
   myTask = signal<{ id: string; text: string; done: boolean; found?: string | null } | null>(null);
   private taskZone: string | null = null;
   isSample = computed(() => this.game.snapshot()?.scenarioId === 'gate-of-secrets');
+  /** What the free game's compass flashed — shown only to its holder, for as long as the server says (2.2 s). */
+  compassFlash = signal<{ text: string; note: string; color: string } | null>(null);
+  private compassFlashTimer?: ReturnType<typeof setTimeout>;
+
+  private async showCompassFlash() {
+    const r = await this.game.getPersonalClues('g1-compass');
+    const data = r.data as unknown as { clues?: { text: string; visual: string; away?: boolean; from?: string }[]; holdMs?: number; solo?: boolean } | undefined;
+    const clue = data?.clues?.[0];
+    if (!clue) {
+      // the others only learn that someone saw something
+      if (!data?.solo) this.toast('המצפן הבזיק באור סגול — רק אחד מכם ראה מה הופיע בו. שאלו מי!', 'info');
+      return;
+    }
+    const color = ({ 'book-red': '#e05545', 'book-green': '#3fae63', 'book-blue': '#4f86e6', 'book-brown': '#b07a42' } as Record<string, string>)[clue.visual] ?? '#b45cff';
+    const note = clue.away ? `${clue.from ?? 'שחקן אחר'} לא כאן — עכשיו גם את/ה רואה את ההבזק. ספרו לשאר!`
+      : data?.solo ? 'זכרו את הסמל שהאיר בחושך.' : 'רק את/ה רואה את זה — ספרו לשאר!';
+    clearTimeout(this.compassFlashTimer);
+    this.compassFlash.set({ text: clue.text, note, color });
+    this.compassFlashTimer = setTimeout(() => this.compassFlash.set(null), data?.holdMs ?? 2200);
+  }
   zoneCount = computed(() => this.game.scenario()?.zones.length ?? 8);
   texts = computed(() => this.isSample()
     ? { title: 'שער הסודות — משחק התנסות חינמי', mission: 'עברו את שער הסודות', rooms: 'שני חדרים — כל חדר שנפתר פותח את הדלת לבא אחריו', done: 'עברתם את שער הסודות! ראו את התוצאות, וגלו את המשחקים המלאים של PORTAL X.' }
     : { title: 'סוד פך השמן — מסע בעקבות נס החנוכה', mission: 'גלו את סוד פך השמן', rooms: 'שמונה חדרים רציפים — כל חדר שנפתר פותח את הדלת לבא אחריו', done: 'גיליתם את סוד פך השמן והשלמתם את מסע החנוכה.' });
-  readonly CHECK_LABEL: Record<string, string> = { 'h2-lamp': 'בדוק הרכבה', 'g1-map': 'בדוק את המפה', 'g2-gears': 'הפעלת הידית', 'h7-scales': 'בדיקת האיזון' };
-  readonly RESET_LABEL: Record<string, string> = { 'h5-stand': 'החזר סביבונים', 'g1-symbols': 'החזר סמלים', 'g1-map': 'החזר חלקים', 'g2-gears': 'החזר גלגלים', 'h7-scales': 'הורדת החפצים' };
+  readonly CHECK_LABEL: Record<string, string> = { 'h2-lamp': 'בדוק הרכבה', 'g1-map': 'בדיקת מפה', 'g1-books': 'בדיקת סידור', 'g2-weights': 'בדיקת משקלים', 'h7-scales': 'בדיקת האיזון' };
+  readonly RESET_LABEL: Record<string, string> = { 'h5-stand': 'החזר סביבונים', 'g1-books': 'החזר ספרים', 'g1-map': 'החזר חלקים', 'g2-weights': 'החזר אבנים', 'h7-scales': 'הורדת החפצים' };
   readonly EMPTY_LABEL: Record<string, string> = {
     'h2-lamp': 'אין חלקים על השולחן — חפשו את חלקי המנורה בחדר והרימו אותם.',
     'h5-stand': 'אין סביבונים בתיק — חפשו את ארבעת הסביבונים בחדר והרימו אותם.',
-    'g1-map': 'אין חלקי מפה בתיק — חפשו אותם על השולחן, במגירה ובמדף.',
-    'g1-symbols': 'אין סמלים בתיק — חפשו בחדר את המצפן, המפתח, הספר והמנורה.',
-    'g2-gears': 'אין גלגלי שיניים בתיק — חפשו אותם בסדנה והרימו אותם.',
+    'g1-map': 'אין חלקי מפה בתיק — שלושה חלקים מוסתרים בחדר. חפשו היטב.',
+    'g1-books': 'אין ספרים בתיק — חפשו בחדר ספר אדום, ירוק, כחול וחום.',
+    'g2-weights': 'אין אבני משקל בתיק — ארבע אבנים מפוזרות בחדר: עם סמל של ספר, נר, שעון וקובייה.',
     'h7-scales': 'אין חפצים לשקילה בתיק — חפשו בחדר נוצה, מפתח עתיק, גביש קסום ושעון חול.',
   };
   hover = signal<HInteractable | null>(null);
@@ -514,18 +548,18 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
   readonly FOCUS_HELP: Record<string, string> = {
     'h2-lamp': '',
     'h5-stand': 'גררו כל סביבון אל אחת מארבע המשבצות במתקן, לפי ארבעת הרמזים. אפשר להרים סביבון ולהניח אותו מחדש. כשסיימתם — לחצו „בדוק סידור”.',
-    'g1-map': 'גררו כל חלק מפה אל מקומו על השולחן — לכל חלק צד ישר אחד שמראה איפה הוא. כשהמפה שלמה, יופיע עליה רמז.',
-    'g1-symbols': 'גררו את ארבעת הסמלים אל ארבעת המקומות הממוספרים, לפי ההוראה שעל המפה. כשסיימתם — לחצו „בדוק סידור”.',
-    'g2-gears': 'גררו כל גלגל שיניים אל הציר המתאים לפי האיור שעל הקיר, ואז לחצו על הידית האדומה (או על „הפעלת הידית”).',
+    'g1-map': 'גררו את שלושת חלקי המפה אל השולחן — שמאל, אמצע וימין. התבוננו בקצוות הקרועים: כל שן נכנסת לשקע שלה. כשהכול מונח, לחצו „בדיקת מפה”.',
+    'g1-books': 'גררו את ארבעת הספרים אל המקומות 1 עד 4, לפי שלושת הרמזים (על המפה, מתחת לגלובוס וליד קסת הדיו). „לפני” = מספר קטן יותר. כשהמדף מלא — לחצו „בדיקת סידור”.',
+    'g2-weights': 'גררו את ארבע אבני המשקל אל המשטחים: משטח 1 לקלה ביותר, משטח 4 לכבדה ביותר. שלושה רמזים בחדר משווים בין האבנים. כשהכול מונח — לחצו „בדיקת משקלים”.',
     'h7-scales': 'גררו כל חפץ אל אחת מכפות המאזניים — או הקישו על חפץ ואחר כך על מקום פנוי בכף. אפשר להעביר חפץ בין הכפות או להחזיר אותו לשולחן. היעזרו בשלוש החריטות שעל הקיר, וכשכל החפצים על המאזניים — לחצו „בדיקת האיזון”.',
     'h3-maze': 'הזיזו את המפתח בעזרת לוח החיצים — הוא לא עובר דרך קירות. לחצו על ידית כדי להזיז אותה ולפתוח או לסגור שער. התיבה שבצד נפתחת בקוד שיתגלה ביציאה.',
   };
   readonly FOCUS_DONE: Record<string, string> = {
     'h2-lamp': 'המנורה הורכבה ונדלקה! מאחורי לוח הקיר נחשף המפתח.',
     'h5-stand': 'כל הסביבונים במקומם! קראו את הספרות שלפניהם משמאל לימין, שורה אחר שורה, והזינו את הקוד במנעול שבדלת.',
-    'g1-map': 'המפה שלמה! עליה כתוב: „התחילו במה שמראה כיוון, המשיכו במה שפותח מנעול, אחר כך חפשו את מה שקוראים בו, וסיימו במה שמפיצה אור.”',
-    'g1-symbols': 'הסמלים במקומם! הספרות מופיעות לפני הסמלים — קראו אותן לפי סדר המקומות והזינו בארון.',
-    'g2-gears': 'גלגלי השיניים משתלבים והמנגנון מסתובב — השער נפתח!',
+    'g1-map': 'המפה שלמה! עליה כתוב: „ארבעה ספרים שומרים על הקוד. הספר האדום אינו הראשון ואינו האחרון.” עוד שני רמזים מסתתרים בחדר.',
+    'g1-books': 'הספרים במקומם! על שדרת כל ספר נדלקה ספרה. כוונו עכשיו את מחט המצפן אל צבע הספר שבמקום 2, ולחצו עליו.',
+    'g2-weights': 'ארבעת המשטחים שקעו וננעלו במקומם, והסורג שלפני השער עלה. עכשיו — המפתח המוזהב, במנעול שבמרכז השער.',
     'h7-scales': 'הצלחתם לאזן את המאזניים! המנגנון העתיק התעורר לחיים.',
     'h3-maze': 'המפתח הגיע ליציאה! הקוד שהתגלה מוצג ליד הלוח — לחצו על התיבה שבצד כדי להזין אותו.',
   };
@@ -686,7 +720,6 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
         onMazeLever: (i) => this.ngZone.run(() => this.mazeLever(i)),
         onMazeBlocked: (text) => this.ngZone.run(() => this.benchMsg.set({ ok: false, text })),
         onMazeBox: () => this.ngZone.run(() => this.openBox('h3-box', 'box')),
-        onBenchLever: () => this.ngZone.run(() => this.checkBench()),
       }));
       this.world.sensitivity = this.settings.settings().lookSensitivity;
       if (this.game.scenario()) this.buildWorld();
@@ -822,11 +855,19 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
         this.audio.sfx('hint');
         this.systemLine(n.message, n.kind);
         break;
+      case 'gate-key':
+        this.audio.sfx('key');
+        this.systemLine(n.message, 'clue');
+        break;
+      case 'compass-flash':
+        this.audio.sfx('beam');
+        void this.showCompassFlash();
+        break;
       case 'wrong-answer':
         // only the player who tried hears the error; the others see it
         if (mine) this.audio.sfx('wrong');
         // a wrong arrangement on the dreidel stand blinks red for everyone
-        if (n.puzzleId === 'h5-stand' || n.puzzleId === 'g1-symbols') this.world?.flashBench(n.puzzleId);
+        if (n.puzzleId === 'h5-stand' || n.puzzleId === 'g1-map' || n.puzzleId === 'g1-books') this.world?.flashBench(n.puzzleId);
         if (!mine) this.toast(n.message, n.kind);
         break;
       case 'item-revealed':
@@ -946,11 +987,13 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
     if (!content) return;
     const nextPuzzle = sc!.puzzles.find((p) => p.requiresPuzzle === puzzleId);
     const next = nextPuzzle?.objective ?? (content.unlocksZone ? `עוברים יחד אל ${this.zoneName(content.unlocksZone)}` : undefined);
-    const mechanism = ['slots', 'maze', 'mosaic', 'balance'].includes(content.type);
+    const mechanism = ['slots', 'maze', 'mosaic', 'balance', 'pipes', 'compass'].includes(content.type);
+    // the free game's end is not a puzzle: the key turned and the gate opened
+    const finale = content.publicData?.['finale'] === true;
     this.audio.cue(SOLVE_SOUND[puzzleId] ?? 'success', 80);
     this.celebration.set({
       name: this.game.playerName(state?.solvedBy) || 'הקבוצה',
-      verb: mechanism ? 'הפעיל את המנגנון' : 'פתר את החידה',
+      verb: finale ? 'פתח את השער' : mechanism ? 'הפעיל את המנגנון' : 'פתר את החידה',
       what: content.success,
       points: this.pointsByPuzzle.get(puzzleId) ?? 0,
       next,
@@ -1018,8 +1061,8 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
         else if (def.panel === 'box') this.openBox('h3-box', 'box');
         else if (def.panel === 'lock') this.openBox('h5-lock', 'lock');
         else if (def.panel === 'map') this.openBench('g1-map');
-        else if (def.panel === 'symbols') this.openBench('g1-symbols');
-        else if (def.panel === 'gears') this.openBench('g2-gears');
+        else if (def.panel === 'symbols') this.openBench('g1-books');
+        else if (def.panel === 'weights') this.openBench('g2-weights');
         else if (def.panel === 'cabinet') this.openBox('g1-cabinet', 'cabinet');
         else if (def.panel === 'scales') this.openScales();
         else if (def.panel === 'book') this.pullBook();
@@ -1073,7 +1116,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
       .filter((x) => x.zone === this.zone())
       .sort((a, b) => a.order - b.order)
       .find((x) => s?.puzzles.find((y) => y.id === x.id)?.status === 'active');
-    if (p && ['h2-lamp', 'h5-stand', 'g1-map', 'g1-symbols', 'g2-gears', 'h7-scales'].includes(p.id)) this.openBench(p.id);
+    if (p && ['h2-lamp', 'h5-stand', 'g1-map', 'g1-books', 'g2-weights', 'h7-scales'].includes(p.id)) this.openBench(p.id);
     else if (p?.id === 'h3-maze') this.openMaze();
     else if (p?.id === 'h1-evidence') {
       // the first object whose symbol is still hidden
@@ -1216,7 +1259,7 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
       const text = ({
         'h3-box': 'התיבה נעולה. קודם הובילו את המפתח במבוך עד היציאה — שם יתגלה הקוד שפותח אותה.',
         'h5-lock': 'הדלת נעולה במנעול קוד. קודם סדרו את ארבעת הסביבונים במתקן — הקוד כתוב בגבם.',
-        'g1-cabinet': 'הארון נעול במנעול בן ארבע ספרות. קודם סדרו את ארבעת הסמלים בלוח — הספרות שבגבם הן הקוד.',
+        'g1-cabinet': 'הארון נעול במנעול בן ארבע ספרות. קודם סדרו את הספרים והעירו את המצפן — הספרות והכיוון הם הקוד.',
       } as Record<string, string>)[puzzleId] ?? 'המנעול עדיין נעול.';
       if (this.focus()) this.benchMsg.set({ ok: false, text });
       else this.toast(text, 'info');
@@ -1276,8 +1319,6 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
   async checkBench() {
     const puzzle = this.focus();
     if (!puzzle) return;
-    // the workshop's lever is pulled by hand, whatever the result
-    if (puzzle === 'g2-gears') this.audio.sfx('lever');
     const r = await this.benchOp(puzzle, { op: 'activate' });
     if (r.ok) {
       this.benchMsg.set({ ok: true, text: puzzle === 'h2-lamp' ? 'המנורה מורכבת נכון!' : puzzle === 'h7-scales' ? 'המאזניים מאוזנים!' : 'הסידור נכון!' });

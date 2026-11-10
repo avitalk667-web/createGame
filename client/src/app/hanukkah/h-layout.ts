@@ -51,7 +51,7 @@ export type Verb = 'בדיקה' | 'הרמה' | 'פתיחה' | 'סיבוב' | 'ה
 export type HKind = 'clue' | 'panel' | 'item' | 'decor' | 'task';
 
 export type HPanel = 'riddle' | 'lamp' | 'maze' | 'box' | 'wheel' | 'stand' | 'lock' | 'jugs' | 'mosaic' | 'pedestals' | 'final'
-  | 'map' | 'symbols' | 'cabinet' | 'gears' | 'scales' | 'evidence' | 'board' | 'book' | 'wicks' | 'lamptest' | 'blueprint' | 'sequence' | 'mirror' | 'spin' | 'memory' | 'corners' | 'shelf' | 'oilscale';
+  | 'map' | 'symbols' | 'compass' | 'cabinet' | 'pipes' | 'weights' | 'gatelock' | 'scales' | 'evidence' | 'board' | 'book' | 'wicks' | 'lamptest' | 'blueprint' | 'sequence' | 'mirror' | 'spin' | 'memory' | 'corners' | 'shelf' | 'oilscale';
 
 export interface HInteractable {
   id: string;
@@ -62,6 +62,8 @@ export interface HInteractable {
   panel?: HPanel;
   clueId?: string;
   itemId?: string;
+  /** Can be taken only once this item has been lifted off it (the free game: the map piece under the red book). */
+  under?: string;
   /** decor text, or the slot a pedestal stands for */
   text?: string;
   ref?: string;
@@ -190,33 +192,37 @@ const HANUKKAH_INTERACTABLES: HInteractable[] = [
 
 /** The free trial game "שער הסודות": the map room and the mechanism workshop. */
 const SAMPLE_INTERACTABLES: HInteractable[] = [
-  // 1 · חדר המפה והסמלים
+  // 1 · חדר המפה והמצפן — the torn map, the four secret books, the crazy compass and the cabinet with the changing code
   { id: 'map-table', zone: 'maproom', label: 'שולחן המפה — הרכבת החלקים', verb: 'הנחה', kind: 'panel', panel: 'map', pos: [0, 1.05, -1.5], radius: 1.0 },
-  { id: 'piece-left', zone: 'maproom', label: 'חלק מפה מתחת לספר', verb: 'הרמה', kind: 'item', itemId: 'map-left', pos: [-1.9, 1.05, -0.95], radius: 0.4 },
+  { id: 'book-red', zone: 'maproom', label: 'ספר אדום על השולחן', verb: 'הרמה', kind: 'item', itemId: 'book-red', pos: [-1.9, 1.1, -0.85], radius: 0.35 },
+  { id: 'piece-ridge', zone: 'maproom', label: 'חלק מפה מתחת לספר', verb: 'הרמה', kind: 'item', itemId: 'map-ridge', under: 'book-red', pos: [-1.9, 1.05, -0.95], radius: 0.4 },
   { id: 'note', zone: 'maproom', label: 'פתק ליד המגירות', verb: 'קריאה', kind: 'clue', clueId: 'g1-note', pos: [-7.0, 1.3, 1.2], radius: 0.45 },
-  { id: 'piece-middle', zone: 'maproom', label: 'חלק מפה במגירה', verb: 'הרמה', kind: 'item', itemId: 'map-middle', pos: [-6.7, 0.95, 1.9], radius: 0.4 },
-  { id: 'piece-right', zone: 'maproom', label: 'חלק מפה מאחורי הגלובוס', verb: 'הרמה', kind: 'item', itemId: 'map-right', pos: [7.2, 1.6, -2.45], radius: 0.4 },
+  { id: 'piece-river', zone: 'maproom', label: 'חלק מפה במגירה', verb: 'הרמה', kind: 'item', itemId: 'map-river', pos: [-6.7, 0.95, 1.9], radius: 0.4 },
+  { id: 'piece-rose', zone: 'maproom', label: 'חלק מפה מאחורי הגלובוס', verb: 'הרמה', kind: 'item', itemId: 'map-rose', pos: [7.2, 1.6, -2.45], radius: 0.4 },
   { id: 'magnifier', zone: 'maproom', label: 'זכוכית מגדלת', verb: 'בדיקה', kind: 'clue', clueId: 'g1-magnifier', pos: [1.9, 1.05, -0.9], radius: 0.4 },
-  { id: 'sym-compass', zone: 'maproom', label: 'סמל המצפן', verb: 'הרמה', kind: 'item', itemId: 'sym-compass', pos: [1.5, 1.1, -2.0], radius: 0.35 },
-  { id: 'sym-key', zone: 'maproom', label: 'סמל המפתח על וו', verb: 'הרמה', kind: 'item', itemId: 'sym-key', pos: [-2.4, 1.7, -6.6], radius: 0.35 },
-  { id: 'sym-book', zone: 'maproom', label: 'סמל הספר בין הספרים', verb: 'הרמה', kind: 'item', itemId: 'sym-book', pos: [-7.3, 1.45, -3.4], radius: 0.35 },
-  { id: 'sym-lamp', zone: 'maproom', label: 'סמל המנורה ליד המנורה', verb: 'הרמה', kind: 'item', itemId: 'sym-lamp', pos: [5.6, 1.1, 2.6], radius: 0.35 },
-  { id: 'symbol-board', zone: 'maproom', label: 'לוח הסמלים — ארבעה מקומות', verb: 'הנחה', kind: 'panel', panel: 'symbols', pos: [4.0, 1.05, -3.4], radius: 0.9 },
+  { id: 'globe', zone: 'maproom', label: 'גלובוס קטן', verb: 'סיבוב', kind: 'clue', clueId: 'g1-globe', pos: [7.1, 1.6, -1.9], radius: 0.4 },
+  { id: 'writing', zone: 'maproom', label: 'קסת דיו וכלי כתיבה', verb: 'קריאה', kind: 'clue', clueId: 'g1-ink', pos: [-0.8, 1.05, -2.0], radius: 0.4 },
+  { id: 'book-green', zone: 'maproom', label: 'ספר ירוק בכוננית', verb: 'הרמה', kind: 'item', itemId: 'book-green', pos: [-7.25, 1.5, -3.4], radius: 0.35 },
+  { id: 'book-blue', zone: 'maproom', label: 'ספר כחול על השידה', verb: 'הרמה', kind: 'item', itemId: 'book-blue', pos: [-7.0, 1.15, 1.75], radius: 0.35 },
+  { id: 'book-brown', zone: 'maproom', label: 'ספר חום ליד המנורה', verb: 'הרמה', kind: 'item', itemId: 'book-brown', pos: [5.75, 1.05, 2.75], radius: 0.35 },
+  { id: 'book-board', zone: 'maproom', label: 'מדף הספרים — ארבעה מקומות', verb: 'הנחה', kind: 'panel', panel: 'symbols', pos: [4.0, 1.05, -3.4], radius: 0.9 },
+  { id: 'compass', zone: 'maproom', label: 'המצפן המשוגע', verb: 'סיבוב', kind: 'panel', panel: 'compass', pos: [2.05, 1.08, -1.85], radius: 0.4 },
   { id: 'cabinet', zone: 'maproom', label: 'הארון הנעול — מנעול בן ארבע ספרות', verb: 'פתיחה', kind: 'panel', panel: 'cabinet', pos: [-4.2, 1.4, -6.1], radius: 0.8 },
-  { id: 'globe', zone: 'maproom', label: 'גלובוס קטן', verb: 'סיבוב', kind: 'decor', text: 'גלובוס קטן על המדף. נראה שמשהו מוסתר מאחוריו.', pos: [7.1, 1.6, -1.9], radius: 0.4 },
-  { id: 'compass', zone: 'maproom', label: 'מצפן עתיק', verb: 'בדיקה', kind: 'decor', text: 'מצפן נחושת עתיק. המחט שלו מראה את הכיוון.', pos: [1.1, 1.05, -2.0], radius: 0.35 },
-  { id: 'four-books', zone: 'maproom', label: 'ארבעה ספרים', verb: 'בדיקה', kind: 'decor', text: 'ארבעה ספרים בכריכות שונות: אדומה, ירוקה, כחולה וחומה.', pos: [-7.3, 1.45, -2.6], radius: 0.6 },
-  { id: 'writing', zone: 'maproom', label: 'כלי כתיבה', verb: 'בדיקה', kind: 'decor', text: 'קסת דיו וקולמוס של חוקר מפות.', pos: [-1.0, 1.05, -2.0], radius: 0.35 },
 
-  // 2 · סדנת המנגנון
-  { id: 'gear-bench', zone: 'gearworks', label: 'שולחן העבודה — צירי הגלגלים', verb: 'הנחה', kind: 'panel', panel: 'gears', pos: [0, 1.05, -1.4], radius: 1.0 },
-  { id: 'gear-lever', zone: 'gearworks', label: 'ידית מכנית', verb: 'הפעלה', kind: 'panel', panel: 'gears', pos: [2.0, 1.3, -1.5], radius: 0.4 },
-  { id: 'gear-large', zone: 'gearworks', label: 'גלגל שיניים גדול', verb: 'הרמה', kind: 'item', itemId: 'gear-large', pos: [-7.2, 1.45, -3.0], radius: 0.45 },
-  { id: 'gear-small', zone: 'gearworks', label: 'גלגל שיניים קטן', verb: 'הרמה', kind: 'item', itemId: 'gear-small', pos: [5.8, 0.75, 2.8], radius: 0.4 },
-  { id: 'gear-medium', zone: 'gearworks', label: 'גלגל שיניים בינוני', verb: 'הרמה', kind: 'item', itemId: 'gear-medium', pos: [-3.0, 0.2, 3.5], radius: 0.4 },
-  { id: 'gear-diagram', zone: 'gearworks', label: 'איור הגלגלים על הקיר', verb: 'קריאה', kind: 'clue', clueId: 'g2-diagram', pos: [-4.0, 2.3, -6.8], radius: 0.9 },
-  { id: 'small-box', zone: 'gearworks', label: 'תיבה קטנה עם מנעול', verb: 'בדיקה', kind: 'decor', text: 'תיבת עץ קטנה ונעולה, עם מכסה מוזהב.', pos: [3.6, 0.4, -4.6], radius: 0.45 },
-  { id: 'gate-sign', zone: 'gearworks', label: 'סמל השער מעל הדלת', verb: 'בדיקה', kind: 'decor', text: 'סמל השער. כשמנגנון גלגלי השיניים יופעל — השער ייפתח.', pos: [0, 3.9, -6.8], radius: 0.6 },
+  // 2 · חדר המנגנונים העתיקים — the ancient pipes, the hidden weights, and the golden key in the gate
+  { id: 'pipe-wall', zone: 'gearworks', label: 'קיר הצינורות העתיקים', verb: 'סיבוב', kind: 'panel', panel: 'pipes', pos: [-4.8, 1.95, -6.7], radius: 1.4 },
+  { id: 'valves', zone: 'gearworks', label: 'הברזים — הראשי וברז הניקוז', verb: 'הפעלה', kind: 'panel', panel: 'pipes', pos: [-6.85, 1.9, -6.55], radius: 0.45 },
+  { id: 'plaque', zone: 'gearworks', label: 'לוחית נחושת ליד הברזים', verb: 'קריאה', kind: 'clue', clueId: 'g2-plaque', pos: [-6.85, 1.05, -6.85], radius: 0.35 },
+  { id: 'tank', zone: 'gearworks', label: 'המיכל המרכזי', verb: 'בדיקה', kind: 'decor', text: 'מיכל גדול מזכוכית ומתכת, ריק לגמרי. צינור מהשורה התחתונה של קיר הצינורות נכנס אליו.', pos: [-2.15, 1.0, -6.3], radius: 0.55 },
+  { id: 'pillar', zone: 'gearworks', label: 'עמוד אבן חרוט', verb: 'קריאה', kind: 'clue', clueId: 'g2-cube', pos: [-5.6, 1.4, 2.6], radius: 0.45 },
+  { id: 'hourglass', zone: 'gearworks', label: 'שעון חול על השולחן', verb: 'בדיקה', kind: 'clue', clueId: 'g2-clock', pos: [6.05, 1.15, -4.0], radius: 0.35 },
+  { id: 'w-candle', zone: 'gearworks', label: 'אבן משקל עם סמל של נר', verb: 'הרמה', kind: 'item', itemId: 'w-candle', pos: [-7.2, 0.15, 3.2], radius: 0.4 },
+  { id: 'w-clock', zone: 'gearworks', label: 'אבן משקל עם סמל של שעון', verb: 'הרמה', kind: 'item', itemId: 'w-clock', pos: [5.6, 1.12, -4.0], radius: 0.35 },
+  { id: 'w-cube', zone: 'gearworks', label: 'אבן משקל עם סמל של קובייה', verb: 'הרמה', kind: 'item', itemId: 'w-cube', pos: [-4.9, 0.15, 1.9], radius: 0.4 },
+  { id: 'w-book', zone: 'gearworks', label: 'אבן משקל עם סמל של ספר', verb: 'הרמה', kind: 'item', itemId: 'w-book', pos: [6.8, 0.15, 4.6], radius: 0.4 },
+  { id: 'weight-pads', zone: 'gearworks', label: 'ארבעת משטחי האבן', verb: 'הנחה', kind: 'panel', panel: 'weights', pos: [3.8, 0.6, 0.55], radius: 1.3 },
+  { id: 'gate-lock', zone: 'gearworks', label: 'המנעול המוזהב של השער', verb: 'פתיחה', kind: 'panel', panel: 'gatelock', pos: [0, 1.35, -6.75], radius: 0.5 },
+  { id: 'gate-sign', zone: 'gearworks', label: 'שער הסודות', verb: 'בדיקה', kind: 'decor', text: 'שער כבד מאחורי סורג של מתכת. במרכזו מנעול מוזהב. הסורג יעלה רק כשהמים יזרמו והמשקולות יהיו במקומן.', pos: [0, 3.9, -6.8], radius: 0.6 },
 ];
 
 export let H_INTERACTABLES: HInteractable[] = HANUKKAH_INTERACTABLES;
@@ -252,8 +258,9 @@ const OBSTACLES: [HZone, number, number, number, number][] = [
   ['hall', -1.0, 1.0, -2.6, -0.6],
   ['maproom', -2.6, 2.6, -2.3, -0.4], ['maproom', 2.6, 5.4, -4.1, -2.6], ['maproom', -5.1, -3.3, -7.0, -5.8],
   ['maproom', -8.0, -6.3, 0.7, 2.3], ['maproom', 6.5, 8.0, -2.9, -1.1], ['maproom', 5.0, 6.2, 2.0, 3.2],
-  ['gearworks', -2.6, 2.6, -2.2, -0.4],
-  ['gearworks', 3.0, 4.2, -5.0, -4.2], ['gearworks', 5.2, 6.4, 2.2, 3.4], ['gearworks', -8.0, -6.4, -3.8, -2.2],
+  // the free game's room 2: the basin, the tank, the weights' plinth, the pillar and the hourglass table
+  ['gearworks', -8.0, -6.9, -7.0, -5.8], ['gearworks', -2.75, -1.55, -7.0, -5.65], ['gearworks', 1.9, 5.7, 0.0, 1.1],
+  ['gearworks', -5.95, -5.25, 2.25, 2.95], ['gearworks', 5.4, 6.4, -4.4, -3.6],
 ];
 
 export function hObstacles(): HRect[] {

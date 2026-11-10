@@ -162,6 +162,11 @@ public class WorldState
     /// The answers stay on the server.
     /// </summary>
     public Dictionary<string, QuestionUse> Questions { get; set; } = new();
+    /// <summary>
+    /// Values drawn for this game only (the free game's book digits and arrow), from which its code is made. Kept on the
+    /// server: never part of the shared state. Null for every scenario that draws none (and then not even written).
+    /// </summary>
+    public Dictionary<string, string>? Secrets { get; set; }
 }
 
 /// <summary>One admin question as a game uses it (a copy of a GameQuestion version).</summary>

@@ -22,14 +22,16 @@ public sealed partial class GameEngine
     {
         if (scenario.Titles.Count == 0) return [];
         var log = (world.Score ?? new ScoreBoard()).Log;
-        var mechanisms = scenario.Puzzles.Where(p => MechanismTypes.Contains(p.Type)).Select(p => p.Id).ToHashSet();
+        // (the free game's finale — the golden key in the gate — is the end, not a mechanism or a puzzle anyone solved)
+        var mechanisms = scenario.Puzzles.Where(p => MechanismTypes.Contains(p.Type) && !IsFinale(p)).Select(p => p.Id).ToHashSet();
+        var finale = scenario.Puzzles.Where(IsFinale).Select(p => p.Id).ToHashSet();
         var hintless = room.Puzzles.Where(s => s.Status == PuzzleStatus.Solved && s.HintsRevealed == 0).Select(s => s.PuzzleId).ToHashSet();
         var players = ActivePlayers(room).OrderBy(p => p.Seat).ToList();
 
         // the puzzles a player helped solve: any verified step of the puzzle, or solving it
         HashSet<string> Helped(string pid) => log.Where(e => e.PlayerId == pid && e.PuzzleId != null).Select(e => e.PuzzleId!)
             .Concat(room.Puzzles.Where(s => s.Status == PuzzleStatus.Solved && s.SolvedByPlayerId?.ToString() == pid).Select(s => s.PuzzleId))
-            .ToHashSet();
+            .Where(id => !finale.Contains(id)).ToHashSet();
 
         int Count(string rule, string pid) => rule switch
         {

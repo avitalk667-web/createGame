@@ -138,47 +138,20 @@ public class ExtensionsTests
         ActionOutcome Op(int who, string puzzle, object action) => e.Operate(r, ps[who].Id, puzzle, J(action), T0);
         var world = () => GameEngine.World(r);
 
-        // room 1: the middle map piece appears only after the note by the drawers is read
-        Assert.DoesNotContain("map-middle", world().WorldItems);
-        Assert.True(e.DiscoverClue(r, ps[1].Id, "g1-note", T0).Ok);
-        Assert.Contains("map-middle", world().WorldItems);
-        foreach (var item in new[] { "map-left", "map-middle", "map-right", "sym-compass", "sym-key", "sym-book", "sym-lamp" })
-            Assert.True(e.PickUp(r, ps[0].Id, item, T0).Ok, item);
-        Assert.Equal("wrong-place", Op(1, "g1-map", new { op = "place", slot = "m1", item = "map-right" }).Code);
-        Assert.True(Op(1, "g1-map", new { op = "place", slot = "m1", item = "map-left" }).Ok);
-        Assert.True(Op(0, "g1-map", new { op = "place", slot = "m2", item = "map-middle" }).Ok);
-        Assert.Equal("solved", Op(0, "g1-map", new { op = "place", slot = "m3", item = "map-right" }).Code);
-        Assert.Contains("התחילו במה שמראה כיוון", c.Puzzle("g1-map").Success);
-
-        Assert.Equal("הלוח עדיין לא מלא. הניחו את כל ארבעת הסמלים במקומות.", Op(0, "g1-symbols", new { op = "activate" }).Message);
-        Op(0, "g1-symbols", new { op = "place", slot = "s1", item = "sym-key" });
-        Op(0, "g1-symbols", new { op = "place", slot = "s2", item = "sym-compass" });
-        Op(0, "g1-symbols", new { op = "place", slot = "s3", item = "sym-book" });
-        Assert.Equal("placed-wrong", Op(0, "g1-symbols", new { op = "place", slot = "s4", item = "sym-lamp" }).Code);
-        Assert.False(e.SubmitAnswer(r, ps[0].Id, "g1-cabinet", J("3142"), T0).Ok); // still locked
-        Op(1, "g1-symbols", new { op = "reset" });
-        Op(1, "g1-symbols", new { op = "place", slot = "s1", item = "sym-compass" });
-        Op(1, "g1-symbols", new { op = "place", slot = "s2", item = "sym-key" });
-        Op(1, "g1-symbols", new { op = "place", slot = "s3", item = "sym-book" });
-        Assert.Equal("solved", Op(1, "g1-symbols", new { op = "place", slot = "s4", item = "sym-lamp" }).Code);
-        var backs = world().Mechanisms["g1-symbols"].Backs;
-        Assert.Equal("3142", backs["s1"] + backs["s2"] + backs["s3"] + backs["s4"]);
-        Assert.Equal("wrong", e.SubmitAnswer(r, ps[0].Id, "g1-cabinet", J("1234"), T0).Code);
-        Assert.Equal("solved", e.SubmitAnswer(r, ps[0].Id, "g1-cabinet", J("3142"), T0).Code);
+        // room 1 (four steps: map, books, compass, cabinet — tested in detail in GateOfSecretsRoom1Tests)
+        Assert.DoesNotContain("map-river", world().WorldItems);
+        GateOfSecretsRoom1Tests.PlayRoom1(new GateOfSecretsRoom1Tests.Game(e, r, ps));
         Assert.Contains("gs-golden-key", world().Inventory);
         Assert.Equal("gearworks", world().PendingZone);
         Assert.True(e.Continue(r, ps[0].Id, T0).Ok);
 
-        // room 2: gears by the diagram (wrong axle refused), then the lever
-        foreach (var gear in new[] { "gear-large", "gear-small", "gear-medium" }) Assert.True(e.PickUp(r, ps[1].Id, gear, T0).Ok);
-        Assert.Equal("wrong-place", Op(0, "g2-gears", new { op = "place", slot = "a1", item = "gear-small" }).Code);
-        Op(0, "g2-gears", new { op = "place", slot = "a1", item = "gear-large" });
-        Op(0, "g2-gears", new { op = "place", slot = "a2", item = "gear-small" });
-        Op(1, "g2-gears", new { op = "place", slot = "a3", item = "gear-medium" });
-        Assert.Equal(PuzzleStatus.Active, r.Puzzles.First(p => p.PuzzleId == "g2-gears").Status); // waits for the lever
-        Assert.Equal("solved", Op(1, "g2-gears", new { op = "activate" }).Code);
+        // room 2: the pipes, the hidden weights and the golden key in the gate (in detail in GateOfSecretsRoom2Tests)
+        var game = new GateOfSecretsRoom1Tests.Game(e, r, ps);
+        GateOfSecretsRoom2Tests.RunWater(game);
+        GateOfSecretsRoom2Tests.Weigh(game);
+        Assert.Equal("solved", Op(1, "g2-gate", new { op = "use" }).Code);
 
-        // the ancient scales moved to the Hanukkah game: the lever ends the free game
+        // the ancient scales stay in the Hanukkah game: the golden key ends the free game
         Assert.DoesNotContain(c.Puzzles, p => p.Type == "balance");
         Assert.DoesNotContain(c.Items, i => i.Id.StartsWith("sc-"));
         Assert.DoesNotContain(c.Clues, k => k.Id.Contains("scale"));

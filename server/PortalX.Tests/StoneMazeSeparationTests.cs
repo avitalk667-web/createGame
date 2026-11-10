@@ -39,9 +39,9 @@ public class StoneMazeSeparationTests
         Assert.Equal(["g1-pendulum", "g1-map", "g1-runes", "g1-cabinet", "g1-chest", "g1-door", "g2-levers", "g2-rails", "g2-gravity", "g2-gate"],
             maze.Puzzles.Select(p => p.Id).ToArray());
         Assert.All(maze.Puzzles, p => Assert.Contains(p.Type, UpgradedTypes));
-        // the free game: exactly its live puzzles (the map, the symbols, the cabinet, the gears), none of the upgraded mechanisms
+        // the free game: its own two rooms (map, books, compass, cabinet · pipes, weights, the key in the gate), none of the Stone Maze mechanisms
         Assert.Equal("PORTAL X — שער הסודות", free.Name);
-        Assert.Equal(["g1-map", "g1-symbols", "g1-cabinet", "g2-gears"], free.Puzzles.Select(p => p.Id).ToArray());
+        Assert.Equal(["g1-map", "g1-books", "g1-compass", "g1-cabinet", "g2-pipes", "g2-weights", "g2-gate"], free.Puzzles.Select(p => p.Id).ToArray());
         Assert.DoesNotContain(free.Puzzles, p => UpgradedTypes.Contains(p.Type));
         Assert.DoesNotContain(free.Puzzles, p => p.Id is "g1-pendulum" or "g1-runes" or "g2-levers" or "g2-rails" or "g2-gravity");
     }

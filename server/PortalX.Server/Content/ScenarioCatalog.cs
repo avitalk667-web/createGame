@@ -36,6 +36,8 @@ public sealed class ScenarioContent
     public List<PersonalTitleContent> Titles { get; init; } = new();
     /// <summary>Length of this scenario's opening scene; null = the server default.</summary>
     public int? IntroSeconds { get; init; }
+    /// <summary>Minutes under which the group earns "fast" (when the scenario sets it; otherwise the general option).</summary>
+    public int? FastMinutes { get; init; }
 
     public PuzzleContent Puzzle(string id) =>
         Puzzles.FirstOrDefault(p => p.Id == id) ?? throw new KeyNotFoundException($"Puzzle {id} not found");
@@ -227,6 +229,18 @@ public sealed class ScenarioCatalog
                 foreach (var t in targets)
                     if (t!["item"]?.GetValue<string>() is { } item && s.Item(item) == null) throw new InvalidDataException($"{p.Id}: unknown item {item}");
             }
+            // the free game's compass: its target is one of its marks, and its flash is told by one private clue
+            if (p.Type == "compass")
+            {
+                var marks = p.PublicData["marks"]?.AsArray().Select(n => n!["id"]!.GetValue<string>()).ToList() ?? [];
+                if (marks.Count < 2 || !marks.Contains(p.Solution["target"]?.GetValue<string>() ?? ""))
+                    throw new InvalidDataException($"{p.Id}: the compass's target must be one of its marks");
+                if (p.PersonalClues.Count != 1) throw new InvalidDataException($"{p.Id}: the compass's flash needs exactly one private clue");
+            }
+            // a code drawn for each game is made from the digits of a "generatedBacks" arrangement
+            if (p.Solution["generatedFrom"]?.GetValue<string>() is { } from
+                && s.Puzzles.FirstOrDefault(x => x.Id == from)?.PublicData["generatedBacks"]?.GetValue<bool>() != true)
+                throw new InvalidDataException($"{p.Id}: generatedFrom must name an arrangement with generated digits");
             if (p.Type == "pendulum")
             {
                 if (p.PublicData["rounds"] is not System.Text.Json.Nodes.JsonArray { Count: > 0 } rounds)

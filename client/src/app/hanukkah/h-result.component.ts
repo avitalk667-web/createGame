@@ -1,6 +1,8 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { ApiService } from '../core/api.service';
 import { GameService } from '../core/game.service';
+import { Product } from '../core/models';
 import { ResultsEmailComponent } from '../ui/results-email.component';
 import { ResultShareComponent } from '../ui/result-share.component';
 
@@ -14,7 +16,11 @@ import { ResultShareComponent } from '../ui/result-share.component';
       <div class="confetti" aria-hidden="true">@for (i of confetti; track i) { <i [style.--i]="i"></i> }</div>
       <section #card class="card result" aria-labelledby="res-title">
         <h1 id="res-title" class="gold-title">{{ freeGame() ? 'עברתם את שער הסודות!' : 'השלמתם את מסע החנוכה!' }}</h1>
-        <p class="sub">מי גילה הכי הרבה, פתר הכי הרבה והוביל את הקבוצה לניצחון?</p>
+        @if (freeGame()) {
+          <p class="sub">פענחתם את הרמזים, הפעלתם את המנגנונים ופתחתם את השער במפתח המוזהב.</p>
+        } @else {
+          <p class="sub">מי גילה הכי הרבה, פתר הכי הרבה והוביל את הקבוצה לניצחון?</p>
+        }
 
         @if (score(); as sc) {
           <div class="winner" role="status">
@@ -27,11 +33,28 @@ import { ResultShareComponent } from '../ui/result-share.component';
             }
           </div>
 
-          <div class="stats">
+          <div class="stats" [class.four]="freeGame()">
+            @if (freeGame() && game.snapshot()?.result; as r) {
+              <div><span>חידות שנפתרו</span><b>{{ r.puzzlesSolved }} מתוך {{ r.puzzlesTotal }}</b></div>
+            }
             <div><span>ניקוד קבוצתי</span><b>{{ sc.group }}</b></div>
             <div><span>זמן המשחק</span><b dir="ltr">{{ duration() }}</b></div>
             <div><span>רמזים שנוצלו</span><b>{{ sc.hintsUsed }}</b></div>
           </div>
+
+          @if (freeGame() && achievements().length) {
+            <h2 class="titles-head">הישגי הקבוצה</h2>
+            <ul class="achievements" aria-label="הישגי הקבוצה">
+              @for (a of achievements(); track a.id) {
+                <li [class.earned]="a.earned">
+                  <span class="ic" aria-hidden="true">{{ a.earned ? '🏅' : '🔒' }}</span>
+                  <b>{{ a.title }}</b>
+                  <small>{{ a.description }}</small>
+                  @if (!a.earned) { <small class="later">לא הושג הפעם</small> }
+                </li>
+              }
+            </ul>
+          }
 
           @if (titles().length) {
             <h2 class="titles-head">תארי הכבוד</h2>
@@ -75,6 +98,22 @@ import { ResultShareComponent } from '../ui/result-share.component';
 
         <px-results-email class="no-capture" />
 
+        @if (freeGame() && nextGames().length) {
+          <section class="next no-capture" aria-labelledby="next-title">
+            <h2 id="next-title">ההרפתקה הבאה מחכה לכם</h2>
+            <p class="muted">במשחקים המלאים של PORTAL X מחכים יותר חדרים, מנגנונים מורכבים יותר וסודות עמוקים יותר.</p>
+            <div class="next-cards">
+              @for (p of nextGames(); track p.id) {
+                <a class="next-card" [routerLink]="['/games', p.id]">
+                  <img [src]="p.coverImage" [alt]="''" loading="lazy" />
+                  <b>{{ p.name }}</b>
+                  <span>{{ teaser(p) }}</span>
+                </a>
+              }
+            </div>
+          </section>
+        }
+
         <div class="actions no-capture">
           @if (freeGame()) { <a class="btn primary" routerLink="/" fragment="games">גלו את שאר המשחקים</a> }
           <button class="btn" (click)="home.emit()">לדף הבית</button>
@@ -89,6 +128,18 @@ import { ResultShareComponent } from '../ui/result-share.component';
     .winner { display:inline-flex; flex-direction:column; gap:.2rem; background: linear-gradient(180deg, rgba(255,227,154,.2), rgba(224,169,63,.1)); border:1px solid var(--gold-2);
       border-radius:16px; padding:.6rem 1.6rem; margin-bottom:1rem; } .winner b { font-size:1.8rem; color: var(--gold-2); }
     .stats { display:grid; grid-template-columns: repeat(3, 1fr); gap:.6rem; margin-bottom:1rem; }
+    .stats.four { grid-template-columns: repeat(4, 1fr); }
+    .achievements { list-style:none; padding:0; margin:0 0 1rem; display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:.5rem; }
+    .achievements li { display:flex; flex-direction:column; align-items:center; gap:.15rem; border-radius:14px; padding:.55rem .4rem; background: rgba(255,255,255,.04); border:1px dashed rgba(201,162,77,.35); opacity:.6; }
+    .achievements li.earned { opacity:1; border-style:solid; border-color: var(--gold-2); background: linear-gradient(180deg, rgba(255,227,154,.22), rgba(224,169,63,.08)); }
+    .achievements .ic { font-size:1.6rem; line-height:1; } .achievements b { color: var(--gold-2); } .achievements small { color: var(--muted); font-size:.8rem; } .achievements .later { font-style:italic; }
+    .next { margin-top:1.4rem; padding-top:1rem; border-top:1px solid rgba(201,162,77,.25); }
+    .next h2 { font-size:1.35rem; color: var(--gold-2); margin:0 0 .2rem; } .next p { margin:0 0 .7rem; }
+    .next-cards { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:.6rem; }
+    .next-card { display:flex; flex-direction:column; gap:.25rem; text-align:start; text-decoration:none; color:inherit; background: rgba(255,255,255,.04); border:1px solid rgba(201,162,77,.3); border-radius:12px; overflow:hidden; padding-bottom:.55rem; }
+    .next-card:hover { border-color: var(--gold-2); }
+    .next-card img { width:100%; aspect-ratio:16/9; object-fit:cover; display:block; background:#1a1208; }
+    .next-card b, .next-card span { padding:0 .6rem; } .next-card b { color: var(--gold-2); } .next-card span { font-size:.85rem; color: var(--muted); line-height:1.45; }
     .stats div { background: rgba(255,255,255,.05); border-radius:12px; padding:.5rem; display:flex; flex-direction:column; } .stats span { color: var(--muted); font-size:.9rem; } .stats b { font-size:1.5rem; }
     table { width:100%; border-collapse:collapse; } th, td { padding:.45rem; border-bottom:1px solid rgba(201,162,77,.2); } th { color: var(--gold-2); }
     tr.me td { background: rgba(224,185,92,.1); } tr.first td b { color: var(--gold-2); }
@@ -107,7 +158,7 @@ import { ResultShareComponent } from '../ui/result-share.component';
       background: hsl(calc(40 + var(--i) * 9), 85%, 62%); animation: fall 3.2s linear calc(var(--i) * 70ms) both; }
     @keyframes fall { to { transform: translateY(105vh) rotate(calc(var(--i) * 70deg)); opacity:.2 } }
     @keyframes pop { from { opacity:0; transform: scale(.85) } to { opacity:1; transform:none } }
-    @media (max-width: 560px) { .stats { grid-template-columns: 1fr; } .titles { grid-template-columns: 1fr 1fr; } th:nth-child(5), td:nth-child(5) { display:none; } }
+    @media (max-width: 560px) { .stats { grid-template-columns: 1fr; } .stats.four { grid-template-columns: 1fr 1fr; } .titles { grid-template-columns: 1fr 1fr; } th:nth-child(5), td:nth-child(5) { display:none; } }
   `],
 })
 export class HResultComponent {
@@ -116,6 +167,34 @@ export class HResultComponent {
   /** The free trial game ends with an invitation to the full games (spec 1.4). */
   freeGame = input(false);
   confetti = Array.from({ length: 30 }, (_, i) => i);
+  private api = inject(ApiService);
+
+  /** The group's achievements of this round: every one the game has, the earned ones lit (teamwork only in a group). */
+  achievements = computed(() => {
+    const s = this.game.snapshot();
+    const earned = new Set((s?.result?.achievements ?? []).map((a) => a.id));
+    const group = (s?.players.length ?? 0) > 1;
+    return (this.game.scenario()?.achievements ?? [])
+      .filter((a) => group || a.id !== 'everyone')
+      .map((a) => ({ ...a, earned: earned.has(a.id) }));
+  });
+
+  /** The full games, for the free game's quiet invitation at the end (only games that can be bought). */
+  private products = signal<Product[]>([]);
+  nextGames = computed(() => this.products().filter((p) => !p.isFree && p.purchasable && p.saleState !== 'paused'));
+  /** What each full game has that the free one does not. */
+  private readonly TEASERS: Record<string, string> = {
+    'stone-maze': 'מטוטלת קריסטל, שרשראות ומנופים, מסילת אנרגיה וחדר שמתהפך — מבוך של חידות לחדי מחשבה.',
+    'hanukkah-oil': 'שמונה חדרים רציפים: מבוך מגנטי, פסיפס של אור, סביבונים ומאזניים עתיקים — מסע שלם בעקבות נס החנוכה.',
+  };
+  teaser = (p: Product) => this.TEASERS[p.id] ?? p.tagline;
+
+  constructor() {
+    effect(() => {
+      if (!this.freeGame()) return;
+      this.api.products().then((list) => this.products.set(list)).catch(() => {});
+    });
+  }
 
   score = computed(() => this.game.snapshot()?.score ?? null);
   zones = computed(() => [...(this.game.scenario()?.zones ?? [])].sort((a, b) => a.order - b.order));

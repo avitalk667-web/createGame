@@ -12,7 +12,7 @@ namespace PortalX.Server.Game;
 /// </summary>
 public sealed partial class GameEngine
 {
-    public static readonly string[] MechanismTypes = ["slots", "maze", "mosaic", "balance", "inspect", "spinner", "pendulum", "assembly", "runechain", "exitdoor", "cabinetlock", "keychest", "levers", "railway", "gravity"];
+    public static readonly string[] MechanismTypes = ["slots", "maze", "mosaic", "balance", "inspect", "spinner", "pendulum", "assembly", "runechain", "exitdoor", "cabinetlock", "keychest", "levers", "railway", "gravity", "compass", "pipes", "finalkey"];
 
     // ---------------------------------------------------------------- clues
 
@@ -49,8 +49,10 @@ public sealed partial class GameEngine
     public ActionOutcome Operate(GameRoom room, Guid playerId, string puzzleId, JsonElement action, DateTime now)
     {
         // the free game's gravity rod still turns the room back after its cell has opened (only that puzzle type)
-        var flipBack = catalog.Find(room.ScenarioId)?.Puzzles.FirstOrDefault(p => p.Id == puzzleId)?.Type == "gravity"
-            && action.ValueKind == JsonValueKind.Object && action.TryGetProperty("op", out var fop) && fop.GetString() == "flip";
+        // and the free game's compass flashes again after it has woken (only that puzzle type)
+        var againType = catalog.Find(room.ScenarioId)?.Puzzles.FirstOrDefault(p => p.Id == puzzleId)?.Type;
+        var againOp = action.ValueKind == JsonValueKind.Object && action.TryGetProperty("op", out var fop) ? fop.GetString() : null;
+        var flipBack = (againType == "gravity" && againOp == "flip") || (againType == "compass" && againOp == "press");
         var check = CheckPuzzleAccess(room, playerId, puzzleId, now, out var scenario, out var puzzle, out var state, out var player, allowSolved: flipBack);
         if (check != null) return check;
         if (!MechanismTypes.Contains(puzzle!.Type)) return ActionOutcome.Fail("wrong-action", "את החידה הזאת פותרים בהזנת תשובה.");
@@ -86,6 +88,9 @@ public sealed partial class GameEngine
                 "levers" => OperateLevers(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
                 "railway" => OperateRailway(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
                 "gravity" => OperateGravity(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
+                "compass" => OperateCompass(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
+                "pipes" => OperatePipes(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
+                "finalkey" => OperateFinalKey(room, scenario!, puzzle, state!, player!, world, op, now),
                 _ =>ActionOutcome.Fail("wrong-action", "פעולה לא מוכרת."),
             };
         }
@@ -124,6 +129,8 @@ public sealed partial class GameEngine
         string? Arg(string name) => action.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
         string? did = op switch
         {
+            // the free game's pipes tell their own lines
+            _ when puzzle.Type == "pipes" => null,
             "place" when Arg("slot") is { } s => before.FirstOrDefault(kv => kv.Value == Arg("item")).Key is { } src && src != s
                 ? $"העביר את {Item(Arg("item"))} מ„{Slot(src)}” אל „{Slot(s)}”"
                 : $"הניח את {Item(Arg("item"))} ב„{Slot(s)}”",
@@ -166,6 +173,11 @@ public sealed partial class GameEngine
                 for (var i = 0; i < order.Count; i++) m.Slots[$"p{i + 1}"] = order[i];
                 m.Rotations = puzzle.PublicData["start"]!["turns"]!.AsArray().Select(n => n!.GetValue<int>()).ToList();
                 break;
+            case "pipes":
+                // the free game's pipes: every piece's quarter turns; the main valve shut, the drain open
+                m.Rotations = PipeStart(puzzle.PublicData);
+                m.Levers = [false, true];
+                break;
         }
         return m;
     }
@@ -184,6 +196,9 @@ public sealed partial class GameEngine
         // "check the arrangement" (the hall's pedestals): nothing is judged while placing; the check marks every place
         // right or wrong, right items stay put, and the mechanism opens once all of them are right
         var verify = puzzle.PublicData["verify"]?.GetValue<bool>() == true;
+        // "check the whole arrangement" (the free game's map and books): nothing is judged while placing, and the check
+        // says only whether everything is right — never which piece is wrong
+        var checkWhole = puzzle.PublicData["checkWhole"]?.GetValue<bool>() == true;
         var solution = puzzle.Solution["slots"]!.AsObject();
         bool Correct() => slotIds.All(id => mech.Slots.TryGetValue(id, out var it) && solution[id]!.GetValue<string>() == it);
 
@@ -217,7 +232,7 @@ public sealed partial class GameEngine
                 mech.SlotBy[slot] = player.Id.ToString();
                 mech.Verdict.Remove(slot);
                 Contribute(world, player.Id);
-                if (verify)
+                if (verify || checkWhole)
                 {
                     SaveWorld(room, world, now);
                     var left = slotIds.Count - mech.Slots.Count;
@@ -262,11 +277,28 @@ public sealed partial class GameEngine
             case "activate":
             {
                 // "Check assembly": says what is missing, or completes the mechanism when everything is in place
-                if (!activateMode && !checkEach && !checkButton && !verify) return ActionOutcome.Fail("wrong-action", "המתקן הזה פועל מעצמו כשהכול במקומו.");
+                if (!activateMode && !checkEach && !checkButton && !verify && !checkWhole) return ActionOutcome.Fail("wrong-action", "המתקן הזה פועל מעצמו כשהכול במקומו.");
                 var missing = slotIds.Count - mech.Slots.Count;
                 if (missing > 0)
                     return ActionOutcome.Fail("not-ready", puzzle.PublicData["incompleteMessage"]?.GetValue<string>()
                         ?? (missing == 1 ? "חסר עוד חלק אחד." : $"חסרים עוד {missing} חלקים."));
+                if (checkWhole)
+                {
+                    Contribute(world, player.Id);
+                    if (Correct())
+                    {
+                        state.Attempts++;
+                        state.WrongStreak = 0;
+                        mech.Ready = true;
+                        RevealGeneratedBacks(room, scenario, puzzle, world, mech, now);
+                        SaveWorld(room, world, now);
+                        return Solve(room, scenario, puzzle, state, player, now);
+                    }
+                    var wrong = WrongCode(state, now, puzzle.Failure);
+                    SaveWorld(room, world, now);
+                    return new ActionOutcome(false, "wrong-answer", wrong,
+                        [new("wrong-answer", $"{player.Nickname} · {puzzle.Title}: {puzzle.Failure}", player.Id.ToString(), puzzle.Id)], true);
+                }
                 if (verify)
                 {
                     // every place is checked here on the server; the clients only see right / wrong per place
@@ -695,7 +727,8 @@ public sealed partial class GameEngine
         if (scenario.Scoring is not { } rules) return;
         var board = world.Score ??= new ScoreBoard();
         var pid = player.Id.ToString();
-        board.Solved[pid] = board.Solved.GetValueOrDefault(pid) + 1;
+        // (the free game's finale — the key in the gate — is not one of the puzzles a player solved)
+        if (!IsFinale(puzzle)) board.Solved[pid] = board.Solved.GetValueOrDefault(pid) + 1;
 
         // the pedestal of the original game ("items") is a mechanism too: it starts when everything is on it
         if (MechanismTypes.Contains(puzzle.Type) || puzzle.Type == "items")
