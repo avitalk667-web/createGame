@@ -85,6 +85,27 @@ public sealed class ProductSeed
     }
 }
 
+/// <summary>The optional previous ("was") price. It is shown only; payments always use PriceIls.</summary>
+public static class ProductPricing
+{
+    /// <summary>The previous price to show, or null: never for a free game, and only when it is above a set current price.</summary>
+    public static decimal? ShownPreviousPrice(Product p) =>
+        !p.IsFree && p.PriceIls is > 0 && p.PreviousPriceIls is { } was && was > p.PriceIls ? was : null;
+
+    /// <summary>Checks a previous price against the current one; returns a Hebrew error for the admin, or null when valid.</summary>
+    public static string? Validate(decimal? previous, decimal? current, bool isFree)
+    {
+        if (previous is not { } was) return null;
+        if (isFree) return "למשחק חינמי אין מחיר קודם. השאירו את השדה ריק.";
+        if (was <= 0 || was > 10000 || decimal.Round(was, 2) != was) return "המחיר הקודם צריך להיות סכום חיובי בשקלים, עד שתי ספרות אחרי הנקודה.";
+        if (current is not > 0) return "אי אפשר לשמור מחיר קודם בלי מחיר נוכחי. קבעו מחיר נוכחי או מחקו את המחיר הקודם.";
+        if (was <= current) return $"המחיר הקודם ({Money(was)} ₪) חייב להיות גבוה מהמחיר הנוכחי ({Money(current.Value)} ₪). תקנו אחד מהם, או מחקו את המחיר הקודם.";
+        return null;
+    }
+
+    private static string Money(decimal v) => v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+}
+
 /// <summary>Public view of a product for the catalog pages.</summary>
 public static class ProductView
 {
@@ -95,6 +116,8 @@ public static class ProductView
         {
             p.Id, p.Name, p.Tagline, p.Description,
             Price = p.PriceIls, p.Currency, p.CoverImage,
+            // display only: the struck-through "was" price; the charge is always Price
+            PreviousPrice = ProductPricing.ShownPreviousPrice(p),
             Gallery = JsonNode.Parse(p.GalleryJson),
             Features = JsonNode.Parse(p.FeaturesJson),
             Included = JsonNode.Parse(p.IncludedJson),

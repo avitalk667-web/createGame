@@ -288,6 +288,11 @@ public class Product
     public string Description { get; set; } = "";
     /// <summary>Price in ILS for one group game; null = not set yet (cannot be sold).</summary>
     public decimal? PriceIls { get; set; }
+    /// <summary>
+    /// Optional "was" price shown struck through next to PriceIls (a sale). Display only: it is never charged,
+    /// never sent to payment and never used for coupons. Null = no previous price; when set it is above PriceIls.
+    /// </summary>
+    public decimal? PreviousPriceIls { get; set; }
     public string Currency { get; set; } = "ILS";
     public string CoverImage { get; set; } = "";
     /// <summary>JSON array of { src, caption }.</summary>

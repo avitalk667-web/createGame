@@ -308,6 +308,8 @@ export interface Product {
   tagline: string;
   description: string;
   price?: number | null;
+  /** Optional "was" price shown struck through next to `price`. Display only: the charge is always `price`. */
+  previousPrice?: number | null;
   currency: string;
   coverImage: string;
   gallery: { src: string; caption: string }[];
@@ -364,11 +366,21 @@ export interface OrderView {
   paymentNeedsRefund?: boolean;
 }
 
+function formatAmount(amount: number, currency: string): string {
+  const n = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
+  return currency === 'ILS' ? `${n} ₪` : `${n} ${currency}`;
+}
+
 export function formatPrice(p: Product): string | null {
   if (p.isFree) return 'חינם';
   if (p.price == null) return null;
-  const n = Number.isInteger(p.price) ? String(p.price) : p.price.toFixed(2);
-  return p.currency === 'ILS' ? `${n} ₪` : `${n} ${p.currency}`;
+  return formatAmount(p.price, p.currency);
+}
+
+/** The struck-through "was" price, only when it is above a set current price of a paid game; otherwise null. */
+export function formatPreviousPrice(p: Product): string | null {
+  if (p.isFree || p.price == null || p.previousPrice == null || !(p.previousPrice > p.price)) return null;
+  return formatAmount(p.previousPrice, p.currency);
 }
 
 export function playersLabel(p: Product): string {

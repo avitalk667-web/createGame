@@ -163,6 +163,37 @@ input:not([type]) {
   clip: rect(0 0 0 0);
 }
 
+/* sale price: the previous price, secondary, with a clear diagonal line; the current price next to it stays the bold one */
+.price-pair {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: .2em .5em;
+}
+.price-was {
+  position: relative;
+  display: inline-block;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: .55em;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  padding-inline: .1em;
+}
+.price-was::after {
+  content: "";
+  position: absolute;
+  inset-inline: -.08em;
+  top: 50%;
+  height: 2px;
+  border-radius: 2px;
+  background: #e98b7d;
+  transform: rotate(-14deg);
+  pointer-events: none;
+}
+.price-now { white-space: nowrap; }
+
 .gold-title {
   background: linear-gradient(180deg, #fff2c4 10%, #e0b95c 60%, #9a7a32);
   -webkit-background-clip: text;

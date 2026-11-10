@@ -1203,6 +1203,10 @@ namespace PortalX.Server.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<decimal?>("PreviousPriceIls")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
                     b.Property<decimal?>("PriceIls")
                         .HasPrecision(10, 2)
                         .HasColumnType("numeric(10,2)");
@@ -1236,6 +1240,8 @@ namespace PortalX.Server.Data.Migrations
 
                     b.ToTable("Products", t =>
                         {
+                            t.HasCheckConstraint("CK_Products_PreviousPrice", "\"PreviousPriceIls\" IS NULL OR (\"PriceIls\" IS NOT NULL AND \"PreviousPriceIls\" > \"PriceIls\")");
+
                             t.HasCheckConstraint("CK_Products_Price", "\"PriceIls\" IS NULL OR \"PriceIls\" > 0");
                         });
                 });

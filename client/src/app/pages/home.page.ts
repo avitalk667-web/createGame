@@ -4,7 +4,7 @@ import { AdminApiService } from '../core/admin-api.service';
 import { ApiService, Campaign } from '../core/api.service';
 import { AudioService } from '../core/audio.service';
 import { SiteService } from '../core/site.service';
-import { FaqEntryView, Product, formatPrice, playersLabel } from '../core/models';
+import { FaqEntryView, Product, formatPreviousPrice, formatPrice, playersLabel } from '../core/models';
 import { DrawCountdownComponent } from '../ui/draw-countdown.component';
 import { PrizeGiftComponent } from '../ui/prize-gift.component';
 import { HowItWorksComponent } from '../ui/how-it-works.component';
@@ -125,7 +125,15 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
                       @if (p.isFree) {
                         <b>חינם</b> <span>משחק התנסות · {{ players(p) }}</span>
                       } @else if (price(p); as pr) {
-                        <b>{{ pr }}</b> <span>למשחק קבוצתי · {{ players(p) }}</span>
+                        @if (previousPrice(p); as was) {
+                          <div class="price-pair pair">
+                            <s class="price-was"><span class="sr-only">מחיר קודם: </span><bdi>{{ was }}</bdi></s>
+                            <b class="price-now"><span class="sr-only">מחיר נוכחי: </span><bdi>{{ pr }}</bdi></b>
+                          </div>
+                        } @else {
+                          <b>{{ pr }}</b>
+                        }
+                        <span>למשחק קבוצתי · {{ players(p) }}</span>
                       } @else {
                         <span class="muted">המחיר יפורסם בקרוב</span>
                       }
@@ -313,6 +321,7 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
     .price { display:flex; flex-direction:column; }
     .price b { font-size:1.8rem; color:var(--gold-2); line-height:1.1; }
     .price span { font-size:.9rem; color:var(--muted); }
+    .price .pair { font-size:1.8rem; line-height:1.1; }
     .price .sale-soon { display:block; color:var(--gold-2); font-weight:700; }
     /* the personal-link banner: slim, navy and gold, a thin glowing frame; never taller than about 160px on a computer */
     .share { display:grid; align-items:center; gap:clamp(.55rem, 1vw, 1rem); margin-block:1rem 0; padding:.6rem clamp(.7rem, 1.3vw, 1.1rem);
@@ -434,6 +443,8 @@ export class HomePage {
   campaign = signal<Campaign | null>(null);
   openFaq = signal<string | null>(null);
   price = formatPrice;
+  /** Display only: the charge is always the current price. */
+  previousPrice = formatPreviousPrice;
   players = playersLabel;
 
   constructor() {

@@ -19,7 +19,7 @@ const EMPTY_COUPON: CouponForm = { code: '', name: '', note: '', kind: 'percent'
 
 /** Unsaved edits of one product, as typed in the form. */
 interface ProductEdit {
-  name?: string; tagline?: string; description?: string; coverImage?: string; priceIls?: string; maxPlayers?: string; status?: string;
+  name?: string; tagline?: string; description?: string; coverImage?: string; priceIls?: string; previousPriceIls?: string; maxPlayers?: string; status?: string;
   saleDate?: string; saleTime?: string; showBeforeSale?: string; salePaused?: string;
 }
 
@@ -275,8 +275,26 @@ const ACTIONS: Record<string, string> = {
                   <label>תקציר <input [value]="edit(p.id).tagline ?? p.tagline" (input)="patch(p.id, 'tagline', $any($event.target).value)" /></label>
                   <label>תיאור <textarea rows="4" [value]="edit(p.id).description ?? p.description" (input)="patch(p.id, 'description', $any($event.target).value)"></textarea></label>
                   <label>תמונת כיסוי <input dir="ltr" [value]="edit(p.id).coverImage ?? p.coverImage" (input)="patch(p.id, 'coverImage', $any($event.target).value)" /></label>
+                  <fieldset class="prices">
+                    <legend>מחיר</legend>
+                    <div class="row2">
+                      <label>מחיר נוכחי לתשלום (₪) <input type="number" min="1" step="0.01" dir="ltr" [value]="edit(p.id).priceIls ?? p.price ?? ''" (input)="patch(p.id, 'priceIls', $any($event.target).value)" /></label>
+                      @if (!p.isFree) {
+                        <label>מחיר קודם (אופציונלי, ₪) <input type="number" min="1" step="0.01" dir="ltr" placeholder="ריק = בלי מחיר קודם"
+                          [attr.aria-invalid]="previousPriceProblem(p) ? 'true' : null" [attr.aria-describedby]="'prev-help-' + p.id"
+                          [value]="edit(p.id).previousPriceIls ?? p.previousPrice ?? ''" (input)="patch(p.id, 'previousPriceIls', $any($event.target).value)" /></label>
+                      }
+                    </div>
+                    @if (!p.isFree) {
+                      <p class="muted small" [id]="'prev-help-' + p.id">המחיר הקודם מוצג באתר עם קו חוצה, לצד המחיר הנוכחי. הוא לתצוגה בלבד — החיוב תמיד לפי המחיר הנוכחי. השאירו ריק כדי לא להציג מחיר קודם.</p>
+                      @if (previousPriceProblem(p); as problem) {
+                        <p class="warn" role="alert">{{ problem }}</p>
+                      } @else if (pricePreview(p); as pv) {
+                        <p class="small preview">תצוגה באתר: @if (pv.was) { <s class="was"><bdi>{{ pv.was }} ₪</bdi></s> } <b><bdi>{{ pv.now }} ₪</bdi></b></p>
+                      }
+                    }
+                  </fieldset>
                   <div class="row3">
-                    <label>מחיר (₪) <input type="number" min="1" step="0.01" dir="ltr" [value]="edit(p.id).priceIls ?? p.price ?? ''" (input)="patch(p.id, 'priceIls', $any($event.target).value)" /></label>
                     <label>משתתפים מרבי (עד {{ p.maxPlayersLimit }}) <input type="number" min="1" [max]="p.maxPlayersLimit" dir="ltr" [value]="edit(p.id).maxPlayers ?? p.maxPlayers" (input)="patch(p.id, 'maxPlayers', $any($event.target).value)" /></label>
                     <label>סטטוס
                       <select [value]="edit(p.id).status ?? p.status" (change)="patch(p.id, 'status', $any($event.target).value)">
@@ -691,6 +709,12 @@ const ACTIONS: Record<string, string> = {
     .product input, .product textarea, .product select { width:100%; }
     .product textarea { background:rgba(255,255,255,.06); color:var(--text); border:1px solid var(--line); border-radius:10px; padding:.5rem; font:inherit; }
     .row3 { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:.5rem; }
+    .row2 { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:.5rem; width:100%; }
+    fieldset.prices { flex-direction:column; flex-wrap:nowrap; gap:.4rem; margin:0; }
+    fieldset.prices p { margin:0; }
+    .product input[aria-invalid="true"] { border-color:#ff9a7a; }
+    .preview b { color:var(--gold-2); font-size:1rem; }
+    .preview .was { color:var(--muted); margin-inline-end:.35rem; }
     .sale { border:1px solid var(--line); border-radius:12px; padding:.5rem .8rem .6rem; margin:0; display:flex; flex-direction:column; gap:.4rem; }
     .sale legend { color:var(--gold-2); font-weight:700; padding:0 .3rem; display:flex; gap:.4rem; align-items:center; }
     .sale label.check { flex-direction:row; align-items:center; gap:.4rem; }
@@ -712,7 +736,7 @@ const ACTIONS: Record<string, string> = {
     .ok { color:#9be3b4; } .small { font-size:.8rem; }
     select { background:var(--panel-solid); color:var(--text); border:1px solid var(--line); border-radius:10px; padding:.45rem .6rem; min-height:40px; }
     @media (max-width: 900px) { .cards, .free-report .cards { grid-template-columns:repeat(2, minmax(0,1fr)); } .products { grid-template-columns:1fr; } }
-    @media (max-width: 560px) { .cards, .free-report .cards { grid-template-columns:1fr; } .row3 { grid-template-columns:1fr; } }
+    @media (max-width: 560px) { .cards, .free-report .cards { grid-template-columns:1fr; } .row3, .row2 { grid-template-columns:1fr; } }
   `],
 })
 export class AdminPage {
@@ -962,6 +986,31 @@ export class AdminPage {
     }
   }
 
+  /** The current and previous price as they will be saved (the typed value, else the stored one); null = empty. */
+  private pricesOf(p: AdminProduct): { now: number | null; was: number | null; wasText: string } {
+    const e = this.edit(p.id);
+    const num = (v: string | number | null | undefined) => (v == null || String(v).trim() === '' ? null : Number(v));
+    const wasText = String(e.previousPriceIls ?? p.previousPrice ?? '').trim();
+    return { now: num(e.priceIls ?? p.price), was: num(wasText), wasText };
+  }
+
+  /** A clear message when the previous price cannot be saved, checked again whenever either price changes. */
+  previousPriceProblem(p: AdminProduct): string | null {
+    if (p.isFree) return null;
+    const { now, was, wasText } = this.pricesOf(p);
+    if (was == null) return null;
+    if (!Number.isFinite(was) || was <= 0 || Math.abs(Math.round(was * 100) - was * 100) > 1e-6 || was > 10000) return `המחיר הקודם "${wasText}" אינו תקין: יש להזין סכום חיובי בשקלים, עד שתי ספרות אחרי הנקודה.`;
+    if (now == null || !(now > 0)) return 'אי אפשר לשמור מחיר קודם בלי מחיר נוכחי. קבעו מחיר נוכחי או מחקו את המחיר הקודם.';
+    if (was <= now) return `המחיר הקודם (${was} ₪) חייב להיות גבוה מהמחיר הנוכחי (${now} ₪). תקנו אחד מהם, או מחקו את המחיר הקודם.`;
+    return null;
+  }
+
+  /** How the price will look on the site, for the admin form. */
+  pricePreview(p: AdminProduct): { now: number; was: number | null } | null {
+    const { now, was } = this.pricesOf(p);
+    return now != null && now > 0 ? { now, was } : null;
+  }
+
   async save(id: string) {
     const e = this.edit(id);
     const body: Record<string, unknown> = {};
@@ -969,6 +1018,14 @@ export class AdminPage {
     if (e.priceIls !== undefined) {
       if (String(e.priceIls).trim() === '') body['clearPrice'] = true;
       else body['priceIls'] = Number(e.priceIls);
+    }
+    // the previous price is display only; checked here for a quick message and again on the server
+    const product = this.products().find((x) => x.id === id);
+    const problem = product ? this.previousPriceProblem(product) : null;
+    if (problem) { this.error.set(problem); return; }
+    if (e.previousPriceIls !== undefined) {
+      if (String(e.previousPriceIls).trim() === '') body['clearPreviousPrice'] = true;
+      else body['previousPriceIls'] = Number(e.previousPriceIls);
     }
     if (e.maxPlayers !== undefined) body['maxPlayers'] = Number(e.maxPlayers);
     // the opening date and time go together (Israel time); the server checks them and stores UTC

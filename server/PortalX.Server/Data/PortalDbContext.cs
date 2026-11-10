@@ -97,7 +97,13 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.Property(x => x.GalleryJson).HasColumnType("jsonb");
             e.Property(x => x.FeaturesJson).HasColumnType("jsonb");
             e.Property(x => x.IncludedJson).HasColumnType("jsonb");
-            e.ToTable(t => t.HasCheckConstraint("CK_Products_Price", "\"PriceIls\" IS NULL OR \"PriceIls\" > 0"));
+            e.Property(x => x.PreviousPriceIls).HasPrecision(10, 2);
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_Products_Price", "\"PriceIls\" IS NULL OR \"PriceIls\" > 0");
+                // a previous price only next to a current price, and always above it
+                t.HasCheckConstraint("CK_Products_PreviousPrice", "\"PreviousPriceIls\" IS NULL OR (\"PriceIls\" IS NOT NULL AND \"PreviousPriceIls\" > \"PriceIls\")");
+            });
         });
     }
 

@@ -26,7 +26,7 @@ public sealed record AdminFilter(DateTime? From, DateTime? To, string? ProductId
 /// <param name="SaleDate">Opening date for purchase, "yyyy-MM-dd" in Israel time (with SaleTime "HH:mm"); ClearSaleOpening removes it.</param>
 public sealed record ProductUpdate(string? Name, string? Tagline, string? Description, string? CoverImage, decimal? PriceIls,
     bool ClearPrice, string? Status, int? MaxPlayers, string? SaleDate = null, string? SaleTime = null, bool ClearSaleOpening = false,
-    bool? ShowBeforeSale = null, bool? SalePaused = null);
+    bool? ShowBeforeSale = null, bool? SalePaused = null, decimal? PreviousPriceIls = null, bool ClearPreviousPrice = false);
 
 /// <summary>
 /// Admin reports and actions. Revenue counts only confirmed, non-test payments; admin free games never count
@@ -364,7 +364,7 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
 
     private object ProductRow(Product p) => new
         {
-            p.Id, p.Name, p.Tagline, p.Description, p.CoverImage, price = p.PriceIls, p.Currency,
+            p.Id, p.Name, p.Tagline, p.Description, p.CoverImage, price = p.PriceIls, previousPrice = p.PreviousPriceIls, p.Currency,
             status = p.Status.ToString().ToLowerInvariant(), p.MinPlayers, p.MaxPlayers, p.ScenarioId, p.UpdatedAt, p.IsFree,
             maxPlayersLimit = rooms.Engine.MaxPlayersLimit,
             playable = PurchaseService.IsPlayable(p, scenarios),
@@ -389,7 +389,7 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
     {
         var p = await db.Products.FirstOrDefaultAsync(x => x.Id == id);
         if (p == null) return (null, "המוצר לא נמצא.");
-        var before = new { p.Name, p.PriceIls, Status = p.Status.ToString(), p.MaxPlayers, p.CoverImage, p.SaleOpensAt, p.ShowBeforeSale, p.SalePaused };
+        var before = new { p.Name, p.PriceIls, p.PreviousPriceIls, Status = p.Status.ToString(), p.MaxPlayers, p.CoverImage, p.SaleOpensAt, p.ShowBeforeSale, p.SalePaused };
 
         if (u.Name != null) { if (u.Name.Trim().Length is < 2 or > 80) return (null, "שם המוצר צריך להיות באורך 2–80 תווים."); p.Name = u.Name.Trim(); }
         if (u.Tagline != null) { if (u.Tagline.Length > 200) return (null, "התקציר ארוך מדי (עד 200 תווים)."); p.Tagline = u.Tagline.Trim(); }
@@ -407,6 +407,10 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
             if (price <= 0 || price > 10000 || decimal.Round(price, 2) != price) return (null, "המחיר צריך להיות סכום חיובי בשקלים, עד שתי ספרות אחרי הנקודה.");
             p.PriceIls = price;
         }
+        // the previous price is checked again whenever either price changes, against the price that will be saved
+        if (u.ClearPreviousPrice) p.PreviousPriceIls = null;
+        else if (u.PreviousPriceIls is { } was) p.PreviousPriceIls = was;
+        if (ProductPricing.Validate(p.PreviousPriceIls, p.PriceIls, p.IsFree) is { } priceError) return (null, priceError);
         if (u.MaxPlayers is { } max)
         {
             var cap = rooms.Engine.MaxPlayersLimit;
@@ -434,10 +438,10 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
         p.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
         var saleChanged = before.SaleOpensAt != p.SaleOpensAt || before.ShowBeforeSale != p.ShowBeforeSale || before.SalePaused != p.SalePaused;
-        await AuditAsync(admin, before.PriceIls != p.PriceIls ? "product-price-changed" : saleChanged ? "product-sale-changed" : "product-updated", "product", p.Id, new
+        await AuditAsync(admin, before.PriceIls != p.PriceIls || before.PreviousPriceIls != p.PreviousPriceIls ? "product-price-changed" : saleChanged ? "product-sale-changed" : "product-updated", "product", p.Id, new
         {
             before,
-            after = new { p.Name, p.PriceIls, Status = p.Status.ToString(), p.MaxPlayers, p.CoverImage, p.SaleOpensAt, p.ShowBeforeSale, p.SalePaused },
+            after = new { p.Name, p.PriceIls, p.PreviousPriceIls, Status = p.Status.ToString(), p.MaxPlayers, p.CoverImage, p.SaleOpensAt, p.ShowBeforeSale, p.SalePaused },
         });
         return (ProductRow(p), null);
     }

@@ -3,7 +3,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, input, 
 import { Router, RouterLink } from '@angular/router';
 import { ApiService, StoredOrder, orderStore, sessionStore } from '../core/api.service';
 import { AudioService } from '../core/audio.service';
-import { CouponQuote, Product, formatPrice, playersLabel } from '../core/models';
+import { CouponQuote, Product, formatPreviousPrice, formatPrice, playersLabel } from '../core/models';
 
 /** /games/:id — one product: large image, what's included, players, price and the next step (spec §2). */
 @Component({
@@ -66,7 +66,14 @@ import { CouponQuote, Product, formatPrice, playersLabel } from '../core/models'
               <b class="price">חינם</b>
               <span class="muted">משחק התנסות · {{ players(p) }}</span>
             } @else if (price(p); as pr) {
-              <b class="price">{{ pr }}</b>
+              @if (previousPrice(p); as was) {
+                <div class="price price-pair">
+                  <s class="price-was"><span class="sr-only">מחיר קודם: </span><bdi>{{ was }}</bdi></s>
+                  <b class="price-now"><span class="sr-only">מחיר נוכחי: </span><bdi>{{ pr }}</bdi></b>
+                </div>
+              } @else {
+                <b class="price">{{ pr }}</b>
+              }
               <span class="muted">למשחק קבוצתי אחד · {{ players(p) }}</span>
             } @else {
               <b class="price soon">המחיר יפורסם בקרוב</b>
@@ -216,6 +223,8 @@ export class GamePage {
   email = signal('');
   myOrders = signal<StoredOrder[]>([]);
   price = formatPrice;
+  /** Display only: the charge is always the current price. */
+  previousPrice = formatPreviousPrice;
   players = playersLabel;
 
   private opensTimer?: ReturnType<typeof setTimeout>;

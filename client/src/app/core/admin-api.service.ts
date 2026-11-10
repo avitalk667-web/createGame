@@ -55,7 +55,9 @@ export interface AdminGame {
 }
 
 export interface AdminProduct {
-  id: string; name: string; tagline: string; description: string; coverImage: string; price?: number | null; currency: string;
+  id: string; name: string; tagline: string; description: string; coverImage: string; price?: number | null;
+  /** Optional struck-through "was" price, display only (the charge is always `price`). */
+  previousPrice?: number | null; currency: string;
   status: string; minPlayers: number; maxPlayers: number; scenarioId?: string | null; updatedAt: string; playable: boolean; warnings: string[];
   isFree: boolean; maxPlayersLimit: number;
   /** Purchase availability: the opening date and time in Israel time ("yyyy-MM-dd", "HH:mm"), shown before it, paused. */
