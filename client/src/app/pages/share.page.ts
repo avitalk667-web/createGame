@@ -79,6 +79,12 @@ const NAME = /^\p{L}[\p{L}\p{M} '\-׳״.]{0,39}$/u;
     .row { display:grid; grid-template-columns:1fr 1fr; gap:.8rem; }
     .field { display:flex; flex-direction:column; gap:.3rem; } .field span { font-weight:700; }
     .field input { width:100%; box-sizing:border-box; }
+    /* the site-wide text-input look (styles.scss) covers only type=text / untyped inputs, so the email field gets it here */
+    .field input[type="email"] { font-family:inherit; font-size:1.05rem; padding:.7em .9em; border-radius:10px; border:1px solid var(--line);
+      background:rgba(0,0,0,.35); color:var(--text); min-height:44px; margin:0; text-align:right; }
+    .field input[type="email"]:focus { outline:2px solid var(--gold); border-color:transparent; }
+    .field input[type="email"]::placeholder { color:var(--muted); opacity:.8; }
+    .field input[type="email"][aria-invalid="true"] { border-color:#e66; }
     input[aria-invalid="true"] { border-color:#e66; }
     .opt { display:flex; gap:.6rem; align-items:flex-start; cursor:pointer; line-height:1.6; }
     .opt input { width:20px; height:20px; margin-top:.2rem; flex-shrink:0; accent-color:var(--gold); }
