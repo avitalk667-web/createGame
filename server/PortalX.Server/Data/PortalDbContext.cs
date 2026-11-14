@@ -36,9 +36,62 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
     public DbSet<AppSecret> AppSecrets => Set<AppSecret>();
     public DbSet<MailAccount> MailAccounts => Set<MailAccount>();
     public DbSet<OAuthState> OAuthStates => Set<OAuthState>();
+    public DbSet<CouponCampaign> CouponCampaigns => Set<CouponCampaign>();
+    public DbSet<CouponCampaignProduct> CouponCampaignProducts => Set<CouponCampaignProduct>();
+    public DbSet<PlayerCouponEligibility> PlayerCouponEligibility => Set<PlayerCouponEligibility>();
+    public DbSet<CouponEvent> CouponEvents => Set<CouponEvent>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
+        // ---- challenge campaigns ("Challenge 240") and their personal coupons ----
+        b.Entity<CouponCampaign>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Name).HasMaxLength(80);
+            e.Property(x => x.Description).HasMaxLength(500);
+            e.Property(x => x.DiscountPercentage).HasPrecision(5, 2);
+            e.Property(x => x.SourceProductId).HasMaxLength(64);
+            e.HasOne<Product>().WithMany().HasForeignKey(x => x.SourceProductId).OnDelete(DeleteBehavior.Restrict);
+            e.HasMany(x => x.Products).WithOne().HasForeignKey(p => p.CampaignId).OnDelete(DeleteBehavior.Cascade);
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_CouponCampaigns_Discount", "\"DiscountPercentage\" > 0 AND \"DiscountPercentage\" < 100");
+                t.HasCheckConstraint("CK_CouponCampaigns_Validity", "\"ValidityDays\" BETWEEN 1 AND 365");
+                t.HasCheckConstraint("CK_CouponCampaigns_Quota", "\"MaxCoupons\" >= 0 AND \"IssuedCouponsCount\" >= 0");
+            });
+        });
+        b.Entity<CouponCampaignProduct>(e =>
+        {
+            e.HasKey(x => new { x.CampaignId, x.ProductId });
+            e.Property(x => x.ProductId).HasMaxLength(64);
+            e.HasOne<Product>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
+        });
+        b.Entity<PlayerCouponEligibility>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            // one check per player and campaign: a refresh or a second tab reads the same row
+            e.HasIndex(x => new { x.CampaignId, x.PlayerId }).IsUnique();
+            e.HasIndex(x => new { x.CampaignId, x.IsEligible });
+            e.Property(x => x.BrowserKey).HasMaxLength(64);
+            e.Property(x => x.Reason).HasMaxLength(32);
+            e.Property(x => x.Email).HasMaxLength(254);
+            e.Property(x => x.ConsentVersion).HasMaxLength(32);
+            e.Property(x => x.ConsentSource).HasMaxLength(64);
+            e.HasOne<CouponCampaign>().WithMany().HasForeignKey(x => x.CampaignId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<Coupon>().WithMany().HasForeignKey(x => x.CouponId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne<GameRoom>().WithMany().HasForeignKey(x => x.RoomId).OnDelete(DeleteBehavior.Cascade);
+        });
+        b.Entity<CouponEvent>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Action).HasMaxLength(40);
+            e.Property(x => x.Actor).HasMaxLength(64);
+            e.Property(x => x.DetailsJson).HasColumnType("jsonb");
+            e.HasIndex(x => new { x.CouponId, x.At });
+            e.HasOne<Coupon>().WithMany().HasForeignKey(x => x.CouponId).OnDelete(DeleteBehavior.Cascade);
+        });
         b.Entity<GameScenario>().HasKey(x => x.Id);
         b.Entity<PuzzleDefinition>().HasKey(x => x.Id);
         b.Entity<PuzzleDefinition>().HasIndex(x => x.ScenarioId);
@@ -255,6 +308,17 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.Property(x => x.Value).HasPrecision(10, 2);
             e.HasMany(x => x.Products).WithOne().HasForeignKey(p => p.CouponId).OnDelete(DeleteBehavior.Cascade);
             e.ToTable(t => t.HasCheckConstraint("CK_Coupons_Value", "\"Value\" > 0 AND (\"Kind\" <> 0 OR \"Value\" < 100)"));
+            // personal coupons: at most one per player, per address and per browser in each campaign, whatever arrives at once
+            e.HasIndex(x => new { x.CampaignId, x.PlayerId }).IsUnique().HasFilter("\"CampaignId\" IS NOT NULL");
+            e.HasIndex(x => new { x.CampaignId, x.Email }).IsUnique().HasFilter("\"CampaignId\" IS NOT NULL");
+            e.HasIndex(x => new { x.CampaignId, x.BrowserKey }).IsUnique().HasFilter("\"CampaignId\" IS NOT NULL AND \"BrowserKey\" IS NOT NULL");
+            e.Property(x => x.Email).HasMaxLength(254);
+            e.Property(x => x.BrowserKey).HasMaxLength(64);
+            e.Property(x => x.CancelledBy).HasMaxLength(64);
+            e.Property(x => x.EmailStatus).HasMaxLength(16);
+            e.Property(x => x.EmailLastError).HasMaxLength(64);
+            e.Property(x => x.EmailMessageId).HasMaxLength(128);
+            e.HasOne<CouponCampaign>().WithMany().HasForeignKey(x => x.CampaignId).OnDelete(DeleteBehavior.Restrict);
         });
 
         b.Entity<CouponProduct>(e =>

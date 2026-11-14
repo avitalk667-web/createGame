@@ -16,6 +16,7 @@ import { H_INTERACTABLES, H_ZONES, HInteractable, HPanel, HZone, useLayout } fro
 import { HPanelComponent, ITEM_EMOJI } from './h-panel.component';
 import { MazePadComponent } from './maze-pad.component';
 import { HResultComponent } from './h-result.component';
+import { CouponProgressComponent } from '../challenge/coupon-progress.component';
 import { HanukkahWorld } from './h-world';
 
 interface Toast { id: number; text: string; kind: string }
@@ -57,7 +58,7 @@ function pickupSound(item: string): Sfx {
 
 @Component({
   selector: 'px-h-play',
-  imports: [RouterLink, ChatComponent, JoystickComponent, SettingsPanelComponent, HPanelComponent, HResultComponent, RoomOverlaysComponent, LeaveDialogComponent, MazePadComponent],
+  imports: [RouterLink, ChatComponent, JoystickComponent, SettingsPanelComponent, HPanelComponent, HResultComponent, RoomOverlaysComponent, LeaveDialogComponent, MazePadComponent, CouponProgressComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="stage">
@@ -115,6 +116,7 @@ function pickupSound(item: string): Sfx {
             </li>
           }
         </ol>
+        @if (isSample()) { <px-coupon-progress [score]="myPoints()" /> }
       </aside>
 
       <aside class="objectives card" [class.collapsed]="!showObjectives()" [class.glow]="objFlash()" [style.display]="focus() ? 'none' : null">
@@ -472,6 +474,8 @@ export class HPlayComponent implements AfterViewInit, OnDestroy {
   myTask = signal<{ id: string; text: string; done: boolean; found?: string | null } | null>(null);
   private taskZone: string | null = null;
   isSample = computed(() => this.game.snapshot()?.scenarioId === 'gate-of-secrets');
+  /** This player's own points (as the server sent them), for the challenge's progress. */
+  myPoints = computed(() => this.game.snapshot()?.score?.players.find((p) => p.playerId === this.game.playerId())?.points ?? 0);
   /** What the free game's compass flashed — shown only to its holder, for as long as the server says (2.2 s). */
   compassFlash = signal<{ text: string; note: string; color: string } | null>(null);
   private compassFlashTimer?: ReturnType<typeof setTimeout>;

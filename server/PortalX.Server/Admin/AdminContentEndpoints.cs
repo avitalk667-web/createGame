@@ -93,6 +93,7 @@ public static class AdminContentEndpoints
         {
             var coupon = await db.Coupons.Include(x => x.Products).FirstOrDefaultAsync(x => x.Id == id);
             if (coupon == null) return Results.NotFound(new ApiError("no-coupon", "הקופון לא נמצא."));
+            if (coupon.CampaignId != null) return Results.BadRequest(new ApiError("personal", "זהו קופון אישי של אתגר. מנהלים אותו בלשונית „אתגר 240 וקופונים”."));
             if (await c.ApplyAsync(coupon, u, creating: false) is { } err) return Results.BadRequest(new ApiError("invalid", err));
             coupon.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
@@ -106,6 +107,7 @@ public static class AdminContentEndpoints
         {
             var coupon = await db.Coupons.FirstOrDefaultAsync(x => x.Id == id);
             if (coupon == null) return Results.NotFound(new ApiError("no-coupon", "הקופון לא נמצא."));
+            if (coupon.CampaignId != null) return Results.BadRequest(new ApiError("personal", "זהו קופון אישי של אתגר. מנהלים אותו בלשונית „אתגר 240 וקופונים”."));
             coupon.Active = req.Active;
             coupon.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();

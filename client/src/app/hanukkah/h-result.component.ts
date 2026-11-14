@@ -5,11 +5,12 @@ import { GameService } from '../core/game.service';
 import { Product } from '../core/models';
 import { ResultsEmailComponent } from '../ui/results-email.component';
 import { ResultShareComponent } from '../ui/result-share.component';
+import { CouponEligibilityComponent } from '../challenge/coupon-eligibility.component';
 
 /** Results of the Hanukkah journey (spec Part G §21): group score, personal ranking, contributions, time, hints, winner. */
 @Component({
   selector: 'px-h-result',
-  imports: [RouterLink, ResultsEmailComponent, ResultShareComponent],
+  imports: [RouterLink, ResultsEmailComponent, ResultShareComponent, CouponEligibilityComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="wrap">
@@ -95,6 +96,8 @@ import { ResultShareComponent } from '../ui/result-share.component';
 
         <!-- a picture of this card as it is shown (without the buttons and the email form) to copy, share or save -->
         <px-result-share [target]="card" [ready]="!!score()" [fileName]="freeGame() ? 'PORTAL-X-שער-הסודות.png' : 'PORTAL-X-סוד-פך-השמן.png'" />
+
+        @if (freeGame()) { <px-coupon-eligibility class="no-capture" /> }
 
         <px-results-email class="no-capture" />
 

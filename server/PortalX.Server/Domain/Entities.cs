@@ -513,6 +513,108 @@ public class Coupon
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public List<CouponProduct> Products { get; set; } = new();
+
+    // ---- a personal coupon of a challenge campaign ("Challenge 240"); all null for the admin's ordinary coupons ----
+    /// <summary>The challenge campaign that issued this personal coupon; null = an ordinary coupon made by the admin.</summary>
+    public Guid? CampaignId { get; set; }
+    /// <summary>The address the personal coupon was issued to (lower-cased); one coupon per address and campaign.</summary>
+    public string? Email { get; set; }
+    /// <summary>The player (seat) whose game earned it; one coupon per player and campaign.</summary>
+    public Guid? PlayerId { get; set; }
+    public Guid? RoomId { get; set; }
+    /// <summary>SHA-256 of the browser id that asked for it (never the id itself); one coupon per browser and campaign.</summary>
+    public string? BrowserKey { get; set; }
+    public int? FinalScore { get; set; }
+    /// <summary>When the admin cancelled it (it stops working; the record stays).</summary>
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelledBy { get; set; }
+    /// <summary>The coupon email: "pending", "sending", "sent", "failed" or "uncertain"; null = not a personal coupon.</summary>
+    public string? EmailStatus { get; set; }
+    public DateTime? EmailSentAt { get; set; }
+    public DateTime? EmailLastAttemptAt { get; set; }
+    public int EmailAttempts { get; set; }
+    public string? EmailLastError { get; set; }
+    public string? EmailMessageId { get; set; }
+}
+
+/// <summary>
+/// A challenge campaign ("Challenge 240"): a player of the free game whose final personal score reaches the minimum gets
+/// one personal coupon. Every setting is the admin's; a change applies to new coupons only — an issued coupon keeps its
+/// own discount, games and expiry.
+/// </summary>
+public class CouponCampaign
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = "";
+    public string Description { get; set; } = "";
+    /// <summary>The campaign is on: the entry popup and the progress are shown and coupons may be issued.</summary>
+    public bool IsActive { get; set; }
+    /// <summary>Issuing stopped by the admin while the campaign stays on (nothing new is issued).</summary>
+    public bool IssuingPaused { get; set; }
+    /// <summary>The lowest final score that earns a coupon (inclusive): 241 = "more than 240".</summary>
+    public int MinimumScore { get; set; } = 241;
+    public decimal DiscountPercentage { get; set; } = 10;
+    public int ValidityDays { get; set; } = 8;
+    /// <summary>The most coupons the campaign may ever issue; 0 = not set yet (nothing can be issued).</summary>
+    public int MaxCoupons { get; set; }
+    /// <summary>Coupons issued so far; raised in the same transaction as each new coupon, under the campaign's row lock.</summary>
+    public int IssuedCouponsCount { get; set; }
+    /// <summary>The free game (product id) whose score counts.</summary>
+    public string SourceProductId { get; set; } = "";
+    public bool ShowEntryPopup { get; set; } = true;
+    public bool ShowProgress { get; set; } = true;
+    /// <summary>When the campaign was first switched on (the start of its statistics).</summary>
+    public DateTime? StartedAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public List<CouponCampaignProduct> Products { get; set; } = new();
+}
+
+/// <summary>The paid games a campaign's coupons apply to.</summary>
+public class CouponCampaignProduct
+{
+    public Guid CampaignId { get; set; }
+    public string ProductId { get; set; } = "";
+}
+
+/// <summary>
+/// The eligibility check of one player in one campaign: their final score as the server read it from the game, whether
+/// it qualified, and the address and separate marketing consent they gave. One row per player and campaign.
+/// </summary>
+public class PlayerCouponEligibility
+{
+    public Guid Id { get; set; }
+    public Guid CampaignId { get; set; }
+    public Guid PlayerId { get; set; }
+    public Guid RoomId { get; set; }
+    public int Round { get; set; }
+    public string? BrowserKey { get; set; }
+    public int FinalScore { get; set; }
+    public bool IsEligible { get; set; }
+    /// <summary>Why not, when not eligible: "score" (below the minimum).</summary>
+    public string? Reason { get; set; }
+    public string? Email { get; set; }
+    public Guid? CouponId { get; set; }
+    /// <summary>The separate marketing box (never ticked in advance), as it was answered here.</summary>
+    public bool MarketingConsent { get; set; }
+    public DateTime? ConsentAt { get; set; }
+    public string? ConsentVersion { get; set; }
+    public string? ConsentSource { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+/// <summary>The history of one personal coupon: issued, mailed, resent, cancelled (append-only).</summary>
+public class CouponEvent
+{
+    public long Id { get; set; }
+    public Guid CouponId { get; set; }
+    /// <summary>"issued", "email-sent", "email-failed", "email-uncertain", "resend-requested", "cancelled".</summary>
+    public string Action { get; set; } = "";
+    /// <summary>"system", "player" or the admin's name.</summary>
+    public string Actor { get; set; } = "";
+    public string DetailsJson { get; set; } = "{}";
+    public DateTime At { get; set; }
 }
 
 /// <summary>The products a coupon applies to (one or more, chosen explicitly).</summary>

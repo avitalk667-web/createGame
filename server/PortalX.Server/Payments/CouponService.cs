@@ -30,6 +30,8 @@ public sealed class CouponService(PortalDbContext db)
     public const string WrongProductMessage = "קוד הקופון אינו תקף למשחק שבחרת.";
     public const string NotStartedMessage = "הקופון עדיין לא בתוקף.";
     public const string UsedUpMessage = "הקופון כבר נוצל עד המכסה שלו.";
+    public const string RedeemedMessage = "הקופון האישי הזה כבר מומש.";
+    public const string CancelledMessage = "הקופון בוטל ואינו בתוקף עוד.";
 
     public static string Normalize(string? code) => (code ?? "").Trim().ToUpperInvariant();
 
@@ -59,12 +61,13 @@ public sealed class CouponService(PortalDbContext db)
         var normalized = Normalize(code);
         if (normalized.Length == 0) return (null, new ServiceError(400, "no-code", "הזינו קוד קופון."));
         var c = await db.Coupons.AsNoTracking().Include(x => x.Products).FirstOrDefaultAsync(x => x.Code == normalized);
+        if (c is { CampaignId: not null, CancelledAt: not null }) return (null, new ServiceError(410, "cancelled", CancelledMessage));
         if (c == null || !c.Active) return (null, new ServiceError(404, "unknown", UnknownMessage));
         if (c.EndsAt is { } end && end <= now) return (null, new ServiceError(410, "expired", ExpiredMessage));
         if (c.StartsAt is { } start && start > now) return (null, new ServiceError(409, "not-started", NotStartedMessage));
         if (c.Products.All(p => p.ProductId != product.Id)) return (null, new ServiceError(409, "wrong-product", WrongProductMessage));
         if (c.MaxRedemptions is { } max && await Counting(c.Id, now).CountAsync() >= max)
-            return (null, new ServiceError(409, "used-up", UsedUpMessage));
+            return (null, new ServiceError(409, "used-up", c.CampaignId != null ? RedeemedMessage : UsedUpMessage));
         var price = product.PriceIls.Value;
         var (discount, final) = Price(price, c.Kind, c.Value);
         return (new CouponQuote(c.Id, c.Code, c.Kind, c.Value, price, discount, final), null);
@@ -200,7 +203,8 @@ public sealed class CouponService(PortalDbContext db)
     /// <summary>Every coupon with its usage, for the admin report (spec 4.9).</summary>
     public async Task<object> ReportAsync(DateTime now)
     {
-        var coupons = await db.Coupons.AsNoTracking().Include(c => c.Products).OrderByDescending(c => c.CreatedAt).ToListAsync();
+        // personal coupons of a challenge campaign have their own screen (ChallengeService)
+        var coupons = await db.Coupons.AsNoTracking().Include(c => c.Products).Where(c => c.CampaignId == null).OrderByDescending(c => c.CreatedAt).ToListAsync();
         var uses = await db.CouponRedemptions.AsNoTracking().ToListAsync();
         var names = await db.Products.AsNoTracking().ToDictionaryAsync(p => p.Id, p => p.Name);
         return coupons.Select(c =>

@@ -3,6 +3,7 @@ import { RouterOutlet } from '@angular/router';
 import { AudioService } from './core/audio.service';
 import { CaptionsComponent } from './ui/captions.component';
 import { CampaignPopupComponent } from './ui/campaign-popup.component';
+import { pendingCoupon } from './challenge/challenge.service';
 
 @Component({
   selector: 'app-root',
@@ -14,5 +15,6 @@ export class App {
   audio = inject(AudioService);
   constructor() {
     this.audio.loadManifest();
+    pendingCoupon.capture();
   }
 }

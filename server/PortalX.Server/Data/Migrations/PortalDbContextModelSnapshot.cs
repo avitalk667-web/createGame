@@ -121,6 +121,20 @@ namespace PortalX.Server.Data.Migrations
                     b.Property<bool>("Active")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("BrowserKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid?>("CampaignId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CancelledBy")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<string>("Code")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -129,8 +143,36 @@ namespace PortalX.Server.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Email")
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)");
+
+                    b.Property<int>("EmailAttempts")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("EmailLastAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EmailLastError")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("EmailMessageId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTime?>("EmailSentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EmailStatus")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
                     b.Property<DateTime?>("EndsAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("FinalScore")
+                        .HasColumnType("integer");
 
                     b.Property<int>("Kind")
                         .HasColumnType("integer");
@@ -147,6 +189,12 @@ namespace PortalX.Server.Data.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<Guid?>("PlayerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("RoomId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime?>("StartsAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -162,10 +210,144 @@ namespace PortalX.Server.Data.Migrations
                     b.HasIndex("Code")
                         .IsUnique();
 
+                    b.HasIndex("CampaignId", "BrowserKey")
+                        .IsUnique()
+                        .HasFilter("\"CampaignId\" IS NOT NULL AND \"BrowserKey\" IS NOT NULL");
+
+                    b.HasIndex("CampaignId", "Email")
+                        .IsUnique()
+                        .HasFilter("\"CampaignId\" IS NOT NULL");
+
+                    b.HasIndex("CampaignId", "PlayerId")
+                        .IsUnique()
+                        .HasFilter("\"CampaignId\" IS NOT NULL");
+
                     b.ToTable("Coupons", t =>
                         {
                             t.HasCheckConstraint("CK_Coupons_Value", "\"Value\" > 0 AND (\"Kind\" <> 0 OR \"Value\" < 100)");
                         });
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.CouponCampaign", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<decimal>("DiscountPercentage")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("IssuedCouponsCount")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IssuingPaused")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("MaxCoupons")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MinimumScore")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<bool>("ShowEntryPopup")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("ShowProgress")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("SourceProductId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ValidityDays")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SourceProductId");
+
+                    b.ToTable("CouponCampaigns", t =>
+                        {
+                            t.HasCheckConstraint("CK_CouponCampaigns_Discount", "\"DiscountPercentage\" > 0 AND \"DiscountPercentage\" < 100");
+
+                            t.HasCheckConstraint("CK_CouponCampaigns_Quota", "\"MaxCoupons\" >= 0 AND \"IssuedCouponsCount\" >= 0");
+
+                            t.HasCheckConstraint("CK_CouponCampaigns_Validity", "\"ValidityDays\" BETWEEN 1 AND 365");
+                        });
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.CouponCampaignProduct", b =>
+                {
+                    b.Property<Guid>("CampaignId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ProductId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("CampaignId", "ProductId");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("CouponCampaignProducts");
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.CouponEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CouponId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DetailsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CouponId", "At");
+
+                    b.ToTable("CouponEvents");
                 });
 
             modelBuilder.Entity("PortalX.Server.Domain.CouponProduct", b =>
@@ -1041,6 +1223,78 @@ namespace PortalX.Server.Data.Migrations
                     b.ToTable("PaymentEvents");
                 });
 
+            modelBuilder.Entity("PortalX.Server.Domain.PlayerCouponEligibility", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BrowserKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("CampaignId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("ConsentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ConsentSource")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ConsentVersion")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid?>("CouponId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)");
+
+                    b.Property<int>("FinalScore")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsEligible")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("MarketingConsent")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("PlayerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("RoomId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Round")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CouponId");
+
+                    b.HasIndex("RoomId");
+
+                    b.HasIndex("CampaignId", "IsEligible");
+
+                    b.HasIndex("CampaignId", "PlayerId")
+                        .IsUnique();
+
+                    b.ToTable("PlayerCouponEligibility");
+                });
+
             modelBuilder.Entity("PortalX.Server.Domain.PlayerScoreEvent", b =>
                 {
                     b.Property<long>("Id")
@@ -1572,6 +1826,47 @@ namespace PortalX.Server.Data.Migrations
                     b.ToTable("ResultEmailRequests");
                 });
 
+            modelBuilder.Entity("PortalX.Server.Domain.Coupon", b =>
+                {
+                    b.HasOne("PortalX.Server.Domain.CouponCampaign", null)
+                        .WithMany()
+                        .HasForeignKey("CampaignId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.CouponCampaign", b =>
+                {
+                    b.HasOne("PortalX.Server.Domain.Product", null)
+                        .WithMany()
+                        .HasForeignKey("SourceProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.CouponCampaignProduct", b =>
+                {
+                    b.HasOne("PortalX.Server.Domain.CouponCampaign", null)
+                        .WithMany("Products")
+                        .HasForeignKey("CampaignId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("PortalX.Server.Domain.Product", null)
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.CouponEvent", b =>
+                {
+                    b.HasOne("PortalX.Server.Domain.Coupon", null)
+                        .WithMany()
+                        .HasForeignKey("CouponId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("PortalX.Server.Domain.CouponProduct", b =>
                 {
                     b.HasOne("PortalX.Server.Domain.Coupon", null)
@@ -1596,6 +1891,26 @@ namespace PortalX.Server.Data.Migrations
                         .WithMany()
                         .HasForeignKey("ReferralLinkId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.PlayerCouponEligibility", b =>
+                {
+                    b.HasOne("PortalX.Server.Domain.CouponCampaign", null)
+                        .WithMany()
+                        .HasForeignKey("CampaignId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("PortalX.Server.Domain.Coupon", null)
+                        .WithMany()
+                        .HasForeignKey("CouponId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("PortalX.Server.Domain.GameRoom", null)
+                        .WithMany()
+                        .HasForeignKey("RoomId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("PortalX.Server.Domain.PlayerSession", b =>
@@ -1635,6 +1950,11 @@ namespace PortalX.Server.Data.Migrations
                 });
 
             modelBuilder.Entity("PortalX.Server.Domain.Coupon", b =>
+                {
+                    b.Navigation("Products");
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.CouponCampaign", b =>
                 {
                     b.Navigation("Products");
                 });

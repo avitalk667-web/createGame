@@ -4,11 +4,13 @@ import { Router, RouterLink } from '@angular/router';
 import { ApiService, StoredOrder, orderStore, sessionStore } from '../core/api.service';
 import { AudioService } from '../core/audio.service';
 import { CouponQuote, Product, formatPreviousPrice, formatPrice, playersLabel } from '../core/models';
+import { CouponInputComponent } from '../challenge/coupon-input.component';
+import { pendingCoupon } from '../challenge/challenge.service';
 
 /** /games/:id — one product: large image, what's included, players, price and the next step (spec §2). */
 @Component({
   selector: 'px-game',
-  imports: [RouterLink, DatePipe],
+  imports: [RouterLink, DatePipe, CouponInputComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <main>
@@ -96,28 +98,17 @@ import { CouponQuote, Product, formatPreviousPrice, formatPrice, playersLabel } 
                   <dl>
                     <dt>משחק</dt><dd>{{ p.name }}</dd>
                     @if (quote(); as q) {
-                      <dt>מחיר המשחק</dt><dd>{{ money(q.originalPrice) }}</dd>
+                      <dt>מחיר מקורי</dt><dd>{{ money(q.originalPrice) }}</dd>
                       <dt>קופון</dt><dd dir="ltr" class="code">{{ q.code }}</dd>
                       <dt>הנחה</dt><dd class="discount">{{ q.kind === 'percent' ? q.value + '% · ' : '' }}−{{ money(q.discount) }}</dd>
-                      <dt>לתשלום</dt><dd class="final">{{ money(q.finalPrice) }}</dd>
+                      <dt>מחיר לתשלום</dt><dd class="final">{{ money(q.finalPrice) }}</dd>
                     } @else {
                       <dt>מחיר</dt><dd>{{ price(p) }}</dd>
                     }
                     <dt>כולל</dt><dd>משחק קבוצתי אחד, 1–{{ p.maxPlayers }} משתתפים. המשתתפים לא משלמים.</dd>
                   </dl>
-                  <div class="coupon">
-                    <label for="coupon">יש לך קוד קופון?</label>
-                    @if (quote(); as q) {
-                      <p class="ok" role="status">הקופון {{ q.code }} הוחל — חסכתם {{ money(q.discount) }}.</p>
-                      <button class="btn small ghost" type="button" (click)="removeCoupon()">הסרת הקופון</button>
-                    } @else {
-                      <div class="row">
-                        <input id="coupon" dir="ltr" autocomplete="off" maxlength="32" placeholder="לדוגמה HANUKKAH15" [value]="couponText()" (input)="couponText.set($any($event.target).value)" />
-                        <button class="btn small" type="button" (click)="applyCoupon(p)" [disabled]="!couponText().trim() || couponBusy()">החל קופון</button>
-                      </div>
-                    }
-                    @if (couponError()) { <p class="error" role="alert">{{ couponError() }}</p> }
-                  </div>
+                  <px-coupon-input [text]="couponText()" [quote]="quote()" [busy]="couponBusy()" [error]="couponError()"
+                    (textChange)="couponText.set($event)" (apply)="applyCoupon(p)" (remove)="removeCoupon()" />
                   <label for="email">דוא״ל לקבלה <span class="muted">(רשות)</span></label>
                   <input id="email" type="email" dir="ltr" autocomplete="email" maxlength="200" placeholder="name@example.com"
                     [value]="email()" (input)="email.set($any($event.target).value)" />
@@ -191,9 +182,7 @@ import { CouponQuote, Product, formatPreviousPrice, formatPrice, playersLabel } 
     .checkout h3 { margin:0; font-family:var(--font-title); }
     dl { display:grid; grid-template-columns:auto 1fr; gap:.25rem .75rem; margin:0; }
     dt { color:var(--muted); } dd { margin:0; }
-    .coupon { display:flex; flex-direction:column; gap:.35rem; padding:.6rem 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
-    .coupon .row { display:flex; gap:.4rem; } .coupon input { flex:1; min-width:0; text-transform:uppercase; }
-    .coupon .ok { margin:0; color:#9be3b4; } .discount { color:#9be3b4; } .final { font-weight:900; color:var(--gold-2); font-size:1.2rem; }
+    .discount { color:#9be3b4; } .final { font-weight:900; color:var(--gold-2); font-size:1.2rem; }
     .code { font-weight:700; }
     .checkout input { width:100%; }
     .test { margin:0; padding:.5rem .7rem; border-radius:10px; border:1px dashed var(--blue); color:#cfe2ff; font-size:.9rem; }
@@ -215,7 +204,8 @@ export class GamePage {
   busy = signal(false);
   error = signal<string | null>(null);
   checkout = signal(false);
-  couponText = signal('');
+  /** A code from a coupon email's link is filled in (the visitor still presses "Confirm"). */
+  couponText = signal(pendingCoupon.get() ?? '');
   couponBusy = signal(false);
   couponError = signal<string | null>(null);
   /** The price with the coupon, as computed by the server; the order is priced by the server again. */

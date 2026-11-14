@@ -1,6 +1,7 @@
 import { DatePipe, DecimalPipe, JsonPipe } from '@angular/common';
 import { AdminDrawComponent } from './admin-draw.component';
 import { AdminStatsComponent } from './admin-stats.component';
+import { AdminChallengeComponent } from '../challenge/admin/admin-challenge.component';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { orderStore, sessionStore } from '../core/api.service';
@@ -8,7 +9,7 @@ import {
   AdminApiService, AdminFilters, AdminGame, AdminOrder, AdminProduct, AuditEntry, CouponRow, CouponUse, Dashboard, FaqRow, EmailSetup, MailingFilters, MailingList,
   MoneyTotals, ReferralDetails, ReferralFilters, ReferralList } from '../core/admin-api.service';
 
-type Tab = 'dashboard' | 'statistics' | 'draw' | 'orders' | 'games' | 'products' | 'faq' | 'coupons' | 'mailing' | 'referrals' | 'email-setup' | 'audit';
+type Tab = 'dashboard' | 'statistics' | 'draw' | 'orders' | 'games' | 'products' | 'faq' | 'coupons' | 'challenge' | 'mailing' | 'referrals' | 'email-setup' | 'audit';
 
 /** The coupon form as typed (spec 4.3). Dates are local date-time strings from the inputs. */
 interface CouponForm {
@@ -51,7 +52,7 @@ const ACTIONS: Record<string, string> = {
  */
 @Component({
   selector: 'px-admin',
-  imports: [RouterLink, DatePipe, DecimalPipe, JsonPipe, AdminStatsComponent, AdminDrawComponent],
+  imports: [RouterLink, DatePipe, DecimalPipe, JsonPipe, AdminStatsComponent, AdminDrawComponent, AdminChallengeComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (state() === 'loading') {
@@ -111,6 +112,7 @@ const ACTIONS: Record<string, string> = {
 
         @if (tab() === 'statistics') { <px-admin-stats /> }
         @if (tab() === 'draw') { <px-admin-draw /> }
+        @if (tab() === 'challenge') { <px-admin-challenge /> }
 
         @if (tab() === 'dashboard' || tab() === 'orders' || tab() === 'games') {
           <form class="filters card" (submit)="$event.preventDefault(); reload()">
@@ -744,7 +746,7 @@ export class AdminPage {
   private router = inject(Router);
   tabs: { id: Tab; label: string }[] = [
     { id: 'dashboard', label: 'לוח בקרה' }, { id: 'statistics', label: 'סטטיסטיקות' }, { id: 'orders', label: 'רכישות' }, { id: 'games', label: 'משחקים' },
-    { id: 'products', label: 'מוצרים ומחירים' }, { id: 'faq', label: 'שאלות ותשובות' }, { id: 'coupons', label: 'קופונים והנחות' }, { id: 'mailing', label: 'מיילים ותוצאות' }, { id: 'referrals', label: 'קישורים שיווקיים' }, { id: 'draw', label: 'הגרלה' }, { id: 'email-setup', label: 'הגדרת שליחת מיילים' },
+    { id: 'products', label: 'מוצרים ומחירים' }, { id: 'faq', label: 'שאלות ותשובות' }, { id: 'coupons', label: 'קופונים והנחות' }, { id: 'challenge', label: 'ניהול אתגר 240 וקופונים' }, { id: 'mailing', label: 'מיילים ותוצאות' }, { id: 'referrals', label: 'קישורים שיווקיים' }, { id: 'draw', label: 'הגרלה' }, { id: 'email-setup', label: 'הגדרת שליחת מיילים' },
     { id: 'audit', label: 'יומן פעולות' },
   ];
   state = signal<'loading' | 'denied' | 'ok'>('loading');
