@@ -9,11 +9,12 @@ import { DrawCountdownComponent } from '../ui/draw-countdown.component';
 import { PrizeGiftComponent } from '../ui/prize-gift.component';
 import { HowItWorksComponent } from '../ui/how-it-works.component';
 import { SettingsPanelComponent } from '../ui/settings-panel.component';
+import { TutorialVideoComponent } from '../ui/tutorial-video.component';
 
 /** Shared entry gate: a catalog of both games, each with its own server-side price (spec §2). */
 @Component({
   selector: 'px-home',
-  imports: [RouterLink, SettingsPanelComponent, DrawCountdownComponent, PrizeGiftComponent, HowItWorksComponent],
+  imports: [RouterLink, SettingsPanelComponent, DrawCountdownComponent, PrizeGiftComponent, HowItWorksComponent, TutorialVideoComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="bg" aria-hidden="true"></div>
@@ -152,6 +153,8 @@ import { SettingsPanelComponent } from '../ui/settings-panel.component';
       </section>
 
       <px-how-it-works [freeGameId]="freeGameId()" />
+
+      <px-tutorial-video />
 
 
       <section id="faq" class="faq" aria-labelledby="faq-title">
