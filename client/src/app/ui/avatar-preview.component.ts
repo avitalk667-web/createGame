@@ -1,7 +1,7 @@
 import { AfterViewInit, ChangeDetectionStrategy, Component, ElementRef, OnDestroy, effect, input, viewChild } from '@angular/core';
 import * as THREE from 'three';
 import { Appearance, CharacterId } from '../core/models';
-import { BoyAvatar } from '../world/avatar';
+import { PlayerAvatar, createPlayerAvatar } from '../world/character';
 
 /** Small rotating 3D preview of the chosen character. */
 @Component({
@@ -17,7 +17,7 @@ export class AvatarPreviewComponent implements AfterViewInit, OnDestroy {
   private renderer?: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(32, 1, 0.1, 50);
-  private avatar?: BoyAvatar;
+  private avatar?: PlayerAvatar;
   private raf = 0;
 
   constructor() {
@@ -72,7 +72,7 @@ export class AvatarPreviewComponent implements AfterViewInit, OnDestroy {
       this.scene.remove(this.avatar.root);
       this.avatar.dispose();
     }
-    this.avatar = new BoyAvatar(id, a);
+    this.avatar = createPlayerAvatar(id, a);
     this.scene.add(this.avatar.root);
   }
 

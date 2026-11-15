@@ -3,7 +3,7 @@ import { RouterLink } from '@angular/router';
 import { ApiService } from '../core/api.service';
 import { CHARACTERS } from '../core/models';
 import { SettingsService } from '../core/settings.service';
-import { BoyAvatar } from '../world/avatar';
+import { createPlayerAvatar } from '../world/character';
 import { ZONE_ORDER, ZoneId } from '../world/layout';
 import { GameWorld } from '../world/world';
 
@@ -57,7 +57,7 @@ export class GalleryPage implements AfterViewInit, OnDestroy {
       this.world.build(scenario);
       this.world.applySnapshot({ unlockedZones: [...ZONE_ORDER], worldItems: ['handle', 'crystal', 'gear'], placedItems: [], puzzles: [], letters: [] } as any);
       const names = ['ישראל', 'דוד', 'אורי', 'משה'];
-      this.world.showLineup(CHARACTERS.map((c, k) => new BoyAvatar(c.id, c.defaults, `${names[k]} · ${c.name}`)));
+      this.world.showLineup(CHARACTERS.map((c, k) => createPlayerAvatar(c.id, c.defaults, `${names[k]} · ${c.name}`)));
       this.world.setTour('characters');
       this.world.start();
     });

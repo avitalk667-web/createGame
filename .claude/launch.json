@@ -4,8 +4,24 @@
     {
       "name": "portalx",
       "runtimeExecutable": "powershell.exe",
-      "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "start-portalx.ps1"],
+      "runtimeArgs": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "start-portalx.ps1"
+      ],
       "port": 5080
+    },
+    {
+      "name": "client-dev",
+      "runtimeExecutable": "powershell.exe",
+      "runtimeArgs": [
+        "-NoProfile",
+        "-Command",
+        "Set-Location client; npx.cmd ng serve --port 4310"
+      ],
+      "port": 4310
     }
   ]
 }

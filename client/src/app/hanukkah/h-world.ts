@@ -6,7 +6,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MechanismState, PlayerDto, RemotePosition, RoomSnapshot, ScenarioContent } from '../core/models';
 import { Quality } from '../core/settings.service';
-import { BoyAvatar } from '../world/avatar';
+import { PlayerAvatar, createPlayerAvatar, preloadPlayerCharacter } from '../world/character';
 import {
   bookSpinesTexture, glowSpriteTexture, labelTexture, panelTexture, parchmentTexture, rugTexture, stoneTexture, woodFloorTexture,
 } from '../world/textures';
@@ -1011,7 +1011,7 @@ export class HanukkahWorld {
   private openTargets = new Map<THREE.Object3D, { axis: 'x' | 'y' | 'z'; kind: 'rot' | 'pos'; from: number; to: number; on: boolean }>();
 
   // players
-  private local?: BoyAvatar;
+  private local?: PlayerAvatar;
   private localPos = SPAWN.clone();
   private localYaw = Math.PI;
   private localSpeed = 0;
@@ -1020,7 +1020,7 @@ export class HanukkahWorld {
   private camDist = 4.6;
   private keys = new Set<string>();
   private joystick = new THREE.Vector2();
-  private remotes = new Map<string, { avatar: BoyAvatar; pos: THREE.Vector3; yaw: number; speed: number; connected: boolean }>();
+  private remotes = new Map<string, { avatar: PlayerAvatar; pos: THREE.Vector3; yaw: number; speed: number; connected: boolean }>();
   private positions?: Map<string, RemotePosition & { t: number }>;
   private lastSent = 0;
   private lastSentKey = '';
@@ -1029,6 +1029,8 @@ export class HanukkahWorld {
   sensitivity = 1;
 
   constructor(private canvas: HTMLCanvasElement, private quality: Quality, private cb: HWorldCallbacks = {}) {
+    // the shared player model starts downloading now, while the room is being built
+    preloadPlayerCharacter();
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality !== 'low', powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality === 'high' ? 2 : quality === 'medium' ? 1.5 : 1.25));
     MAX_ANISO = Math.min(quality === 'low' ? 4 : 8, this.renderer.capabilities.getMaxAnisotropy());
@@ -3788,8 +3790,8 @@ export class HanukkahWorld {
 
   /** The picked item flies to the nearest player (the one who took it) and shrinks into their bag. */
   private flyAway(mesh: THREE.Object3D) {
-    const avatars = [this.local, ...[...this.remotes.values()].map((r) => r.avatar)].filter(Boolean) as BoyAvatar[];
-    const to = avatars.reduce<BoyAvatar | null>((best, a) => (!best || a.root.position.distanceTo(mesh.position) < best.root.position.distanceTo(mesh.position) ? a : best), null);
+    const avatars = [this.local, ...[...this.remotes.values()].map((r) => r.avatar)].filter(Boolean) as PlayerAvatar[];
+    const to = avatars.reduce<PlayerAvatar | null>((best, a) => (!best || a.root.position.distanceTo(mesh.position) < best.root.position.distanceTo(mesh.position) ? a : best), null);
     to?.reach(this.time);
     const start = mesh.position.clone();
     const scale = mesh.scale.x;
@@ -4369,7 +4371,7 @@ export class HanukkahWorld {
     this.positions = positions;
     const me = players.find((p) => p.id === myId);
     if (me && !this.local) {
-      this.local = new BoyAvatar(me.characterId, me.appearance);
+      this.local = createPlayerAvatar(me.characterId, me.appearance);
       this.scene.add(this.local.root);
       this.local.root.position.copy(this.localPos);
       this.local.root.visible = this.mode !== 'intro';
@@ -4386,7 +4388,7 @@ export class HanukkahWorld {
       if (p.id === myId) return;
       let r = this.remotes.get(p.id);
       if (!r) {
-        const avatar = new BoyAvatar(p.characterId, p.appearance, p.nickname);
+        const avatar = createPlayerAvatar(p.characterId, p.appearance, p.nickname);
         const start = new THREE.Vector3(-2 + (p.seat % 5), 0, SPAWN.z + 0.8);
         avatar.root.position.copy(start);
         avatar.root.visible = this.mode !== 'intro';
@@ -4530,7 +4532,7 @@ export class HanukkahWorld {
     const want = Math.min(8, Math.max(this.outroLit, Math.floor((s - 1) / 0.7)));
     if (this.hallHanukkiah && want !== this.hallHanukkiah.litCount) for (const h of this.hanukkiot) h.setLit(want, true);
     if (s > 7) this.gateTarget = 1.6;
-    const all = [this.local, ...[...this.remotes.values()].map((r) => r.avatar)].filter(Boolean) as BoyAvatar[];
+    const all = [this.local, ...[...this.remotes.values()].map((r) => r.avatar)].filter(Boolean) as PlayerAvatar[];
     all.forEach((a, k) => {
       const x = (k - (all.length - 1) / 2) * 1.1;
       a.root.position.lerp(new THREE.Vector3(x, 0, c - 0.2), 0.05);
@@ -4678,7 +4680,7 @@ export class HanukkahWorld {
     const c = hCenter(H_ZONES[H_ZONES.length - 1]);
     this.camera.position.lerpVectors(new THREE.Vector3(0, 3.0, c + 4.5), new THREE.Vector3(0, 2.3, c + 0.5), THREE.MathUtils.smootherstep(Math.min(1, s / 7), 0, 1));
     this.camera.lookAt(0, 2.0, c - H_HALF_D);
-    const all = [this.local, ...[...this.remotes.values()].map((r) => r.avatar)].filter(Boolean) as BoyAvatar[];
+    const all = [this.local, ...[...this.remotes.values()].map((r) => r.avatar)].filter(Boolean) as PlayerAvatar[];
     all.forEach((a, k) => {
       const x = (k - (all.length - 1) / 2) * 1.1;
       a.root.position.lerp(new THREE.Vector3(x, 0, c - 3.6), 0.05);
@@ -4877,6 +4879,9 @@ export class HanukkahWorld {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('blur', this.onBlur);
+    // player figures first: each has its own animation mixer and materials (the model itself stays cached)
+    this.local?.dispose();
+    for (const r of this.remotes.values()) r.avatar.dispose();
     this.scene.traverse((o) => {
       const m = o as THREE.Mesh;
       m.geometry?.dispose?.();

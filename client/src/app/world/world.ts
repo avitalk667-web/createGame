@@ -7,7 +7,7 @@ import { Reflector } from 'three/examples/jsm/objects/Reflector.js';
 import { PlayerDto, RemotePosition, RoomSnapshot, ScenarioContent } from '../core/models';
 import { Quality } from '../core/settings.service';
 import { drawSymbol } from '../core/symbols';
-import { BoyAvatar } from './avatar';
+import { PlayerAvatar, createPlayerAvatar, preloadPlayerCharacter } from './character';
 import {
   INTERACTABLES,
   InteractableDef,
@@ -99,7 +99,7 @@ export class GameWorld {
   private letterSlots = new Map<string, THREE.Mesh>();
 
   // players
-  private local?: BoyAvatar;
+  private local?: PlayerAvatar;
   private localPos = SPAWN.clone();
   private localYaw = Math.PI;
   private localSpeed = 0;
@@ -108,7 +108,7 @@ export class GameWorld {
   private camDist = 4.6;
   private keys = new Set<string>();
   private joystick = new THREE.Vector2();
-  private remotes = new Map<string, { avatar: BoyAvatar; pos: THREE.Vector3; yaw: number; speed: number; connected: boolean }>();
+  private remotes = new Map<string, { avatar: PlayerAvatar; pos: THREE.Vector3; yaw: number; speed: number; connected: boolean }>();
   private positions?: Map<string, RemotePosition & { t: number }>;
   private myId?: string;
   private lastSent = 0;
@@ -117,6 +117,8 @@ export class GameWorld {
   sensitivity = 1;
 
   constructor(private canvas: HTMLCanvasElement, private quality: Quality, private cb: WorldCallbacks = {}) {
+    // the shared player model starts downloading now, while the room is being built
+    preloadPlayerCharacter();
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality !== 'low', powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality === 'high' ? 2 : quality === 'medium' ? 1.5 : 1));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -1119,7 +1121,7 @@ export class GameWorld {
     this.myId = myId ?? undefined;
     const me = players.find((p) => p.id === myId);
     if (me && !this.local) {
-      this.local = new BoyAvatar(me.characterId, me.appearance);
+      this.local = createPlayerAvatar(me.characterId, me.appearance);
       this.scene.add(this.local.root);
       this.local.root.position.copy(this.localPos);
     }
@@ -1135,7 +1137,7 @@ export class GameWorld {
       if (p.id === myId) return;
       let r = this.remotes.get(p.id);
       if (!r) {
-        const avatar = new BoyAvatar(p.characterId, p.appearance, p.nickname);
+        const avatar = createPlayerAvatar(p.characterId, p.appearance, p.nickname);
         const start = new THREE.Vector3(-2 + (p.seat % 5) * 1, 0, SPAWN.z + 0.8);
         avatar.root.position.copy(start);
         this.scene.add(avatar.root);
@@ -1289,7 +1291,7 @@ export class GameWorld {
     this.camera.position.lerpVectors(from, to, THREE.MathUtils.smootherstep(Math.min(1, s / 8), 0, 1));
     this.camera.lookAt(0, 3, c - 5.6);
     // everyone gathers in front of the portal and cheers
-    const all = [this.local, ...[...this.remotes.values()].map((r) => r.avatar)].filter(Boolean) as BoyAvatar[];
+    const all = [this.local, ...[...this.remotes.values()].map((r) => r.avatar)].filter(Boolean) as PlayerAvatar[];
     all.forEach((a, k) => {
       const x = (k - (all.length - 1) / 2) * 1.1;
       a.root.position.lerp(new THREE.Vector3(x, 0, c - 2.6), 0.05);
@@ -1411,7 +1413,7 @@ export class GameWorld {
   }
 
   private tourView?: { pos: THREE.Vector3; look: THREE.Vector3 };
-  private lineup: BoyAvatar[] = [];
+  private lineup: PlayerAvatar[] = [];
 
   /** Design review: every door open, camera parked in the chosen room (or close to the characters). */
   setTour(view: ZoneId | 'characters' | 'wallmap' | 'parchment') {
@@ -1449,7 +1451,7 @@ export class GameWorld {
   }
 
   /** Puts the four character types side by side in the library for a close look. */
-  showLineup(avatars: BoyAvatar[]) {
+  showLineup(avatars: PlayerAvatar[]) {
     this.lineup.forEach((a) => this.scene.remove(a.root));
     this.lineup = avatars;
     avatars.forEach((a, k) => {
@@ -1637,6 +1639,10 @@ export class GameWorld {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('blur', this.onBlur);
+    // player figures first: each has its own animation mixer and materials (the model itself stays cached)
+    this.local?.dispose();
+    for (const r of this.remotes.values()) r.avatar.dispose();
+    this.lineup.forEach((a) => a.dispose());
     this.scene.traverse((o) => {
       const m = o as THREE.Mesh;
       m.geometry?.dispose?.();
