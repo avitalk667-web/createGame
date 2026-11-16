@@ -97,6 +97,21 @@ import { TutorialVideoComponent } from '../ui/tutorial-video.component';
         </figure>
       </section>
 
+      <!-- the free taste (/demo): the site's one way to try before buying -->
+      <section class="taste" aria-labelledby="taste-title">
+        <a class="taste-art" routerLink="/demo" tabindex="-1" aria-hidden="true">
+          <img src="img/home/taste-room.jpg" width="800" height="450" loading="lazy" alt="" />
+          <span class="taste-glow"></span>
+        </a>
+        <div class="taste-text">
+          <span class="kicker">טעימה מהפורטל</span>
+          <h2 id="taste-title">מוכנים להיכנס לפורטל?</h2>
+          <p>אל תסתפקו בלשמוע על חדרי הבריחה שלנו. היכנסו פנימה, חקרו את החדר ופתרו את החידה הראשונה שלכם.</p>
+          <a class="btn hero-cta taste-cta" routerLink="/demo">אני רוצה לנסות!</a>
+          <small class="taste-meta">טעימה חינמית | כ־3–5 דקות | ללא הרשמה</small>
+        </div>
+      </section>
+
       <section id="games" class="games" aria-labelledby="games-title">
         <h2 id="games-title">המשחקים</h2>
         @if (loading()) {
@@ -152,7 +167,7 @@ import { TutorialVideoComponent } from '../ui/tutorial-video.component';
         }
       </section>
 
-      <px-how-it-works [freeGameId]="freeGameId()" />
+      <px-how-it-works />
 
       <px-tutorial-video />
 
@@ -276,6 +291,27 @@ import { TutorialVideoComponent } from '../ui/tutorial-video.component';
       .gate-glow { animation:none; opacity:.6; } .lamp-glow { animation:none; opacity:.6; } .sparks { display:none; }
       .hero-cta, .hero-cta .arrow, .burger i, .links a { transition:none; }
     }
+    /* the taste: the room's own picture beside a short invitation, in the hero's navy and gold */
+    .taste { display:grid; grid-template-columns:minmax(0, 5fr) minmax(0, 6fr); align-items:center; gap:clamp(1rem, 3vw, 2.5rem); margin-block:.5rem 2rem;
+      padding:clamp(.8rem, 2vw, 1.4rem); border-radius:22px; border:1px solid rgba(240,200,110,.55);
+      background: radial-gradient(40rem 18rem at 80% 50%, rgba(106,168,255,.16), transparent 60%), linear-gradient(90deg, #0b1435, #111c44 60%, #0b1435);
+      box-shadow: 0 0 0 3px rgba(240,200,110,.06), 0 0 24px rgba(240,200,110,.16), 0 14px 34px rgba(0,0,0,.4); }
+    .taste-art { position:relative; display:block; aspect-ratio:16 / 9; border-radius:16px; overflow:hidden; box-shadow:0 10px 30px rgba(0,0,0,.5); }
+    .taste-art img { width:100%; height:100%; object-fit:cover; display:block; transition:transform .5s ease; }
+    .taste-art:hover img { transform:scale(1.03); }
+    .taste-glow { position:absolute; inset:0; pointer-events:none; background:linear-gradient(0deg, rgba(7,11,28,.45), transparent 40%); }
+    .taste-text { order:-1; display:flex; flex-direction:column; align-items:flex-start; gap:.2rem; }
+    .taste h2 { margin:.15em 0 .3em; font-weight:900; font-size:clamp(1.9rem, 3.6vw, 2.8rem); line-height:1.1;
+      background:linear-gradient(180deg, #fff1c4 0%, #f6d78d 40%, #e0b95c 75%, #b98a34 100%); -webkit-background-clip:text; background-clip:text; color:transparent; }
+    .taste p { margin:0 0 1.1rem; color:#ece5d3; line-height:1.7; font-size:clamp(1rem, 1.3vw, 1.12rem); max-width:38ch; }
+    .taste-cta { padding-inline:2.2em; }
+    .taste-meta { margin-top:.6rem; color:#b9c6e6; font-size:.92rem; }
+    @media (max-width: 960px) {
+      .taste { grid-template-columns:1fr; }
+      .taste-text { order:0; align-items:center; text-align:center; }
+    }
+    @media (max-width: 760px) { .taste-cta { width:100%; max-width:420px; } }
+    @media (prefers-reduced-motion: reduce) { .taste-art img { transition:none; } }
     .big { font-size:1.15rem; padding:.85em 2em; }
     h2 { font-family:var(--font-title); font-size:2rem; margin:0 0 1rem; }
     .games { padding-block:1rem 2rem; scroll-margin-top:84px; }
@@ -426,8 +462,6 @@ export class HomePage {
   /** The admin button appears only for a verified admin session (the server decides). */
   isAdmin = signal(false);
   products = signal<Product[]>([]);
-  /** The free trial game, for the "want to try first?" box of how it works. */
-  freeGameId = computed(() => this.products().find((p) => p.isFree)?.id ?? 'gate-of-secrets');
   /** A design ribbon on some games' cards (the free game has its own "חינם"). */
   readonly RIBBON: Record<string, string> = { 'stone-maze': 'חדר מאתגר' };
   /** Cards in a row on a wide screen, by how many games are published: 4 → two rows of 2, 6 → two rows of 3. */

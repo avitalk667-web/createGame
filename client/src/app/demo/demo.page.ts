@@ -1,7 +1,8 @@
 import { ChangeDetectionStrategy, Component, ElementRef, NgZone, OnDestroy, OnInit, computed, effect, inject, isDevMode, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { ApiError } from '../core/api.service';
+import { ApiError, ApiService } from '../core/api.service';
 import { AudioService } from '../core/audio.service';
+import { Product, formatPreviousPrice, formatPrice, playersLabel } from '../core/models';
 import { SettingsService } from '../core/settings.service';
 import { JoystickComponent } from '../ui/joystick.component';
 import { DEMO_ITEMS, DEMO_SPOTS, DemoSpot, DemoSpotId } from './demo-content';
@@ -136,7 +137,48 @@ type ItemId = (typeof DEMO_ITEMS)[number];
           </div>
         }
 
-        @if (success()) {
+        @if (success() && offer()) {
+          <!-- the offer: the real games of the catalog, as the server lists them (names, pictures and prices are never set here) -->
+          <div class="overlay win-bg offer-wrap">
+            <section class="offer" role="dialog" aria-modal="true" aria-labelledby="offer-title">
+              <p class="kicker">טעימה מהפורטל · הושלמה</p>
+              <h2 id="offer-title" class="gold-title">נהניתם מהטעימה? ההרפתקה האמיתית מתחילה עכשיו!</h2>
+              <p class="lead">פתרתם חידה אחת. דמיינו מה מחכה לכם במשחק מלא – חדרים מסתוריים, חידות מתוחכמות, סודות נסתרים וחוויה משותפת עם החברים או המשפחה.</p>
+              @if (products(); as list) {
+                @if (list.length) {
+                  <h3 class="pick">בחרו את ההרפתקה הבאה שלכם</h3>
+                  <div class="games">
+                    @for (p of list; track p.id) {
+                      <article class="game">
+                        <a class="cover" [routerLink]="['/games', p.id]" [attr.aria-label]="'לצפייה במשחק ' + p.name"><img [src]="p.coverImage" [alt]="p.name" loading="lazy" (error)="$any($event.target).style.visibility = 'hidden'" /></a>
+                        <div class="g-body">
+                          <h4><a [routerLink]="['/games', p.id]">{{ p.name }}</a></h4>
+                          <p class="tagline">{{ p.tagline }}</p>
+                          <div class="g-buy">
+                            <div class="g-price">
+                              @if (previousPrice(p); as was) {
+                                <s><span class="sr-only">מחיר קודם: </span><bdi>{{ was }}</bdi></s>
+                              }
+                              <b><span class="sr-only">מחיר: </span><bdi>{{ price(p) }}</bdi></b>
+                              <small>{{ players(p) }}</small>
+                            </div>
+                            <a class="btn primary" [routerLink]="['/games', p.id]">לצפייה במשחק</a>
+                          </div>
+                        </div>
+                      </article>
+                    }
+                  </div>
+                }
+              } @else {
+                <p class="muted" role="status">טוענים את המשחקים…</p>
+              }
+              <div class="offer-actions">
+                <a class="btn" routerLink="/" fragment="games">לצפייה בכל המשחקים</a>
+                <button class="btn ghost" (click)="closeOffer()">להסתכל שוב בחדר</button>
+              </div>
+            </section>
+          </div>
+        } @else if (success()) {
           <div class="overlay win-bg">
             <section class="win" role="dialog" aria-modal="true" aria-labelledby="win-title">
               <div class="rays" aria-hidden="true"></div>
@@ -146,8 +188,8 @@ type ItemId = (typeof DEMO_ITEMS)[number];
               <p>מאחורי הפורטל מחכים לכם חדרים נוספים, סודות נסתרים וחידות שיאתגרו אתכם ואת החברים שלכם.</p>
               @if (seconds(); as t) { <p class="time">⏱ פתרתם ב־{{ duration(t) }}</p> }
               <div class="win-actions">
-                <a class="btn primary" routerLink="/" fragment="games">בחרו את ההרפתקה הבאה שלכם</a>
-                <button class="btn ghost" (click)="success.set(false)">להסתכל שוב בחדר</button>
+                <button class="btn primary" (click)="showOffer()">בחרו את ההרפתקה הבאה שלכם</button>
+                <button class="btn ghost" (click)="closeOffer()">להסתכל שוב בחדר</button>
               </div>
             </section>
           </div>
@@ -226,6 +268,32 @@ type ItemId = (typeof DEMO_ITEMS)[number];
     .win .lead { font-size: 1.2rem; font-weight:700; margin-bottom:.8rem; }
     .time { color: var(--gold-2); }
     .win-actions { display:flex; flex-direction:column; gap:.6rem; margin-top:1.2rem; }
+    /* the offer: a scrolling page over the room, the catalog cards in a responsive grid */
+    .offer-wrap { overflow-y:auto; align-items:start; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); }
+    .offer { position:relative; width:100%; max-width:980px; margin: auto; text-align:center; padding: 1.6rem clamp(1rem, 3vw, 2rem); border-radius:22px;
+      background: linear-gradient(180deg, rgba(22,32,74,.97), rgba(10,16,40,.97)); border:1px solid var(--gold); box-shadow: 0 0 60px rgba(224,185,92,.25), var(--shadow);
+      animation: rise .6s cubic-bezier(.2,.9,.3,1.1) both; }
+    .offer h2 { font-family: var(--font-title); font-size: clamp(1.7rem, 5.4vw, 2.6rem); line-height:1.2; margin:.2rem auto .7rem; max-width:22ch; text-wrap:balance; }
+    .offer .lead { max-width:60ch; margin:0 auto 1.2rem; line-height:1.7; font-size:clamp(1rem, 2.6vw, 1.12rem); }
+    .pick { font-family: var(--font-title); color: var(--gold-2); font-size:1.35rem; margin: .4rem 0 .9rem; }
+    .games { display:grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 1rem; text-align:right; }
+    .game { display:flex; flex-direction:column; border-radius:16px; overflow:hidden; background: rgba(255,255,255,.04); border:1px solid var(--line);
+      transition: transform .2s ease, border-color .2s ease; }
+    .game:hover { transform: translateY(-3px); border-color: rgba(224,185,92,.6); }
+    .game .cover { display:block; aspect-ratio:16/9; background: var(--bg-2); overflow:hidden; }
+    .game .cover img { width:100%; height:100%; object-fit:cover; display:block; }
+    .g-body { padding: .8rem .95rem 1rem; display:flex; flex-direction:column; gap:.4rem; flex:1; }
+    .g-body h4 { margin:0; font-family: var(--font-title); font-size:1.35rem; }
+    .g-body h4 a { color: var(--text); text-decoration:none; }
+    .tagline { margin:0; color: var(--muted); line-height:1.55; font-size:.95rem; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+    .g-buy { margin-top:auto; padding-top:.6rem; border-top:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; gap:.6rem; flex-wrap:wrap; }
+    .g-price { display:flex; flex-wrap:wrap; align-items:baseline; gap:0 .5rem; }
+    .g-price b { font-size:1.45rem; color: var(--gold-2); }
+    .g-price s { color: var(--muted); }
+    .g-price small { flex-basis:100%; color: var(--muted); }
+    .offer-actions { display:flex; justify-content:center; flex-wrap:wrap; gap:.6rem; margin-top:1.3rem; }
+    @media (max-width: 520px) { .offer-actions .btn { flex:1 1 100%; } .g-buy .btn { flex:1 1 100%; } }
+    @media (prefers-reduced-motion: reduce) { .offer, .game { animation:none; transition:none; } }
     @keyframes rise { from { opacity:0; transform: translateY(24px) scale(.94); } }
     @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -244,6 +312,7 @@ export class DemoPage implements OnInit, OnDestroy {
   private audio = inject(AudioService);
   private settings = inject(SettingsService);
   private api = inject(DemoApi);
+  private catalog = inject(ApiService);
   private canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
 
   readonly items = DEMO_ITEMS;
@@ -280,6 +349,13 @@ export class DemoPage implements OnInit, OnDestroy {
   opening = signal(false);
   success = signal(false);
   seconds = signal<number | null>(null);
+  /** The offer after the success card: the games of the catalog that can be bought now. */
+  offer = signal(false);
+  /** null while loading; on failure an empty list (the "all games" link stays). */
+  products = signal<Product[] | null>(null);
+  readonly price = formatPrice;
+  readonly previousPrice = formatPreviousPrice;
+  readonly players = playersLabel;
   panelOpen = computed(() => !!this.inspecting() || this.keypad() || this.hints() || this.success());
 
   /** Whether the server has this browser's session (the room still plays when it cannot be reached). */
@@ -485,6 +561,20 @@ export class DemoPage implements OnInit, OnDestroy {
     this.opening.set(false);
     this.success.set(true);
     if (sound) this.audio.sfx('complete');
+  }
+
+  showOffer() {
+    this.offer.set(true);
+    if (this.products()?.length) return;
+    this.products.set(null);
+    // the same public list as the home page; only what the server says can be bought now (published, priced, on sale)
+    this.catalog.products().then((list) => this.products.set(list.filter((p) => p.purchasable))).catch(() => this.products.set([]));
+  }
+
+  /** Back to the open room; the success card returns from the door (or on the next visit). */
+  closeOffer() {
+    this.offer.set(false);
+    this.success.set(false);
   }
 
   private startCooldown(seconds: number) {
