@@ -74,6 +74,8 @@ builder.Services.AddScoped<PortalX.Server.Referrals.ReferralService>();
 builder.Services.AddScoped<PortalX.Server.Referrals.ReferralAdmin>();
 // "Challenge 240": personal coupons for a high score in the free game
 builder.Services.AddScoped<PortalX.Server.Challenge.ChallengeService>();
+// "טעימה מהפורטל": the anonymous sessions of the free taste at /demo
+builder.Services.AddScoped<PortalX.Server.Demo.DemoService>();
 builder.Services.AddHostedService<PortalX.Server.Mail.MailRetentionService>();
 builder.Services.AddAdminAuth();
 
@@ -145,6 +147,11 @@ builder.Services.AddRateLimiter(o =>
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:ChallengeStatusPerMinute", 30), Window = TimeSpan.FromMinutes(1) }));
     o.AddPolicy("challenge-issue", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:ChallengeIssuePer10Minutes", 10), Window = TimeSpan.FromMinutes(10) }));
+    // the free taste: its session calls, and the keypad (the session itself also rests after a few wrong codes)
+    o.AddPolicy("demo", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:DemoPerMinute", 120), Window = TimeSpan.FromMinutes(1) }));
+    o.AddPolicy("demo-code", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:DemoCodePerMinute", 30), Window = TimeSpan.FromMinutes(1) }));
     o.AddPolicy("admin-login", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:AdminLoginPerMinute", 10), Window = TimeSpan.FromMinutes(1) }));
 });
@@ -226,6 +233,7 @@ api.MapSiteEndpoints();
 PortalX.Server.Mail.MailEndpoints.MapMailEndpoints(api);
 PortalX.Server.Referrals.ReferralEndpoints.MapReferralEndpoints(api);
 PortalX.Server.Challenge.ChallengeEndpoints.MapChallengeEndpoints(api);
+PortalX.Server.Demo.DemoEndpoints.MapDemoEndpoints(api);
 api.MapAdminEndpoints();
 
 api.MapGet("/rooms/{code}", async (string code, RoomService rooms, ScenarioCatalog catalog) =>

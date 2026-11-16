@@ -363,6 +363,8 @@ public class Order
     public DateTime? ReferralAttributedAt { get; set; }
     /// <summary>Why the order does not count for its link although it came through it (e.g. "self-purchase"); null = counts.</summary>
     public string? ReferralExclusion { get; set; }
+    /// <summary>The free taste (/demo) this checkout came from: copied on the server from the browser's demo cookie, never sent by it.</summary>
+    public Guid? DemoSessionId { get; set; }
     /// <summary>The provider's customer, document and authorization of the verified payment. Never any card details.</summary>
     public long? ProviderCustomerId { get; set; }
     public long? ProviderDocumentId { get; set; }
@@ -842,4 +844,57 @@ public class MarketingConsentEvent
     public string Source { get; set; } = "";
     public string? ConsentVersion { get; set; }
     public DateTime At { get; set; }
+}
+
+/// <summary>
+/// One anonymous play of "טעימה מהפורטל" (the free taste at /demo). The browser holds only a random token in an HttpOnly
+/// cookie; its hash is the key here, so a session can be read or changed only by the browser that started it. Holds no
+/// personal details. Completion is decided here (the code is checked on the server), never by the browser.
+/// </summary>
+public class DemoSession
+{
+    public Guid Id { get; set; }
+    public string TokenHash { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+    /// <summary>The last request of this session (refreshing, examining, a code): "abandoned" is computed from it.</summary>
+    public DateTime LastSeenAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    /// <summary>The objects examined at least once, one bit each (DemoService.ItemBit).</summary>
+    public int InspectedMask { get; set; }
+    public int HintsUsed { get; set; }
+    public int CodeAttempts { get; set; }
+    /// <summary>Wrong codes in a row; after a few the keypad rests for a short while (CooldownUntil).</summary>
+    public int WrongStreak { get; set; }
+    public DateTime? CooldownUntil { get; set; }
+    /// <summary>"desktop", "mobile" or "tablet" as the browser reported it (display only).</summary>
+    public string Device { get; set; } = "";
+    /// <summary>The A/B variant, fixed for the whole session.</summary>
+    public string Variant { get; set; } = "A";
+    /// <summary>The personal link of the visit (the server-side referral session), copied when the session started.</summary>
+    public Guid? ReferralLinkId { get; set; }
+    /// <summary>The last thing that happened (an event type), to see where players stop.</summary>
+    public string LastEvent { get; set; } = "";
+    public DateTime? OfferViewedAt { get; set; }
+    public DateTime? ProductClickedAt { get; set; }
+    public string? ProductClickedId { get; set; }
+    public DateTime? CheckoutStartedAt { get; set; }
+    /// <summary>Set only when the provider verified the payment of an order that started from this session.</summary>
+    public DateTime? PurchasedAt { get; set; }
+    public Guid? OrderId { get; set; }
+}
+
+/// <summary>One step of the taste's funnel (demo_impression, demo_started, demo_completed, ...). Small and anonymous.</summary>
+public class DemoEvent
+{
+    public long Id { get; set; }
+    /// <summary>Null for events before a session exists (an impression, a click on the home page).</summary>
+    public Guid? SessionId { get; set; }
+    public string Type { get; set; } = "";
+    public DateTime At { get; set; }
+    public string? ProductId { get; set; }
+    /// <summary>A number belonging to the event: the hint number, the attempt number, seconds to complete.</summary>
+    public int? Value { get; set; }
+    public string? Device { get; set; }
+    public string? Variant { get; set; }
+    public Guid? ReferralLinkId { get; set; }
 }

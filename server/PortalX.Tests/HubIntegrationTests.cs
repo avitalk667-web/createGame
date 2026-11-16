@@ -40,6 +40,8 @@ public class HubIntegrationTests
                 ["RateLimits:CouponPerMinute"] = "100000",
                 ["RateLimits:ChallengeStatusPerMinute"] = "100000",
                 ["RateLimits:ChallengeIssuePer10Minutes"] = "100000",
+                ["RateLimits:DemoPerMinute"] = "100000",
+                ["RateLimits:DemoCodePerMinute"] = "100000",
                 ["Admin:Username"] = AdminTests.Username,
                 ["Admin:PasswordHash"] = PortalX.Server.Admin.AdminAuth.HashPassword(AdminTests.Password),
             }));

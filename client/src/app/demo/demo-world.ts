@@ -283,8 +283,8 @@ export class DemoWorld {
       door.add(hinge);
       this.leaves.push(hinge);
     }
-    // a big lock plate across the seam
-    this.box(0.26, 0.42, 0.06, this.std('#8a6a2a', { metalness: 0.85, roughness: 0.35 }), 0, 1.45, 0.1, door);
+    // a big lock plate at the seam, on the right leaf (it swings away with it)
+    this.box(0.2, 0.42, 0.06, this.std('#8a6a2a', { metalness: 0.85, roughness: 0.35 }), -DOOR_W / 2 + 0.1, 1.45, 0.1, this.leaves[1]);
     this.scene.add(door);
 
     // the keypad: brass frame, a dark face with the twelve keys and a small screen, glowing once it opens the door
@@ -542,7 +542,15 @@ export class DemoWorld {
   openDoor() {
     this.flashKeypad(true);
     this.doorTarget = 1;
+    this.standAside();
     this.setMode('door');
+  }
+
+  /** The figure steps beside the door, facing it, so the camera sees the doors swing open. */
+  private standAside() {
+    this.localPos.set(1.3, 0, -4.0);
+    this.localYaw = Math.atan2(-1.3, -3.2);
+    if (this.local) this.local.root.rotation.y = this.localYaw;
   }
 
   /** Puts the room straight into its opened state (a returning player who already solved it). */
@@ -551,6 +559,7 @@ export class DemoWorld {
     this.doorTarget = 1;
     this.doorOpen = 1;
     this.doorOpenedSent = true;
+    this.standAside();
     this.setMode('done');
   }
 
@@ -725,8 +734,15 @@ export class DemoWorld {
 
   // ======================================================================= input
 
+  /** A panel is open over the room: keys and clicks belong to it, not to the room. */
+  private paused = false;
+  setPaused(on: boolean) {
+    this.paused = on;
+    if (on) this.clearInput();
+  }
+
   private onKeyDown = (e: KeyboardEvent) => {
-    if ((e.target as HTMLElement)?.closest?.('input, textarea, select, [role="dialog"]')) return;
+    if (this.paused || (e.target as HTMLElement)?.closest?.('input, textarea, select, [role="dialog"]')) return;
     this.keys.add(e.code);
     if (e.code === 'KeyE' && this.mode === 'play') {
       if (this.hovered) this.tryInteract(this.hovered);
@@ -769,7 +785,7 @@ export class DemoWorld {
     c.addEventListener('pointerup', (e) => {
       const d = this.drag;
       this.drag = undefined;
-      if (d && !d.moved && this.mode === 'play') {
+      if (d && !d.moved && this.mode === 'play' && !this.paused) {
         const rect = c.getBoundingClientRect();
         this.pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
         const spot = this.pick();

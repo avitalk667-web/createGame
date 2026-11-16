@@ -40,6 +40,8 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
     public DbSet<CouponCampaignProduct> CouponCampaignProducts => Set<CouponCampaignProduct>();
     public DbSet<PlayerCouponEligibility> PlayerCouponEligibility => Set<PlayerCouponEligibility>();
     public DbSet<CouponEvent> CouponEvents => Set<CouponEvent>();
+    public DbSet<DemoSession> DemoSessions => Set<DemoSession>();
+    public DbSet<DemoEvent> DemoEvents => Set<DemoEvent>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -174,6 +176,7 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.Property(x => x.DiscountAmount).HasPrecision(10, 2);
             e.Property(x => x.CouponCode).HasMaxLength(32);
             e.HasIndex(x => x.CouponId);
+            e.HasIndex(x => x.DemoSessionId);
             e.Property(x => x.Currency).HasMaxLength(3);
             e.Property(x => x.Email).HasMaxLength(200);
             e.HasIndex(x => new { x.Provider, x.ProviderSessionId }).IsUnique().HasFilter("\"ProviderSessionId\" IS NOT NULL");
@@ -212,6 +215,31 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.HasIndex(x => x.CreatedAt);
         });
 
+        // "טעימה מהפורטל": anonymous sessions and the funnel's events (additive tables; nothing else changes)
+        b.Entity<DemoSession>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.TokenHash).HasMaxLength(64);
+            e.HasIndex(x => x.TokenHash).IsUnique();
+            e.HasIndex(x => x.CreatedAt);
+            e.Property(x => x.Device).HasMaxLength(16);
+            e.Property(x => x.Variant).HasMaxLength(8);
+            e.Property(x => x.LastEvent).HasMaxLength(40);
+            e.Property(x => x.ProductClickedId).HasMaxLength(64);
+            e.HasOne<ReferralLink>().WithMany().HasForeignKey(x => x.ReferralLinkId).OnDelete(DeleteBehavior.SetNull);
+        });
+        b.Entity<DemoEvent>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Type).HasMaxLength(40);
+            e.Property(x => x.ProductId).HasMaxLength(64);
+            e.Property(x => x.Device).HasMaxLength(16);
+            e.Property(x => x.Variant).HasMaxLength(8);
+            e.HasIndex(x => new { x.Type, x.At });
+            e.HasIndex(x => x.SessionId);
+            e.HasOne<DemoSession>().WithMany().HasForeignKey(x => x.SessionId).OnDelete(DeleteBehavior.Cascade);
+        });
         b.Entity<ReferralVisit>(e =>
         {
             e.HasKey(x => x.Id);

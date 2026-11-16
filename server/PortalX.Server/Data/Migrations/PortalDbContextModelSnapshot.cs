@@ -414,6 +414,135 @@ namespace PortalX.Server.Data.Migrations
                     b.ToTable("CouponRedemptions");
                 });
 
+            modelBuilder.Entity("PortalX.Server.Domain.DemoEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Device")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("ProductId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid?>("ReferralLinkId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("SessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<int?>("Value")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Variant")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SessionId");
+
+                    b.HasIndex("Type", "At");
+
+                    b.ToTable("DemoEvents");
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.DemoSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("CheckoutStartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CodeAttempts")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("CooldownUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Device")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<int>("HintsUsed")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("InspectedMask")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("LastEvent")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTime>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("OfferViewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("ProductClickedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ProductClickedId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime?>("PurchasedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ReferralLinkId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Variant")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
+
+                    b.Property<int>("WrongStreak")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("ReferralLinkId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("DemoSessions");
+                });
+
             modelBuilder.Entity("PortalX.Server.Domain.Entitlement", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1039,6 +1168,9 @@ namespace PortalX.Server.Data.Migrations
                         .HasMaxLength(3)
                         .HasColumnType("character varying(3)");
 
+                    b.Property<Guid?>("DemoSessionId")
+                        .HasColumnType("uuid");
+
                     b.Property<decimal>("DiscountAmount")
                         .HasPrecision(10, 2)
                         .HasColumnType("numeric(10,2)");
@@ -1146,6 +1278,8 @@ namespace PortalX.Server.Data.Migrations
                     b.HasIndex("CouponId");
 
                     b.HasIndex("CreatedAt");
+
+                    b.HasIndex("DemoSessionId");
 
                     b.HasIndex("Number")
                         .IsUnique();
@@ -1883,6 +2017,22 @@ namespace PortalX.Server.Data.Migrations
                         .HasForeignKey("CouponId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.DemoEvent", b =>
+                {
+                    b.HasOne("PortalX.Server.Domain.DemoSession", null)
+                        .WithMany()
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade);
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.DemoSession", b =>
+                {
+                    b.HasOne("PortalX.Server.Domain.ReferralLink", null)
+                        .WithMany()
+                        .HasForeignKey("ReferralLinkId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("PortalX.Server.Domain.Order", b =>

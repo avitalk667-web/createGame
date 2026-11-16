@@ -1,23 +1,28 @@
-import { ChangeDetectionStrategy, Component, ElementRef, NgZone, OnDestroy, computed, inject, isDevMode, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, NgZone, OnDestroy, OnInit, computed, effect, inject, isDevMode, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { ApiError } from '../core/api.service';
 import { AudioService } from '../core/audio.service';
 import { SettingsService } from '../core/settings.service';
 import { JoystickComponent } from '../ui/joystick.component';
 import { DEMO_ITEMS, DEMO_SPOTS, DemoSpot, DemoSpotId } from './demo-content';
+import { DemoApi, DemoState, demoDevice } from './demo.api';
 import { DemoInspectComponent } from './demo-inspect.component';
+import { DemoKeypadComponent, KeypadStatus } from './demo-keypad.component';
 import { DemoWorld } from './demo-world';
 
 type Phase = 'gate' | 'loading' | 'play' | 'error';
 type ItemId = (typeof DEMO_ITEMS)[number];
 
 /**
- * "טעימה מהפורטל" — the free taste (route /demo): a short opening screen, the locked room in 3D, and (in later stages)
- * the keypad, the success moment and the games. No sign-up, no payment, no server game room.
+ * "טעימה מהפורטל" — the free taste (route /demo): a short opening screen, the locked room in 3D, the keypad and two hints,
+ * and the door opening onto the success screen. No sign-up, no payment, no server game room. The session (what was examined,
+ * hints, attempts, completion) is kept on the server under an HttpOnly cookie, so a refresh or a later visit continues it;
+ * the code is checked there, never here.
  */
 @Component({
   selector: 'px-demo-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, JoystickComponent, DemoInspectComponent],
+  imports: [RouterLink, JoystickComponent, DemoInspectComponent, DemoKeypadComponent],
   template: `
     <div class="stage" [class.hidden]="phase() === 'gate'"><canvas #canvas aria-label="החדר הנעול בתלת־ממד"></canvas></div>
 
@@ -29,7 +34,10 @@ type ItemId = (typeof DEMO_ITEMS)[number];
             <p class="kicker">טעימה מהפורטל</p>
             <h1 id="gate-title" class="gold-title">הפורטל נפתח בפניכם...</h1>
             <p class="lead">אתם עומדים להיכנס לחדר מסתורי. הדלת מאחוריכם ננעלה, ורק מי שיצליח לחשוף את הסוד יוכל לצאת.</p>
-            <button class="btn primary enter" (click)="enter()">כניסה לחדר</button>
+            @if (resume(); as r) {
+              <p class="resume">{{ r.completed ? 'כבר פתחתם את השער בטעימה הזו.' : 'ממשיכים מאיפה שהפסקתם: ' + r.inspected.length + ' מתוך 4 סימנים נמצאו.' }}</p>
+            }
+            <button class="btn primary enter" (click)="enter()">{{ resume()?.completed ? 'חזרה לחדר הפתוח' : resume() ? 'המשך בחדר' : 'כניסה לחדר' }}</button>
             <p class="muted small">טעימה חינמית · כ־3–5 דקות · ללא הרשמה</p>
           </div>
           <a routerLink="/" class="home-link">חזרה לדף הבית</a>
@@ -61,6 +69,7 @@ type ItemId = (typeof DEMO_ITEMS)[number];
             </span>
           </div>
           <div class="tools">
+            @if (!completed()) { <button class="btn small" (click)="openHints()" aria-label="רמזים">💡 רמז</button> }
             <button class="btn small" (click)="showHelp.set(!showHelp())" aria-label="איך משחקים">?</button>
             <a class="btn small" routerLink="/" aria-label="יציאה מהטעימה">יציאה</a>
           </div>
@@ -74,7 +83,7 @@ type ItemId = (typeof DEMO_ITEMS)[number];
           </div>
         }
 
-        @if (focus(); as f) { @if (!inspecting() && !doorNote()) {
+        @if (focus(); as f) { @if (!panelOpen()) {
           <div class="prompt" aria-live="polite">
             @if (!touch) { <kbd>E</kbd> }{{ f.verb }} {{ f.label }}
           </div>
@@ -98,7 +107,7 @@ type ItemId = (typeof DEMO_ITEMS)[number];
           </section>
         }
 
-        @if (touch && playing() && !inspecting() && !doorNote()) {
+        @if (touch && playing() && !panelOpen() && !opening()) {
           <px-joystick class="joy" (changed)="world?.setJoystick($event.x, $event.y)" />
           <button class="btn primary act" [disabled]="!focus()" (click)="world?.interactNearest()" [attr.aria-label]="focus() ? focus()!.verb + ' ' + focus()!.label : 'אין חפץ קרוב'">
             {{ focus() ? '🔍 ' + focus()!.button : '🔍' }}
@@ -107,12 +116,39 @@ type ItemId = (typeof DEMO_ITEMS)[number];
 
         @if (inspecting(); as id) { <px-demo-inspect [item]="id" (closed)="closeInspect()" /> }
 
-        @if (doorNote()) {
-          <div class="overlay" (click)="doorNote.set(false)">
-            <section class="panel-modal note" role="dialog" aria-modal="true" aria-label="הדלת הנעולה" (click)="$event.stopPropagation()">
-              <h2 class="gold-title">הדלת הנעולה</h2>
-              <p>הדלת הכבדה נעולה במנעול של ארבע ספרות. רק מי שמפענח את סוד החדר יוכל לפתוח אותה.</p>
-              <button class="btn primary" (click)="doorNote.set(false)">חזרה לחקירה</button>
+        @if (keypad()) {
+          <px-demo-keypad [status]="padStatus()" [message]="padMessage()" [locked]="padLocked()"
+            (submitted)="tryCode($event)" (edited)="padEdited()" (hint)="openHints()" (closed)="closeKeypad()" />
+        }
+
+        @if (hints()) {
+          <div class="overlay top" (click)="hints.set(false)">
+            <section class="panel-modal note" role="dialog" aria-modal="true" aria-labelledby="hints-title" (click)="$event.stopPropagation()">
+              <h2 id="hints-title" class="gold-title">רמזים</h2>
+              @for (h of hintTexts(); track $index) { <p class="hint"><b>רמז {{ $index + 1 }}:</b> {{ h }}</p> }
+              @empty { <p class="muted">אפשר לקבל עד שני רמזים. נסו קודם לחקור — הרמז יחכה לכם כאן.</p> }
+              @if (hintTexts().length < 2) {
+                <button class="btn primary" [disabled]="busy()" (click)="askHint()">{{ hintTexts().length ? 'לרמז השני' : 'קבלו רמז' }} ({{ hintTexts().length + 1 }} מתוך 2)</button>
+              } @else { <p class="muted small">קיבלתם את שני הרמזים.</p> }
+              @if (hintError(); as e) { <p class="err" role="alert">{{ e }}</p> }
+              <button class="btn small ghost back" (click)="hints.set(false)">חזרה</button>
+            </section>
+          </div>
+        }
+
+        @if (success()) {
+          <div class="overlay win-bg">
+            <section class="win" role="dialog" aria-modal="true" aria-labelledby="win-title">
+              <div class="rays" aria-hidden="true"></div>
+              <p class="kicker">הסוד שמאחורי השעון · נפתר</p>
+              <h2 id="win-title" class="gold-title">עשיתם את זה!</h2>
+              <p class="lead">פיצחתם את החידה הראשונה שלכם ופתחתם את השער. אבל זו רק ההתחלה...</p>
+              <p>מאחורי הפורטל מחכים לכם חדרים נוספים, סודות נסתרים וחידות שיאתגרו אתכם ואת החברים שלכם.</p>
+              @if (seconds(); as t) { <p class="time">⏱ פתרתם ב־{{ duration(t) }}</p> }
+              <div class="win-actions">
+                <a class="btn primary" routerLink="/" fragment="games">בחרו את ההרפתקה הבאה שלכם</a>
+                <button class="btn ghost" (click)="success.set(false)">להסתכל שוב בחדר</button>
+              </div>
             </section>
           </div>
         }
@@ -135,6 +171,7 @@ type ItemId = (typeof DEMO_ITEMS)[number];
     h1 { font-family: var(--font-title); font-size: clamp(2rem, 7vw, 3.4rem); margin:0 0 1rem; }
     .lead { font-size: clamp(1.05rem, 3.6vw, 1.3rem); line-height:1.6; margin:0 0 1.6rem; }
     .enter { font-size:1.25rem; padding:.9em 2.4em; }
+    .resume { color: var(--gold-2); margin: 0 0 .9rem; font-weight:700; }
     .home-link { position:absolute; bottom: max(16px, env(safe-area-inset-bottom)); color: var(--muted); }
 
     .loading { position:absolute; inset:0; display:grid; place-content:center; gap:.8rem; text-align:center; padding:16px;
@@ -171,7 +208,26 @@ type ItemId = (typeof DEMO_ITEMS)[number];
     .act { position:fixed; bottom: calc(max(14px, env(safe-area-inset-bottom)) + 34px); right: 18px; z-index:11; min-width:88px; min-height:64px; border-radius:20px; font-size:1.1rem; }
     .act:disabled { opacity:.35; }
     .note { max-width:420px; text-align:center; }
+    .overlay.top { z-index: 60; }
+    .hint { text-align:right; line-height:1.6; background: rgba(255,255,255,.04); border:1px solid var(--line); border-radius:10px; padding:.6rem .8rem; }
+    .err { color:#ffc2b5; }
+    .back { margin-top:.6rem; }
     .skip { position:fixed; bottom: calc(max(14px, env(safe-area-inset-bottom)) + 20px); left:50%; transform:translateX(-50%); z-index:11; }
+
+    .win-bg { background: radial-gradient(ellipse at 50% 40%, rgba(80,130,230,.35), rgba(3,6,16,.86) 70%); }
+    .win { position:relative; max-width:560px; text-align:center; padding: 2rem 1.4rem; border-radius:22px; overflow:hidden;
+      background: linear-gradient(180deg, rgba(22,32,74,.96), rgba(10,16,40,.96)); border:1px solid var(--gold); box-shadow: 0 0 60px rgba(224,185,92,.35), var(--shadow);
+      animation: rise .7s cubic-bezier(.2,.9,.3,1.2) both; }
+    .win > * { position:relative; }
+    .rays { position:absolute !important; inset:-50%; pointer-events:none; background: conic-gradient(from 0deg, transparent 0 8%, rgba(255,214,120,.10) 10% 14%, transparent 16% 33%,
+      rgba(255,214,120,.10) 35% 39%, transparent 41% 58%, rgba(255,214,120,.10) 60% 64%, transparent 66% 83%, rgba(255,214,120,.10) 85% 89%, transparent 91%);
+      animation: spin 24s linear infinite; }
+    .win h2 { font-family: var(--font-title); font-size: clamp(2.4rem, 9vw, 3.6rem); margin: .2rem 0 .6rem; }
+    .win .lead { font-size: 1.2rem; font-weight:700; margin-bottom:.8rem; }
+    .time { color: var(--gold-2); }
+    .win-actions { display:flex; flex-direction:column; gap:.6rem; margin-top:1.2rem; }
+    @keyframes rise { from { opacity:0; transform: translateY(24px) scale(.94); } }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     @media (pointer: coarse) {
       .prompt { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 120px); }
@@ -179,13 +235,15 @@ type ItemId = (typeof DEMO_ITEMS)[number];
     @media (max-width: 520px) {
       .title b { display:none; }
       .mission { top: calc(max(10px, env(safe-area-inset-top)) + 58px); font-size:.92rem; }
+      .tools .btn.small { padding-inline: .7em; }
     }
   `],
 })
-export class DemoPage implements OnDestroy {
+export class DemoPage implements OnInit, OnDestroy {
   private zone = inject(NgZone);
   private audio = inject(AudioService);
   private settings = inject(SettingsService);
+  private api = inject(DemoApi);
   private canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
 
   readonly items = DEMO_ITEMS;
@@ -203,13 +261,49 @@ export class DemoPage implements OnDestroy {
   focus = signal<DemoSpot | null>(null);
   inspected = signal<ReadonlySet<ItemId>>(new Set());
   inspecting = signal<ItemId | null>(null);
-  doorNote = signal(false);
   showHelp = signal(false);
   toast = signal<string | null>(null);
+  /** This browser's session found on arrival (a refresh or a later visit). */
+  resume = signal<DemoState | null>(null);
+
+  keypad = signal(false);
+  padStatus = signal<KeypadStatus>('idle');
+  padMessage = signal('');
+  busy = signal(false);
+  cooldown = signal(0);
+  padLocked = computed(() => this.busy() || this.cooldown() > 0 || this.padStatus() === 'right');
+  hints = signal(false);
+  hintTexts = signal<string[]>([]);
+  hintError = signal<string | null>(null);
+  completed = signal(false);
+  /** The door is opening (the camera turns to it). */
+  opening = signal(false);
+  success = signal(false);
+  seconds = signal<number | null>(null);
+  panelOpen = computed(() => !!this.inspecting() || this.keypad() || this.hints() || this.success());
+
+  /** Whether the server has this browser's session (the room still plays when it cannot be reached). */
+  private session = false;
+  /** Objects examined while the server could not be reached, sent with the next successful call. */
+  private pending = new Set<ItemId>();
   private toastTimer?: ReturnType<typeof setTimeout>;
+  private cooldownTimer?: ReturnType<typeof setInterval>;
+  private doorTimer?: ReturnType<typeof setTimeout>;
+
+  constructor() {
+    effect(() => this.world?.setPaused(this.panelOpen() || this.showHelp()));
+  }
 
   label(id: DemoSpotId) {
     return DEMO_SPOTS.find((s) => s.id === id)?.label ?? '';
+  }
+
+  async ngOnInit() {
+    try {
+      this.resume.set(await this.api.state());
+    } catch {
+      /* offline: the room starts fresh */
+    }
   }
 
   enter() {
@@ -228,6 +322,8 @@ export class DemoPage implements OnDestroy {
     this.phase.set('loading');
     this.progress.set(0);
     this.playing.set(false);
+    // the session starts (or continues) while the room loads
+    const session = this.connect();
     try {
       const world = this.zone.runOutsideAngular(() => new DemoWorld(this.canvas().nativeElement, this.settings.settings().quality, {
         onFocus: (s) => this.zone.run(() => this.focus.set(s)),
@@ -237,6 +333,7 @@ export class DemoPage implements OnDestroy {
           this.playing.set(true);
           setTimeout(() => this.introDone.set(true), 5000);
         }),
+        onDoorOpened: () => this.zone.run(() => this.showSuccess()),
       }));
       this.world = world;
       // development builds only: the room is reachable from the console for visual checks
@@ -244,21 +341,56 @@ export class DemoPage implements OnDestroy {
       world.sensitivity = this.settings.settings().lookSensitivity ?? 1;
       await this.zone.runOutsideAngular(() => world.load((p) => this.zone.run(() => this.progress.set(p))));
       if (this.world !== world) return;
+      await session;
       world.setInspected(this.inspected());
-      world.setMode('intro');
       this.zone.runOutsideAngular(() => world.start());
       this.phase.set('play');
+      if (this.completed()) {
+        // a returning player who already solved it: the room as they left it, open, and the success screen
+        world.showOpened();
+        this.playing.set(true);
+        this.introDone.set(true);
+        this.showSuccess(false);
+      } else if (this.resume()) {
+        // continuing: no second opening flight
+        world.skipIntro();
+      }
     } catch {
       this.phase.set('error');
     }
   }
 
-  private interact(s: DemoSpot) {
-    if (s.id === 'door') {
-      this.audio.sfx('metal');
-      this.doorNote.set(true);
-      return;
+  /** Starts or continues this browser's session on the server. Never throws: without the server the room still plays. */
+  private async connect() {
+    try {
+      this.apply(await this.api.start(demoDevice()));
+      this.session = true;
+      await this.flush();
+    } catch {
+      /* the room keeps playing; the next call tries again */
     }
+  }
+
+  private apply(s: DemoState) {
+    const merged = new Set<ItemId>([...this.inspected(), ...(s.inspected as ItemId[])]);
+    this.inspected.set(merged);
+    this.world?.setInspected(merged);
+    this.hintTexts.set(s.hints);
+    this.completed.set(s.completed);
+    this.seconds.set(s.seconds ?? null);
+    this.startCooldown(s.cooldownSeconds);
+  }
+
+  /** Sends the objects examined while the server could not be reached. */
+  private async flush() {
+    for (const id of [...this.pending]) {
+      this.apply(await this.api.inspect(id));
+      this.pending.delete(id);
+    }
+  }
+
+  private interact(s: DemoSpot) {
+    if (s.id === 'door') return this.openKeypad();
     this.open(s.id);
   }
 
@@ -266,17 +398,134 @@ export class DemoPage implements OnDestroy {
     this.audio.sfx(id === 'letter' ? 'paper' : id === 'clock' ? 'mechanism' : 'metal');
     this.world?.clearInput();
     this.inspecting.set(id);
-    if (!this.inspected().has(id)) {
-      const next = new Set(this.inspected());
-      next.add(id);
-      this.inspected.set(next);
-      this.world?.setInspected(next);
+    if (this.inspected().has(id)) return;
+    const next = new Set(this.inspected());
+    next.add(id);
+    this.inspected.set(next);
+    this.world?.setInspected(next);
+    this.pending.add(id);
+    this.sync();
+  }
+
+  private async sync() {
+    try {
+      if (!this.session) await this.connect();
+      else await this.flush();
+    } catch {
+      /* kept in pending until the next successful call */
     }
   }
 
   closeInspect() {
     this.inspecting.set(null);
-    if (this.inspected().size === DEMO_ITEMS.length) this.say('בדקתם את כל ארבעת הסימנים. עכשיו גשו ללוח המקשים שליד הדלת.');
+    if (this.inspected().size === DEMO_ITEMS.length && !this.completed()) this.say('בדקתם את כל ארבעת הסימנים. עכשיו גשו ללוח המקשים שליד הדלת.');
+  }
+
+  // ------------------------------------------------------------------ the keypad
+
+  private openKeypad() {
+    if (this.completed()) return this.say('השער כבר פתוח.');
+    this.audio.sfx('metal');
+    this.world?.clearInput();
+    this.padStatus.set('idle');
+    this.padMessage.set(this.cooldown() ? `לוח המקשים נח לרגע. נסו שוב בעוד ${this.cooldown()} שניות.` : '');
+    this.keypad.set(true);
+  }
+
+  closeKeypad() {
+    if (this.padStatus() !== 'right') this.keypad.set(false);
+  }
+
+  padEdited() {
+    if (this.padStatus() === 'wrong') {
+      this.padStatus.set('idle');
+      this.padMessage.set('');
+    }
+    this.audio.sfx('click');
+  }
+
+  async tryCode(code: string) {
+    if (this.padLocked()) return;
+    this.busy.set(true);
+    try {
+      if (!this.session) await this.connect();
+      const reply = await this.api.code(code);
+      this.apply(reply.state);
+      this.padMessage.set(reply.message);
+      if (reply.ok) {
+        this.padStatus.set('right');
+        this.audio.sfx('codeOk');
+        this.world?.flashKeypad(true);
+        this.doorTimer = setTimeout(() => this.openDoor(), 1100);
+      } else {
+        this.padStatus.set('wrong');
+        this.audio.sfx('wrong');
+        // the wrong digits stay on the screen in red; the next key starts a fresh entry
+        this.world?.flashKeypad(false);
+      }
+    } catch (e) {
+      this.padStatus.set('idle');
+      this.padMessage.set(e instanceof ApiError ? e.message : 'אירעה שגיאה. נסו שוב.');
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  private openDoor() {
+    this.keypad.set(false);
+    this.inspecting.set(null);
+    this.hints.set(false);
+    this.opening.set(true);
+    this.focus.set(null);
+    this.audio.sfx('gate');
+    this.world?.openDoor();
+  }
+
+  private showSuccess(sound = true) {
+    this.opening.set(false);
+    this.success.set(true);
+    if (sound) this.audio.sfx('complete');
+  }
+
+  private startCooldown(seconds: number) {
+    clearInterval(this.cooldownTimer);
+    this.cooldown.set(Math.max(0, seconds));
+    if (seconds <= 0) return;
+    this.cooldownTimer = setInterval(() => {
+      const left = Math.max(0, this.cooldown() - 1);
+      this.cooldown.set(left);
+      if (this.keypad() && this.padStatus() !== 'right')
+        this.padMessage.set(left > 0 ? `לוח המקשים נח לרגע. נסו שוב בעוד ${left} שניות.` : 'אפשר לנסות שוב.');
+      if (left <= 0) clearInterval(this.cooldownTimer);
+    }, 1000);
+  }
+
+  // ------------------------------------------------------------------ hints (only on request)
+
+  openHints() {
+    this.world?.clearInput();
+    this.hintError.set(null);
+    this.hints.set(true);
+  }
+
+  async askHint() {
+    this.busy.set(true);
+    this.hintError.set(null);
+    try {
+      if (!this.session) await this.connect();
+      this.apply(await this.api.hint());
+      this.audio.sfx('hint');
+    } catch (e) {
+      this.hintError.set(e instanceof ApiError ? e.message : 'אירעה שגיאה. נסו שוב.');
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  duration(s: number) {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return m ? `${m}:${String(sec).padStart(2, '0')} דקות` : `${sec} שניות`;
   }
 
   private say(text: string) {
@@ -287,6 +536,8 @@ export class DemoPage implements OnDestroy {
 
   ngOnDestroy() {
     clearTimeout(this.toastTimer);
+    clearTimeout(this.doorTimer);
+    clearInterval(this.cooldownTimer);
     this.world?.dispose();
     this.world = undefined;
   }
