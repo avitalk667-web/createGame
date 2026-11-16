@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, ElementRef, NgZone, OnDestroy, OnInit, computed, effect, inject, isDevMode, signal, viewChild } from '@angular/core';
+import { Location } from '@angular/common';
+import { ChangeDetectionStrategy, Component, ElementRef, HostListener, NgZone, OnDestroy, OnInit, computed, effect, inject, isDevMode, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ApiError, ApiService } from '../core/api.service';
 import { AudioService } from '../core/audio.service';
@@ -6,7 +7,7 @@ import { Product, formatPreviousPrice, formatPrice, playersLabel } from '../core
 import { SettingsService } from '../core/settings.service';
 import { JoystickComponent } from '../ui/joystick.component';
 import { DEMO_ITEMS, DEMO_SPOTS, DemoSpot, DemoSpotId } from './demo-content';
-import { DemoApi, DemoState, demoDevice } from './demo.api';
+import { DemoApi, DemoState, demoDevice, demoTrack } from './demo.api';
 import { DemoInspectComponent } from './demo-inspect.component';
 import { DemoKeypadComponent, KeypadStatus } from './demo-keypad.component';
 import { DemoWorld } from './demo-world';
@@ -150,9 +151,9 @@ type ItemId = (typeof DEMO_ITEMS)[number];
                   <div class="games">
                     @for (p of list; track p.id) {
                       <article class="game">
-                        <a class="cover" [routerLink]="['/games', p.id]" [attr.aria-label]="'לצפייה במשחק ' + p.name"><img [src]="p.coverImage" [alt]="p.name" loading="lazy" (error)="$any($event.target).style.visibility = 'hidden'" /></a>
+                        <a class="cover" [routerLink]="['/games', p.id]" (click)="productClicked(p)" [attr.aria-label]="'לצפייה במשחק ' + p.name"><img [src]="p.coverImage" [alt]="p.name" loading="lazy" (error)="$any($event.target).style.visibility = 'hidden'" /></a>
                         <div class="g-body">
-                          <h4><a [routerLink]="['/games', p.id]">{{ p.name }}</a></h4>
+                          <h4><a [routerLink]="['/games', p.id]" (click)="productClicked(p)">{{ p.name }}</a></h4>
                           <p class="tagline">{{ p.tagline }}</p>
                           <div class="g-buy">
                             <div class="g-price">
@@ -162,7 +163,7 @@ type ItemId = (typeof DEMO_ITEMS)[number];
                               <b><span class="sr-only">מחיר: </span><bdi>{{ price(p) }}</bdi></b>
                               <small>{{ players(p) }}</small>
                             </div>
-                            <a class="btn primary" [routerLink]="['/games', p.id]">לצפייה במשחק</a>
+                            <a class="btn primary" [routerLink]="['/games', p.id]" (click)="productClicked(p)">לצפייה במשחק</a>
                           </div>
                         </div>
                       </article>
@@ -313,6 +314,9 @@ export class DemoPage implements OnInit, OnDestroy {
   private settings = inject(SettingsService);
   private api = inject(DemoApi);
   private catalog = inject(ApiService);
+  private ngLocation = inject(Location);
+  /** "/demo?ref=CODE" handed to the server before the session starts, so the session counts for that link. */
+  private refReady: Promise<void> = Promise.resolve();
   private canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
 
   readonly items = DEMO_ITEMS;
@@ -375,6 +379,13 @@ export class DemoPage implements OnInit, OnDestroy {
   }
 
   async ngOnInit() {
+    const ref = new URLSearchParams(location.search).get('ref');
+    if (ref) {
+      this.refReady = ref.length <= 64 ? this.api.ref(ref) : Promise.resolve();
+      // the address bar no longer carries the code (as with "/r/CODE")
+      this.ngLocation.replaceState('/demo');
+    }
+    demoTrack('demo_impression');
     try {
       this.resume.set(await this.api.state());
     } catch {
@@ -383,6 +394,7 @@ export class DemoPage implements OnInit, OnDestroy {
   }
 
   enter() {
+    demoTrack('demo_click');
     this.audio.unlock();
     this.audio.sfx('whoosh');
     this.start();
@@ -439,6 +451,7 @@ export class DemoPage implements OnInit, OnDestroy {
   /** Starts or continues this browser's session on the server. Never throws: without the server the room still plays. */
   private async connect() {
     try {
+      await this.refReady;
       this.apply(await this.api.start(demoDevice()));
       this.session = true;
       await this.flush();
@@ -565,10 +578,21 @@ export class DemoPage implements OnInit, OnDestroy {
 
   showOffer() {
     this.offer.set(true);
+    demoTrack('demo_offer_viewed');
     if (this.products()?.length) return;
     this.products.set(null);
     // the same public list as the home page; only what the server says can be bought now (published, priced, on sale)
     this.catalog.products().then((list) => this.products.set(list.filter((p) => p.purchasable))).catch(() => this.products.set([]));
+  }
+
+  productClicked(p: Product) {
+    demoTrack('demo_product_clicked', p.id);
+  }
+
+  /** Leaving before the door opened (closing the tab, or going elsewhere on the site); the server counts it once. */
+  @HostListener('window:pagehide')
+  leave() {
+    if (this.session && !this.completed()) demoTrack('demo_abandoned');
   }
 
   /** Back to the open room; the success card returns from the door (or on the next visit). */
@@ -625,6 +649,7 @@ export class DemoPage implements OnInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    this.leave();
     clearTimeout(this.toastTimer);
     clearTimeout(this.doorTimer);
     clearInterval(this.cooldownTimer);

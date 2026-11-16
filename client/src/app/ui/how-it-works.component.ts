@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { StepArtComponent } from './step-art.component';
 
@@ -56,7 +56,7 @@ import { StepArtComponent } from './step-art.component';
       </ol>
       <ul class="perks">
         <li class="perk trial">
-          <a routerLink="/demo">
+          <a routerLink="/demo" (click)="tryClicked.emit()">
             <svg class="perk-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M20 7h-2.2A3 3 0 0 0 12 3.8 3 3 0 0 0 6.2 7H4a1 1 0 0 0-1 1v3a1 1 0 0 0 1 1h7V7h2v5h7a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1Zm-11-.1a1.1 1.1 0 1 1 2-.6V7H9.5a1 1 0 0 1-.5-.1ZM15 7h-2v-.7A1.1 1.1 0 1 1 15 7ZM4 13.5V20a1 1 0 0 0 1 1h6v-7.5H4Zm9 7.5h6a1 1 0 0 0 1-1v-6.5h-7V21Z"/></svg>
             <span><b>רוצים לנסות קודם?</b><small>טעימה חינמית מהפורטל, בלי הרשמה</small></span>
             <span class="perk-go" aria-hidden="true">‹</span>
@@ -147,4 +147,6 @@ import { StepArtComponent } from './step-art.component';
   `],
 })
 export class HowItWorksComponent {
+  /** The "want to try first?" link to the taste was clicked (the home page counts it). */
+  tryClicked = output<void>();
 }

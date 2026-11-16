@@ -20,12 +20,16 @@ public static class PurchaseEndpoints
 
     public static void MapPurchaseEndpoints(this RouteGroupBuilder api, PaymentGateway gateway)
     {
-        api.MapPost("/orders", async (CreateOrderRequest req, HttpRequest http, PurchaseService purchases, PortalX.Server.Referrals.ReferralService referrals) =>
+        api.MapPost("/orders", async (CreateOrderRequest req, HttpRequest http, PurchaseService purchases, PortalX.Server.Referrals.ReferralService referrals,
+            PortalX.Server.Demo.DemoService demo) =>
         {
             // the personal link of this visit, if any: read from the server-side visit record, never from the request body
             var referral = await referrals.ResolveVisitAsync(http.Cookies[PortalX.Server.Referrals.ReferralService.VisitCookie]);
-            var (created, error) = await purchases.CreateOrderAsync(req.ProductId, req.Email, req.CouponCode, referral);
+            // the same for the taste: the browser's own session from its HttpOnly cookie
+            var demoSession = await demo.SessionIdAsync(http.Cookies[PortalX.Server.Demo.DemoService.Cookie], DateTime.UtcNow);
+            var (created, error) = await purchases.CreateOrderAsync(req.ProductId, req.Email, req.CouponCode, referral, demoSessionId: demoSession);
             if (error != null) return Error(error);
+            if (demoSession is { } ds) await demo.CheckoutStartedAsync(ds, created!.Order.ProductId, DateTime.UtcNow);
             return Results.Ok(new
             {
                 orderId = created!.Order.Id,

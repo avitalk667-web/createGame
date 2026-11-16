@@ -6,6 +6,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PortalX.Server.Data;
 using PortalX.Server.Demo;
+using PortalX.Server.Domain;
+using PortalX.Server.Referrals;
 
 namespace PortalX.Tests;
 
@@ -183,5 +185,119 @@ public class DemoTests(HubIntegrationTests.Factory factory)
         Assert.Contains("httponly", cookie, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("max-age=604800", cookie, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("samesite=lax", cookie, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ------------------------------------------------------------------ stage E: the funnel and the attribution
+
+    private static Task<HttpResponseMessage> Report(HttpClient c, string type, string? productId = null) =>
+        c.PostAsJsonAsync("/api/taste/event", new { type, productId, device = "mobile" });
+
+    private Task<List<string>> EventsOf(Guid session) =>
+        Db(db => db.DemoEvents.Where(e => e.SessionId == session).OrderBy(e => e.Id).Select(e => e.Type).ToListAsync());
+
+    [Fact]
+    public async Task The_browser_may_report_only_the_steps_it_alone_sees()
+    {
+        var c = Browser();
+        Assert.Equal(HttpStatusCode.BadRequest, (await Report(c, "demo_completed")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await Report(c, "demo_purchase_completed")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await Report(c, "anything")).StatusCode);
+
+        // before any session: the home page impression is kept without a session
+        var since = DateTime.UtcNow.AddSeconds(-1);
+        Assert.Equal(HttpStatusCode.NoContent, (await Report(c, "demo_impression")).StatusCode);
+        var anon = await Db(db => db.DemoEvents.Where(e => e.Type == "demo_impression" && e.At >= since && e.SessionId == null).CountAsync());
+        Assert.True(anon >= 1);
+        // a session step without a session changes nothing (and never fails the page)
+        Assert.Equal(HttpStatusCode.NoContent, (await Report(c, "demo_offer_viewed")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Offer_product_and_leaving_are_counted_once_per_session()
+    {
+        await TestPurchase.EnsureProductAsync(factory.Services);
+        var c = Browser();
+        var since = DateTime.UtcNow.AddSeconds(-1);
+        await StateOf(await c.PostAsJsonAsync("/api/taste/start", new { }));
+        var id = await LatestSessionAsync(since);
+
+        await Report(c, "demo_abandoned");
+        await Report(c, "demo_abandoned");
+        await Code(c, "2741");
+        await Report(c, "demo_abandoned"); // after solving it, leaving is not abandoning
+        await Report(c, "demo_offer_viewed");
+        await Report(c, "demo_offer_viewed");
+        await Report(c, "demo_product_clicked", "no-such-game");
+        await Report(c, "demo_product_clicked", TestPurchase.ProductId);
+
+        var events = await EventsOf(id);
+        Assert.Single(events, e => e == "demo_abandoned");
+        Assert.Single(events, e => e == "demo_offer_viewed");
+        Assert.Single(events, e => e == "demo_product_clicked");
+        var s = await Db(db => db.DemoSessions.AsNoTracking().FirstAsync(x => x.Id == id));
+        Assert.NotNull(s.OfferViewedAt);
+        Assert.NotNull(s.ProductClickedAt);
+        Assert.Equal(TestPurchase.ProductId, s.ProductClickedId);
+    }
+
+    [Fact]
+    public async Task A_personal_link_in_the_address_counts_for_the_session_only_when_the_server_knows_it()
+    {
+        var token = ReferralService.NewToken();
+        var linkId = Guid.NewGuid();
+        await Db(async db =>
+        {
+            db.ReferralLinks.Add(new ReferralLink
+            {
+                Id = linkId, Token = token, FirstName = "דנה", LastName = "טעימה", Email = $"demo.{Guid.NewGuid():N}@example.org"[..30],
+                Status = ReferralLinkStatus.Active, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow, Source = ReferralService.Source,
+            });
+            return await db.SaveChangesAsync();
+        });
+
+        var c = Browser();
+        var since = DateTime.UtcNow.AddSeconds(-1);
+        Assert.Equal(HttpStatusCode.NoContent, (await c.PostAsJsonAsync("/api/taste/ref", new { @ref = token })).StatusCode);
+        await StateOf(await c.PostAsJsonAsync("/api/taste/start", new { }));
+        var id = await LatestSessionAsync(since);
+        Assert.Equal(linkId, await Db(db => db.DemoSessions.Where(s => s.Id == id).Select(s => s.ReferralLinkId).FirstAsync()));
+
+        // a made-up code sets nothing: no visit cookie, no link on the session
+        var other = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
+        var r = await other.PostAsJsonAsync("/api/taste/ref", new { @ref = ReferralService.NewToken() });
+        Assert.Equal(HttpStatusCode.NoContent, r.StatusCode);
+        Assert.False(r.Headers.TryGetValues("Set-Cookie", out var set) && set.Any(h => h.StartsWith(ReferralService.VisitCookie + "=")));
+    }
+
+    [Fact]
+    public async Task An_order_from_a_taste_session_is_attributed_and_counted_as_bought_only_when_paid()
+    {
+        var c = Browser();
+        var since = DateTime.UtcNow.AddSeconds(-1);
+        await StateOf(await c.PostAsJsonAsync("/api/taste/start", new { }));
+        var id = await LatestSessionAsync(since);
+        await Code(c, "2741");
+
+        var order = await TestPurchase.CreateOrderAsync(c, factory.Services);
+        Assert.Equal(id, await Db(db => db.Orders.Where(o => o.Id == order.OrderId).Select(o => o.DemoSessionId).FirstAsync()));
+        var started = await Db(db => db.DemoSessions.AsNoTracking().FirstAsync(x => x.Id == id));
+        Assert.NotNull(started.CheckoutStartedAt);
+        Assert.Null(started.PurchasedAt); // creating an order is not buying
+        Assert.DoesNotContain("demo_purchase_completed", await EventsOf(id));
+
+        (await TestPurchase.PayAsync(c, order)).EnsureSuccessStatusCode();
+        var paid = await Db(db => db.DemoSessions.AsNoTracking().FirstAsync(x => x.Id == id));
+        Assert.NotNull(paid.PurchasedAt);
+        Assert.Equal(order.OrderId, paid.OrderId);
+        var bought = await Db(db => db.DemoEvents.Where(e => e.SessionId == id && e.Type == "demo_purchase_completed").ToListAsync());
+        var e = Assert.Single(bought);
+        Assert.Equal(TestPurchase.ProductId, e.ProductId);
+        Assert.Equal((int)(TestPurchase.Price * 100), e.Value);
+        Assert.Single(await EventsOf(id), x => x == "demo_checkout_started");
+
+        // a browser without a taste session buys exactly as before, unattributed
+        var plain = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
+        var other = await TestPurchase.CreateOrderAsync(plain, factory.Services);
+        Assert.Null(await Db(db => db.Orders.Where(o => o.Id == other.OrderId).Select(o => o.DemoSessionId).FirstAsync()));
     }
 }

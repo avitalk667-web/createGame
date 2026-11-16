@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { AfterViewInit, ChangeDetectionStrategy, Component, ElementRef, OnDestroy, computed, inject, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AdminApiService } from '../core/admin-api.service';
 import { ApiService, Campaign } from '../core/api.service';
@@ -10,6 +10,7 @@ import { PrizeGiftComponent } from '../ui/prize-gift.component';
 import { HowItWorksComponent } from '../ui/how-it-works.component';
 import { SettingsPanelComponent } from '../ui/settings-panel.component';
 import { TutorialVideoComponent } from '../ui/tutorial-video.component';
+import { demoTrack } from '../demo/demo.api';
 
 /** Shared entry gate: a catalog of both games, each with its own server-side price (spec §2). */
 @Component({
@@ -98,8 +99,8 @@ import { TutorialVideoComponent } from '../ui/tutorial-video.component';
       </section>
 
       <!-- the free taste (/demo): the site's one way to try before buying -->
-      <section class="taste" aria-labelledby="taste-title">
-        <a class="taste-art" routerLink="/demo" tabindex="-1" aria-hidden="true">
+      <section #taste class="taste" aria-labelledby="taste-title">
+        <a class="taste-art" routerLink="/demo" tabindex="-1" aria-hidden="true" (click)="tasteClick()">
           <img src="img/home/taste-room.jpg" width="800" height="450" loading="lazy" alt="" />
           <span class="taste-glow"></span>
         </a>
@@ -107,7 +108,7 @@ import { TutorialVideoComponent } from '../ui/tutorial-video.component';
           <span class="kicker">טעימה מהפורטל</span>
           <h2 id="taste-title">מוכנים להיכנס לפורטל?</h2>
           <p>אל תסתפקו בלשמוע על חדרי הבריחה שלנו. היכנסו פנימה, חקרו את החדר ופתרו את החידה הראשונה שלכם.</p>
-          <a class="btn hero-cta taste-cta" routerLink="/demo">אני רוצה לנסות!</a>
+          <a class="btn hero-cta taste-cta" routerLink="/demo" (click)="tasteClick()">אני רוצה לנסות!</a>
           <small class="taste-meta">טעימה חינמית | כ־3–5 דקות | ללא הרשמה</small>
         </div>
       </section>
@@ -167,7 +168,7 @@ import { TutorialVideoComponent } from '../ui/tutorial-video.component';
         }
       </section>
 
-      <px-how-it-works />
+      <px-how-it-works (tryClicked)="tasteClick()" />
 
       <px-tutorial-video />
 
@@ -454,7 +455,7 @@ import { TutorialVideoComponent } from '../ui/tutorial-video.component';
     }
   `],
 })
-export class HomePage {
+export class HomePage implements AfterViewInit, OnDestroy {
   private api = inject(ApiService);
   private audio = inject(AudioService);
   private adminApi = inject(AdminApiService);
@@ -484,6 +485,9 @@ export class HomePage {
   previousPrice = formatPreviousPrice;
   players = playersLabel;
 
+  private taste = viewChild<ElementRef<HTMLElement>>('taste');
+  private tasteSeen?: IntersectionObserver;
+
   constructor() {
     this.audio.setMusic('home');
     this.load();
@@ -503,6 +507,26 @@ export class HomePage {
     } finally {
       this.loading.set(false);
     }
+  }
+
+  /** "demo_impression": the taste section was actually on the screen (once per browser session). */
+  ngAfterViewInit() {
+    const el = this.taste()?.nativeElement;
+    if (!el || typeof IntersectionObserver !== 'function') return;
+    this.tasteSeen = new IntersectionObserver((entries) => {
+      if (!entries.some((e) => e.isIntersecting)) return;
+      demoTrack('demo_impression');
+      this.tasteSeen?.disconnect();
+    }, { threshold: 0.5 });
+    this.tasteSeen.observe(el);
+  }
+
+  tasteClick() {
+    demoTrack('demo_click');
+  }
+
+  ngOnDestroy() {
+    this.tasteSeen?.disconnect();
   }
 
   cta(p: Product) {

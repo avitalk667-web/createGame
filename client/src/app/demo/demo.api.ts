@@ -27,6 +27,31 @@ export function demoDevice(): DemoDevice {
   return Math.min(screen.width, screen.height) < 600 ? 'mobile' : 'tablet';
 }
 
+export type DemoReportedEvent = 'demo_impression' | 'demo_click' | 'demo_offer_viewed' | 'demo_product_clicked' | 'demo_abandoned';
+
+/**
+ * Reports one step that only the browser sees. Sent with sendBeacon (it survives the page closing or navigating), never
+ * waited for and never failing the page. The impression and the click count once per browser session.
+ */
+export function demoTrack(type: DemoReportedEvent, productId?: string) {
+  if (type === 'demo_impression' || type === 'demo_click') {
+    const key = 'px_demo_' + type;
+    try {
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, '1');
+    } catch {
+      /* no storage (a private window): it may count again, which is fine */
+    }
+  }
+  const body = JSON.stringify({ type, productId, device: demoDevice() });
+  try {
+    if (navigator.sendBeacon?.('/api/taste/event', new Blob([body], { type: 'application/json' }))) return;
+  } catch {
+    /* fall back to fetch */
+  }
+  fetch('/api/taste/event', { method: 'POST', credentials: 'same-origin', keepalive: true, headers: { 'Content-Type': 'application/json' }, body }).catch(() => {});
+}
+
 /** Calls of "טעימה מהפורטל" (/api/taste). The answer of the riddle is never here: the server checks the code. */
 @Injectable({ providedIn: 'root' })
 export class DemoApi {
@@ -64,6 +89,11 @@ export class DemoApi {
 
   async hint() {
     return (await this.request<{ state: DemoState }>('POST', '/api/taste/hint')).state;
+  }
+
+  /** "/demo?ref=CODE": the server checks the personal link and keeps it for this visit (nothing is kept here). */
+  async ref(code: string) {
+    await this.request<unknown>('POST', '/api/taste/ref', { ref: code }).catch(() => {});
   }
 
   code(code: string) {

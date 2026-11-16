@@ -89,6 +89,8 @@ public sealed class DemoService(PortalDbContext db, IConfiguration config, ILogg
         if (existing != null)
         {
             existing.LastSeenAt = now;
+            // a personal link opened after the session began still counts for it (the first link stays)
+            existing.ReferralLinkId ??= referralLinkId;
             await db.SaveChangesAsync();
             return (existing, token!, false);
         }
@@ -189,6 +191,96 @@ public sealed class DemoService(PortalDbContext db, IConfiguration config, ILogg
         }
         var state = (await StateAsync(s.Id, now))!;
         return new DemoCodeReply(true, RightMessage, state, AlreadyCompleted: completed == 0);
+    }
+
+    // ------------------------------------------------------------------ the funnel around the room (analytics)
+
+    /// <summary>Events the browser may report. Everything else (start, objects, hints, codes, checkout, purchase) is
+    /// recorded by the server itself where it happens, never taken from the browser.</summary>
+    public static readonly HashSet<string> ReportedEvents = new()
+    {
+        "demo_impression", "demo_click", "demo_offer_viewed", "demo_product_clicked", "demo_abandoned",
+    };
+
+    /// <summary>
+    /// One event reported by the browser. The home page's impression and click come before any session (no session id);
+    /// the rest belong to the browser's own session and are ignored without one. Returns false for an unknown type.
+    /// </summary>
+    public async Task<bool> ReportAsync(string? token, string? type, string? productId, string? device, Guid? referralLinkId, DateTime now)
+    {
+        if (type == null || !ReportedEvents.Contains(type)) return false;
+        var s = await FindAsync(token, now);
+        if (type is "demo_impression" or "demo_click")
+        {
+            db.DemoEvents.Add(s != null ? Event(s, type, now)
+                : new DemoEvent { Type = type, At = now, Device = CleanDevice(device), ReferralLinkId = referralLinkId });
+            await db.SaveChangesAsync();
+            return true;
+        }
+        if (s == null) return true;
+        switch (type)
+        {
+            case "demo_offer_viewed":
+                // once per session: the first time the offer was seen
+                if (await db.DemoSessions.Where(x => x.Id == s.Id && x.OfferViewedAt == null)
+                        .ExecuteUpdateAsync(u => u.SetProperty(x => x.OfferViewedAt, now).SetProperty(x => x.LastSeenAt, now)
+                            .SetProperty(x => x.LastEvent, type)) == 1)
+                    await AddAsync(Event(s, type, now));
+                break;
+            case "demo_product_clicked":
+                // only a game of the catalog that is on show; the session keeps its first click and the game of the latest
+                var id = (productId ?? "").Trim();
+                if (id.Length is 0 or > 64 || !await db.Products.AnyAsync(p => p.Id == id && p.Status == ProductStatus.Published)) break;
+                await db.DemoSessions.Where(x => x.Id == s.Id)
+                    .ExecuteUpdateAsync(u => u.SetProperty(x => x.ProductClickedAt, x => x.ProductClickedAt ?? now)
+                        .SetProperty(x => x.ProductClickedId, id).SetProperty(x => x.LastSeenAt, now).SetProperty(x => x.LastEvent, type));
+                await AddAsync(Event(s, type, now, productId: id));
+                break;
+            case "demo_abandoned":
+                // leaving the room before solving it, once per session; the session's LastEvent keeps the step before leaving
+                if (s.CompletedAt == null && !await db.DemoEvents.AnyAsync(e => e.SessionId == s.Id && e.Type == type))
+                    await AddAsync(Event(s, type, now, value: BitCount(s.InspectedMask)));
+                break;
+        }
+        return true;
+    }
+
+    /// <summary>The browser's live session, for an order started from it (its id is written on the order).</summary>
+    public async Task<Guid?> SessionIdAsync(string? token, DateTime now) => (await FindAsync(token, now))?.Id;
+
+    /// <summary>An order was created by a browser with a taste session (demo_checkout_started, the game's id).</summary>
+    public async Task CheckoutStartedAsync(Guid sessionId, string productId, DateTime now)
+    {
+        var s = await db.DemoSessions.AsNoTracking().FirstOrDefaultAsync(x => x.Id == sessionId);
+        if (s == null) return;
+        await db.DemoSessions.Where(x => x.Id == sessionId)
+            .ExecuteUpdateAsync(u => u.SetProperty(x => x.CheckoutStartedAt, x => x.CheckoutStartedAt ?? now).SetProperty(x => x.LastEvent, "demo_checkout_started"));
+        await AddAsync(Event(s, "demo_checkout_started", now, productId: productId));
+    }
+
+    /// <summary>
+    /// Called from the payment's own paid transition (the provider's confirmation on the server — never the browser):
+    /// demo_purchase_completed for an order that started from a taste session, with the amount in agorot. Added to the
+    /// same unit of work as the transition, so it is saved exactly when the order becomes paid.
+    /// </summary>
+    public static async Task PurchasedAsync(PortalDbContext db, Order order, DateTime now)
+    {
+        if (order.DemoSessionId is not { } id) return;
+        var s = await db.DemoSessions.FirstOrDefaultAsync(x => x.Id == id);
+        if (s == null) return;
+        if (s.PurchasedAt == null)
+        {
+            s.PurchasedAt = now;
+            s.OrderId = order.Id;
+        }
+        s.LastEvent = "demo_purchase_completed";
+        db.DemoEvents.Add(Event(s, "demo_purchase_completed", now, productId: order.ProductId, value: (int)Math.Round(order.PriceSnapshot * 100)));
+    }
+
+    private async Task AddAsync(DemoEvent e)
+    {
+        db.DemoEvents.Add(e);
+        await db.SaveChangesAsync();
     }
 
     private async Task<DemoState?> StateAsync(Guid id, DateTime now)

@@ -37,7 +37,7 @@ public sealed class PurchaseService(
     // ------------------------------------------------------------------ orders
 
     public async Task<(CreatedOrder? Created, ServiceError? Error)> CreateOrderAsync(string? productId, string? email, string? couponCode = null,
-        Guid? referralLinkId = null, bool adminTrial = false)
+        Guid? referralLinkId = null, bool adminTrial = false, Guid? demoSessionId = null)
     {
         var product = await db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == (productId ?? ""));
         if (product == null || product.Status != ProductStatus.Published)
@@ -90,6 +90,8 @@ public sealed class PurchaseService(
             // the visit's personal link, fixed now: the provider's return can never change it
             ReferralLinkId = referralLinkId,
             ReferralAttributedAt = referralLinkId == null ? null : now,
+            // the browser's taste session ("טעימה מהפורטל"), resolved on the server from its HttpOnly cookie
+            DemoSessionId = demoSessionId,
         };
         order.ProviderSessionId = provider.NewSessionId();
         order.CheckoutExpiresAt = now + provider.CheckoutLifetime;
@@ -319,6 +321,8 @@ public sealed class PurchaseService(
                     var linkEmail = await db.ReferralLinks.Where(l => l.Id == linkId).Select(l => l.Email).FirstOrDefaultAsync();
                     if (linkEmail != null) order.ReferralExclusion = PortalX.Server.Referrals.ReferralService.ExclusionFor(order.Email, linkEmail);
                 }
+                // an order that started from the taste: counted as its purchase only now, on the provider's confirmation
+                await PortalX.Server.Demo.DemoService.PurchasedAsync(db, order, now);
                 result = "applied:paid";
                 break;
             case PaymentEventType.Failed when order.Status == OrderStatus.Pending:
