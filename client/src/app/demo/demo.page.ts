@@ -1,6 +1,6 @@
 import { Location } from '@angular/common';
 import { ChangeDetectionStrategy, Component, ElementRef, HostListener, NgZone, OnDestroy, OnInit, computed, effect, inject, isDevMode, signal, viewChild } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ApiError, ApiService } from '../core/api.service';
 import { AudioService } from '../core/audio.service';
 import { Product, formatPreviousPrice, formatPrice, playersLabel } from '../core/models';
@@ -13,6 +13,7 @@ import { DemoGateSceneComponent } from './demo-gate-scene.component';
 import { DemoInspectComponent } from './demo-inspect.component';
 import { DemoKeypadComponent, KeypadStatus } from './demo-keypad.component';
 import { DemoWorld } from './demo-world';
+import { DemoFinaleComponent } from './demo-finale.component';
 
 type Phase = 'gate' | 'loading' | 'play' | 'error';
 type ItemId = (typeof DEMO_ITEMS)[number];
@@ -26,7 +27,7 @@ type ItemId = (typeof DEMO_ITEMS)[number];
 @Component({
   selector: 'px-demo-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, JoystickComponent, DemoGateSceneComponent, DemoInspectComponent, DemoKeypadComponent],
+  imports: [RouterLink, JoystickComponent, DemoGateSceneComponent, DemoInspectComponent, DemoKeypadComponent, DemoFinaleComponent],
   template: `
     <div class="stage" [class.hidden]="phase() === 'gate'"><canvas #canvas aria-label="החדר הנעול בתלת־ממד"></canvas></div>
 
@@ -88,6 +89,11 @@ type ItemId = (typeof DEMO_ITEMS)[number];
         </section>
       }
       @case ('play') {
+        @if (finaleOn() && world) {
+          <!-- the end of the taste: the doorway wakes up as a portal and the games come out of it (this page only) -->
+          <px-demo-finale [world]="world" [products]="products()" [settled]="finaleSettled()" [discount]="discount()"
+            (chosen)="choose($event)" (gift)="success.set(true)" />
+        } @else {
         <header class="hud-top">
           <div class="title card">
             <b>החדר הנעול</b>
@@ -104,6 +110,7 @@ type ItemId = (typeof DEMO_ITEMS)[number];
             <a class="btn small" routerLink="/" aria-label="יציאה מהטעימה">יציאה</a>
           </div>
         </header>
+        }
 
         @if (!playing()) { <button class="btn small skip" (click)="world?.skipIntro()">דילוג ›</button> }
         @if (!introDone()) {
@@ -137,7 +144,7 @@ type ItemId = (typeof DEMO_ITEMS)[number];
           </section>
         }
 
-        @if (touch && playing() && !panelOpen() && !opening()) {
+        @if (touch && playing() && !panelOpen() && !opening() && !finaleOn()) {
           <px-joystick class="joy" (changed)="world?.setJoystick($event.x, $event.y)" />
           <button class="btn primary act" [disabled]="!focus()" (click)="world?.interactNearest()" [attr.aria-label]="focus() ? focus()!.verb + ' ' + focus()!.label : 'אין חפץ קרוב'">
             {{ focus() ? '🔍 ' + focus()!.button : '🔍' }}
@@ -267,6 +274,7 @@ type ItemId = (typeof DEMO_ITEMS)[number];
             <p class="muted" role="status">טוענים את המשחקים…</p>
           }
           <div class="offer-actions">
+            @if (finaleOn()) { <button type="button" class="btn primary" (click)="success.set(false)">חזרה לפורטל</button> }
             <a class="btn" routerLink="/" fragment="games">לצפייה בכל המשחקים</a>
             <a class="btn ghost" routerLink="/">לדף הבית</a>
           </div>
@@ -504,6 +512,7 @@ export class DemoPage implements OnInit, OnDestroy {
   private api = inject(DemoApi);
   private catalog = inject(ApiService);
   private ngLocation = inject(Location);
+  private router = inject(Router);
   /** "/demo?ref=CODE" handed to the server before the session starts, so the session counts for that link. */
   private refReady: Promise<void> = Promise.resolve();
   private canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
@@ -570,6 +579,15 @@ export class DemoPage implements OnInit, OnDestroy {
   readonly price = formatPrice;
   readonly previousPrice = formatPreviousPrice;
   readonly players = playersLabel;
+  /** The portal finale behind the opened door is on (in the room; the coupon screen opens over it on request). */
+  finaleOn = signal(false);
+  /** The finale is shown as it is after its animation (the taste was already solved before this visit or refresh). */
+  finaleSettled = signal(false);
+  /** The coupon's discount while it can still be used (shown in the finale). */
+  discount = computed(() => {
+    const c = this.coupon();
+    return c && c.status === 'active' && this.left() > 0 ? c.discountPercent : null;
+  });
   panelOpen = computed(() => !!this.inspecting() || this.keypad() || this.hints() || this.success());
 
   /** Whether the server has this browser's session (the room still plays when it cannot be reached). */
@@ -610,10 +628,11 @@ export class DemoPage implements OnInit, OnDestroy {
     demoTrack('demo_click');
     this.audio.unlock();
     if (this.resume()?.completed) {
-      // already solved: the finish screen with the coupon, never the room again
+      // already solved: the opened door and the portal finale, settled (the coupon one click away), never the puzzle again
       this.completed.set(true);
       this.seconds.set(this.resume()?.seconds ?? null);
-      return this.showSuccess(false);
+      this.start();
+      return;
     }
     this.audio.sfx('whoosh');
     this.start();
@@ -663,7 +682,15 @@ export class DemoPage implements OnInit, OnDestroy {
         world.skipIntro();
       }
     } catch {
-      this.phase.set('error');
+      if (!this.completed()) {
+        this.phase.set('error');
+        return;
+      }
+      // the room cannot be shown here, but the taste was solved: the coupon screen as before
+      this.world?.dispose();
+      this.world = undefined;
+      this.phase.set('gate');
+      this.showSuccess(false);
     }
   }
 
@@ -791,7 +818,11 @@ export class DemoPage implements OnInit, OnDestroy {
 
   private showSuccess(sound = true) {
     this.opening.set(false);
-    this.success.set(true);
+    // in the room: the portal finale (live after the door opened, settled for a returning player); without it, the coupon screen
+    if (this.world && this.phase() === 'play') {
+      this.finaleSettled.set(!sound);
+      this.finaleOn.set(true);
+    } else this.success.set(true);
     if (sound) this.audio.sfx('complete');
     demoTrack('demo_offer_viewed');
     // the games at once (all that can be bought); the coupon's state from the server (the form, or the coupon already sent)
@@ -913,6 +944,12 @@ export class DemoPage implements OnInit, OnDestroy {
       try { sessionStorage.setItem(pendingCoupon.key, c.code); } catch { /* it can still be typed */ }
     }
     demoTrack('demo_product_clicked', p.id);
+  }
+
+  /** A game chosen in the portal finale: the coupon goes with this tab, then the game's own page and its existing purchase. */
+  choose(p: Product) {
+    this.productClicked(p);
+    this.router.navigate(['/games', p.id]);
   }
 
   /** Leaving before the door opened (closing the tab, or going elsewhere on the site); the server counts it once. */

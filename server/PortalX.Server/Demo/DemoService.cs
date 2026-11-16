@@ -200,6 +200,8 @@ public sealed class DemoService(PortalDbContext db, IConfiguration config, ILogg
     public static readonly HashSet<string> ReportedEvents = new()
     {
         "demo_impression", "demo_click", "demo_offer_viewed", "demo_product_clicked", "demo_abandoned", "demo_coupon_copied",
+        // the portal finale behind the opened door of the taste
+        "demo_finale_entered", "demo_portal_started", "demo_portal_completed", "demo_cards_displayed", "demo_card_selected",
     };
 
     /// <summary>
@@ -240,6 +242,18 @@ public sealed class DemoService(PortalDbContext db, IConfiguration config, ILogg
                 // copying the personal coupon of the finished taste, once per session
                 if (s.CompletedAt != null && !await db.DemoEvents.AnyAsync(e => e.SessionId == s.Id && e.Type == type))
                     await AddAsync(Event(s, type, now));
+                break;
+            case "demo_finale_entered" or "demo_portal_started" or "demo_portal_completed" or "demo_cards_displayed":
+                // the steps of the portal finale: only after the door opened, once per session
+                if (s.CompletedAt != null && !await db.DemoEvents.AnyAsync(e => e.SessionId == s.Id && e.Type == type))
+                    await AddAsync(Event(s, type, now));
+                break;
+            case "demo_card_selected":
+                // a card brought forward in the finale: only a game of the catalog that is on show
+                var card = (productId ?? "").Trim();
+                if (s.CompletedAt == null || card.Length is 0 or > 64
+                    || !await db.Products.AnyAsync(p => p.Id == card && p.Status == ProductStatus.Published)) break;
+                await AddAsync(Event(s, type, now, productId: card));
                 break;
             case "demo_abandoned":
                 // leaving the room before solving it, once per session; the session's LastEvent keeps the step before leaving

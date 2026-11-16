@@ -245,6 +245,40 @@ public class DemoTests(HubIntegrationTests.Factory factory)
     }
 
     [Fact]
+    public async Task The_portal_finale_steps_count_only_after_the_door_opened_once_per_session()
+    {
+        await TestPurchase.EnsureProductAsync(factory.Services);
+        var c = Browser();
+        var since = DateTime.UtcNow.AddSeconds(-1);
+        await StateOf(await c.PostAsJsonAsync("/api/taste/start", new { }));
+        var id = await LatestSessionAsync(since);
+
+        // before the right code there is no finale: nothing is counted
+        Assert.Equal(HttpStatusCode.NoContent, (await Report(c, "demo_finale_entered")).StatusCode);
+        await Report(c, "demo_card_selected", TestPurchase.ProductId);
+        Assert.DoesNotContain(await EventsOf(id), e => e is "demo_finale_entered" or "demo_card_selected");
+
+        await Code(c, "2741");
+        foreach (var step in new[] { "demo_finale_entered", "demo_portal_started", "demo_portal_completed", "demo_cards_displayed" })
+        {
+            Assert.Equal(HttpStatusCode.NoContent, (await Report(c, step)).StatusCode);
+            await Report(c, step); // a refresh or a return visit reports it again
+        }
+        await Report(c, "demo_card_selected", "no-such-game");
+        await Report(c, "demo_card_selected", TestPurchase.ProductId);
+
+        var events = await EventsOf(id);
+        Assert.Single(events, e => e == "demo_finale_entered");
+        Assert.Single(events, e => e == "demo_portal_started");
+        Assert.Single(events, e => e == "demo_portal_completed");
+        Assert.Single(events, e => e == "demo_cards_displayed");
+        var selected = await Db(db => db.DemoEvents.Where(e => e.SessionId == id && e.Type == "demo_card_selected").Select(e => e.ProductId).ToListAsync());
+        Assert.Equal(TestPurchase.ProductId, Assert.Single(selected));
+        // choosing a card is not opening the game: the session's click stays empty until the game page is opened
+        Assert.Null(await Db(db => db.DemoSessions.Where(x => x.Id == id).Select(x => x.ProductClickedAt).FirstAsync()));
+    }
+
+    [Fact]
     public async Task A_personal_link_in_the_address_counts_for_the_session_only_when_the_server_knows_it()
     {
         var token = ReferralService.NewToken();

@@ -9,6 +9,7 @@ import { PlayerAvatar, createPlayerAvatar } from '../world/character';
 import { characterLoader } from '../world/character/character-loader';
 import { glowSpriteTexture, panelTexture, paintingTexture, parchmentTexture, stoneTexture, woodFloorTexture } from '../world/textures';
 import { DEMO_SPOTS, DemoSpot, DemoSpotId } from './demo-content';
+import { DemoFinale, FinaleEvents, FinaleLayout } from './demo-finale';
 
 /**
  * "טעימה מהפורטל": the locked room of the free taste. One room of the mansion, played alone, with no server room and no
@@ -25,6 +26,20 @@ const DOOR_H = 3.4;
 const INTERACT_DISTANCE = 2.6;
 const SPAWN = new THREE.Vector3(0, 0, 4.4);
 const LIBRARY_MODEL_VERSION = 3;
+
+/** The finale in this room: the doorway (2.4 × 3.4, in the far wall) is the portal; the cards float in the room before it. */
+const FINALE_LAYOUT: FinaleLayout = {
+  portal: new THREE.Vector3(0, DOOR_H / 2, -HALF_D + 0.05),
+  radius: 1.12,
+  stretchY: 1.45,
+  cardY: 2.05,
+  cardZ: -3.3,
+  camRest: new THREE.Vector3(0, 2.25, 2.9),
+  camRestNarrow: new THREE.Vector3(0, 2.3, 0.4),
+  lookRest: new THREE.Vector3(0, 1.75, -5.3),
+  floorZ: -5.2,
+  floorSize: [6, 4.5],
+};
 
 type Rect = { x0: number; x1: number; z0: number; z1: number };
 const WALKABLE: Rect[] = [{ x0: -7.2, x1: 7.2, z0: -6.0, z1: 6.3 }];
@@ -106,6 +121,8 @@ export class DemoWorld {
   private hemi = new THREE.HemisphereLight('#b8a890', '#3a2a18', 0.7);
   private ambient = new THREE.AmbientLight('#b0a890', 0.22);
   private doorOpenedSent = false;
+  /** The portal awakening and the floating catalog behind the opened door (only while it is on). */
+  private finale?: DemoFinale;
 
   constructor(private canvas: HTMLCanvasElement, private quality: Quality, private cb: DemoWorldCallbacks = {}) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality !== 'low', powerPreference: 'high-performance' });
@@ -563,6 +580,28 @@ export class DemoWorld {
     this.setMode('done');
   }
 
+  /**
+   * After the door opened: the doorway wakes up as a portal and the catalog comes out of it. `settled` shows it as it is
+   * after the animation (a returning player). One at a time; returns the running finale.
+   */
+  startFinale(opts: { reducedMotion: boolean; settled?: boolean; events?: FinaleEvents }) {
+    if (this.finale) return this.finale;
+    if (this.mode !== 'door' && this.mode !== 'done') this.setMode('done');
+    // the figure stood beside the door, where the cards now float
+    if (this.local) this.local.root.visible = false;
+    this.finale = new DemoFinale(this.scene, this.camera, this.renderer, FINALE_LAYOUT, this.quality, opts.reducedMotion, this.portalLight, opts.events);
+    this.finale.start(!!opts.settled);
+    return this.finale;
+  }
+
+  /** Removes the finale's objects (the room itself stays as it was). */
+  endFinale() {
+    this.finale?.dispose();
+    this.finale = undefined;
+    if (this.local) this.local.root.visible = this.mode !== 'intro';
+    this.canvas.style.cursor = 'grab';
+  }
+
   /** The nearest object in reach, used by E without a pointer and by the touch button. */
   interactNearest() {
     const s = this.focused;
@@ -601,7 +640,11 @@ export class DemoWorld {
     this.updateDoor(dt);
 
     if (this.mode === 'intro') this.introCamera(this.modeTime);
-    else if (this.mode === 'door' || this.mode === 'done') this.doorCamera(dt);
+    else if (this.finale) {
+      // the finale moves the camera; the door keeps its place
+      this.finale.update(dt, t);
+      if (!this.drag?.moved) this.canvas.style.cursor = this.finale.hover(this.pointer) ? 'pointer' : 'grab';
+    } else if (this.mode === 'door' || this.mode === 'done') this.doorCamera(dt);
     else this.playUpdate(dt, t);
 
     if (this.composer) this.composer.render();
@@ -744,6 +787,12 @@ export class DemoWorld {
   private onKeyDown = (e: KeyboardEvent) => {
     if (this.paused || (e.target as HTMLElement)?.closest?.('input, textarea, select, [role="dialog"]')) return;
     this.keys.add(e.code);
+    // the floating catalog: the arrows move it (in Hebrew order, left is "next"), Escape lets the card go
+    if (this.finale?.isInteractive) {
+      if (e.code === 'ArrowLeft') this.finale.scroll(1);
+      else if (e.code === 'ArrowRight') this.finale.scroll(-1);
+      else if (e.code === 'Escape') this.finale.focus(null);
+    }
     if (e.code === 'KeyE' && this.mode === 'play') {
       if (this.hovered) this.tryInteract(this.hovered);
       else this.interactNearest();
@@ -780,11 +829,21 @@ export class DemoWorld {
           this.drag.x = e.clientX;
           this.drag.y = e.clientY;
         }
+        if (this.drag.moved && this.finale && !this.paused) this.finale.drag(dx / Math.max(1, c.clientWidth), false);
       }
     });
     c.addEventListener('pointerup', (e) => {
       const d = this.drag;
       this.drag = undefined;
+      if (d && this.finale) {
+        if (this.paused) return;
+        const rect = c.getBoundingClientRect();
+        this.pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+        if (d.moved) this.finale.drag((e.clientX - d.x) / Math.max(1, c.clientWidth), true);
+        else this.finale.click(this.pointer);
+        if (e.pointerType === 'touch') this.pointer.set(10, 10);
+        return;
+      }
       if (d && !d.moved && this.mode === 'play' && !this.paused) {
         const rect = c.getBoundingClientRect();
         this.pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
@@ -865,6 +924,7 @@ export class DemoWorld {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('blur', this.onBlur);
+    this.endFinale();
     this.local?.dispose();
     this.scene.traverse((o) => {
       const m = o as THREE.Mesh;

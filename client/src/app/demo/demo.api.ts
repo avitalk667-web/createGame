@@ -53,7 +53,9 @@ export function demoDevice(): DemoDevice {
 }
 
 export type DemoReportedEvent = 'demo_impression' | 'demo_click' | 'demo_offer_viewed' | 'demo_product_clicked' | 'demo_abandoned'
-  | 'demo_coupon_copied';
+  | 'demo_coupon_copied'
+  // the portal finale behind the opened door (the taste only): entered, awakening started/completed, cards shown, a card chosen
+  | 'demo_finale_entered' | 'demo_portal_started' | 'demo_portal_completed' | 'demo_cards_displayed' | 'demo_card_selected';
 
 /**
  * Reports one step that only the browser sees. Sent with sendBeacon (it survives the page closing or navigating), never
