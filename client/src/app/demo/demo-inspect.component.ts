@@ -20,9 +20,11 @@ import { DEMO_INSPECT, DemoInspect, LETTER_FADED_NOTE } from './demo-content';
                 <circle cx="100" cy="100" r="92" fill="#b8913f" /><circle cx="100" cy="100" r="80" fill="#efe2c0" stroke="#6a4a20" stroke-width="2" />
                 @for (a of ticks; track a) { <line x1="100" y1="26" x2="100" [attr.y2]="a % 90 === 0 ? 40 : 33" stroke="#6a4a20" stroke-width="2" [attr.transform]="'rotate(' + a + ' 100 100)'" /> }
                 <text x="100" y="54" text-anchor="middle" class="t" font-size="18">N</text>
-                <polygon points="100,44 108,100 92,100" fill="#b8261f" /><polygon points="100,138 107,100 93,100" fill="#3a3a44" />
+                <text x="138" y="147" text-anchor="middle" class="t engr" font-size="26">2</text>
+                <g transform="rotate(135 100 100)">
+                  <polygon points="100,57 108,100 92,100" fill="#b8261f" /><polygon points="100,132 107,100 93,100" fill="#3a3a44" />
+                </g>
                 <circle cx="100" cy="100" r="6" fill="#8a6a2a" />
-                <text x="100" y="170" text-anchor="middle" class="t engr" font-size="24">2</text>
               </svg>
             }
             @case ('clock') {
@@ -38,10 +40,11 @@ import { DEMO_INSPECT, DemoInspect, LETTER_FADED_NOTE } from './demo-content';
             }
             @case ('key') {
               <svg viewBox="0 0 240 140">
-                <circle cx="62" cy="70" r="36" fill="none" stroke="#d6b25e" stroke-width="14" />
+                <circle cx="62" cy="70" r="40" fill="#d6b25e" stroke="#a8823a" stroke-width="4" />
+                <circle cx="62" cy="70" r="29" fill="#c9a24e" stroke="#9a7430" stroke-width="2" />
                 <rect x="94" y="62" width="120" height="16" rx="6" fill="#d6b25e" />
                 <rect x="178" y="78" width="12" height="28" fill="#d6b25e" /><rect x="198" y="78" width="12" height="18" fill="#d6b25e" />
-                <text x="62" y="80" text-anchor="middle" class="t engr" font-size="28">4</text>
+                <text x="62" y="80" text-anchor="middle" class="t engr" font-size="34">4</text>
               </svg>
             }
             @case ('letter') {
@@ -68,7 +71,7 @@ import { DEMO_INSPECT, DemoInspect, LETTER_FADED_NOTE } from './demo-content';
     .art { margin: .8rem auto; display:grid; place-items:center; }
     .art svg { width: min(220px, 60vw); height:auto; filter: drop-shadow(0 8px 24px rgba(0,0,0,.6)); }
     .t { font-family: var(--font-title); fill:#2a1a0a; font-weight:700; }
-    .engr { fill:#5a3a10; }
+    .engr { fill:#4a2e0a; stroke: rgba(255,236,180,.35); stroke-width:.6px; }
     .paper { background: linear-gradient(160deg, #efe0bc, #d9c091); color:#2a1a0a; border-radius:6px; padding:1.1rem 1.3rem; font-family: var(--font-title);
       font-size:1.12rem; line-height:1.55; box-shadow: inset 0 0 40px rgba(90,50,10,.35), 0 10px 30px rgba(0,0,0,.5); text-align:right; width:100%; }
     .paper p { margin:.1rem 0; }

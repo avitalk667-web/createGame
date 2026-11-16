@@ -35,7 +35,7 @@ export interface DemoInspect {
   title: string;
   /** Paragraphs under the picture. */
   lines: string[];
-  /** The digit this object gives (shown as an engraving in the picture). */
+  /** Which drawing to show (the digit is only in the drawing, never in title or lines). */
   art: Exclude<DemoSpotId, 'door'>;
 }
 
@@ -54,22 +54,24 @@ export const DEMO_INSPECT: Record<Exclude<DemoSpotId, 'door'>, DemoInspect> = {
   compass: {
     title: 'מצפן נחושת',
     art: 'compass',
-    lines: ['המחט מצביעה צפונה, אל הדרך.', 'מתחת למחט חרוטה ספרה אחת: 2.'],
+    lines: ['מצפן ישן מונח על שולחן המפות. המחוג שלו נעצר בנקודה מסוימת. האם יש לכך משמעות?'],
   },
   clock: {
     title: 'שעון הקיר',
     art: 'clock',
-    lines: ['המטוטלת דוממת. השעון עצר בדיוק בשעה 7:00.'],
+    lines: ['שעון עתיק שנעצר מזמן. המחוגים קפאו במקומם. האם השעה שבה נעצר השעון חשובה?'],
   },
   key: {
     title: 'מפתח עתיק',
     art: 'key',
-    lines: ['מפתח נחושת כבד, שפותח מנעולים ישנים.', 'על הידית שלו חרוטה הספרה 4.'],
+    lines: ['מפתח עתיק וכבד. על גוף המפתח נראית חריטה מסתורית. אולי כדאי להתבונן בה מקרוב.'],
   },
 };
 
-/** Under the letter's poem: the rest of the page faded, and one sign still clearly written. */
-export const LETTER_FADED_NOTE = 'בתחתית הדף השורות דהו כמעט לגמרי. רק סימן אחד נשאר כתוב בבירור: 1.';
+/**
+ * Under the letter: a mood line only. The digits are never written in any text: each one is seen only in its picture.
+ */
+export const LETTER_FADED_NOTE = 'מכתב ישן ובו שורות שנמחקו כמעט לחלוטין. נותרו בו סימנים בודדים שאולי יכולים לעזור לכם.';
 
 export const DEMO_HINTS = [
   'המכתב אינו מציג את הקוד עצמו, אלא את הסדר שבו צריך לקרוא את הסימנים.',

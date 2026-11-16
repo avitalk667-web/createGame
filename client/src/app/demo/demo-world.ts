@@ -980,20 +980,24 @@ function compassTexture() {
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.fillText('N', 128, 30);
-    g.fillText('2', 128, 200);
-    // the needle points north
+    g.fillText('2', 180, 180);
+    // the needle stopped pointing at the engraved sign, not at north
+    g.save();
+    g.translate(128, 128);
+    g.rotate((135 * Math.PI) / 180);
     g.fillStyle = '#b8261f';
     g.beginPath();
-    g.moveTo(128, 46);
-    g.lineTo(140, 128);
-    g.lineTo(116, 128);
+    g.moveTo(0, -56);
+    g.lineTo(12, 0);
+    g.lineTo(-12, 0);
     g.fill();
     g.fillStyle = '#3a3a44';
     g.beginPath();
-    g.moveTo(128, 168);
-    g.lineTo(140, 128);
-    g.lineTo(116, 128);
+    g.moveTo(0, 40);
+    g.lineTo(12, 0);
+    g.lineTo(-12, 0);
     g.fill();
+    g.restore();
   });
 }
 
