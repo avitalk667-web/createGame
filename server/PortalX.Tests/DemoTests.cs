@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PortalX.Server.Data;
@@ -342,6 +343,69 @@ public class DemoTests(HubIntegrationTests.Factory factory)
         // nothing that could open a session leaves the server
         Assert.DoesNotContain(token, after.GetRawText());
         Assert.DoesNotContain(RoomServiceHash(token), after.GetRawText());
+    }
+
+    // ------------------------------------------------------------------ stage G: the edges
+
+    [Fact]
+    public async Task A_session_older_than_a_week_is_gone_and_entering_again_starts_a_new_one()
+    {
+        var since = DateTime.UtcNow.AddSeconds(-1);
+        var c = Browser();
+        await StateOf(await c.PostAsJsonAsync("/api/taste/start", new { }));
+        var old = await LatestSessionAsync(since);
+        await Db(db => db.DemoSessions.Where(s => s.Id == old)
+            .ExecuteUpdateAsync(u => u.SetProperty(s => s.CreatedAt, s => s.CreatedAt - DemoService.Lifetime - TimeSpan.FromMinutes(1))));
+
+        Assert.Null((await c.GetFromJsonAsync<StateReply>("/api/taste/state", Json))!.State);
+        Assert.Equal(HttpStatusCode.NotFound, (await c.PostAsJsonAsync("/api/taste/code", new { code = "2741" })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await c.PostAsJsonAsync("/api/taste/inspect", new { item = "key" })).StatusCode);
+
+        var fresh = await StateOf(await c.PostAsJsonAsync("/api/taste/start", new { }));
+        Assert.Empty(fresh.Inspected);
+        Assert.Equal(0, fresh.Attempts);
+        Assert.NotEqual(old, await LatestSessionAsync(since));
+        // the old session was not completed by the late guess
+        Assert.Null(await Db(db => db.DemoSessions.Where(s => s.Id == old).Select(s => s.CompletedAt).FirstAsync()));
+    }
+
+    [Fact]
+    public async Task Malformed_codes_devices_and_events_change_nothing()
+    {
+        var since = DateTime.UtcNow.AddSeconds(-1);
+        var c = Browser();
+        await StateOf(await c.PostAsJsonAsync("/api/taste/start", new { device = "<script>" }));
+        var id = await LatestSessionAsync(since);
+        Assert.Equal("desktop", await Db(db => db.DemoSessions.Where(s => s.Id == id).Select(s => s.Device).FirstAsync()));
+
+        foreach (var bad in new[] { "", "abcd", "27411", "274", "２７４１", " 27 41 " })
+        {
+            var r = await Code(c, bad);
+            Assert.False(r.Ok);
+            Assert.False(r.State.Completed);
+            Assert.Equal(0, r.State.Attempts);
+        }
+        Assert.Equal(HttpStatusCode.BadRequest, (await c.PostAsJsonAsync("/api/taste/event", new { })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await c.PostAsJsonAsync("/api/taste/event", new { type = "demo_completed" })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await c.PostAsJsonAsync("/api/taste/event", new { type = "demo_purchase_completed" })).StatusCode);
+        var s = await Db(db => db.DemoSessions.Where(x => x.Id == id).FirstAsync());
+        Assert.Null(s.CompletedAt);
+        Assert.Null(s.PurchasedAt);
+        Assert.Equal(0, s.CodeAttempts);
+    }
+
+    [Fact]
+    public async Task The_keypad_is_rate_limited_per_address()
+    {
+        await using var f = factory.WithWebHostBuilder(b =>
+            b.ConfigureAppConfiguration((_, cfg) => cfg.AddInMemoryCollection(new Dictionary<string, string?> { ["RateLimits:DemoCodePerMinute"] = "3" })));
+        var c = f.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
+        await StateOf(await c.PostAsJsonAsync("/api/taste/start", new { }));
+        for (var i = 0; i < 3; i++)
+            Assert.Equal(HttpStatusCode.OK, (await c.PostAsJsonAsync("/api/taste/code", new { code = "1111" })).StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await c.PostAsJsonAsync("/api/taste/code", new { code = "2741" })).StatusCode);
+        // the rest of the room still answers
+        Assert.Equal(HttpStatusCode.OK, (await c.PostAsJsonAsync("/api/taste/inspect", new { item = "key" })).StatusCode);
     }
 
     private static string RoomServiceHash(string token) => PortalX.Server.Game.RoomService.Hash(token);
