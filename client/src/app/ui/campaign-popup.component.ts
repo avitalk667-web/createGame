@@ -5,7 +5,7 @@ import { filter } from 'rxjs';
 import { ApiService, Campaign, myLinkStore } from '../core/api.service';
 
 /** Pages where the popup never appears: a game in progress, joining one, paying, the admin and the personal-link page itself. */
-const QUIET = [/^\/room\//, /^\/join/, /^\/checkout\//, /^\/sandbox-pay\//, /^\/admin/, /^\/share/, /^\/unsubscribe/];
+const QUIET = [/^\/room\//, /^\/demo/, /^\/join/, /^\/checkout\//, /^\/sandbox-pay\//, /^\/admin/, /^\/share/, /^\/unsubscribe/];
 /**
  * Set once the popup has been shown in this visit (sessionStorage: this tab, kept through refreshes and page changes), so it
  * does not come back during the visit; a new visit — a new tab or window, or the browser opened again — shows it again.

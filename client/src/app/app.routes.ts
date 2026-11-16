@@ -8,7 +8,8 @@ export const routes: Routes = [
   // SUMIT returns the buyer here after pressing cancel on its payment page
   { path: 'checkout/:orderId/cancelled', data: { cancelled: true }, loadComponent: () => import('./pages/checkout.page').then((m) => m.CheckoutPage), title: 'הרכישה שלכם — PORTAL X' },
   { path: 'sandbox-pay/:session', loadComponent: () => import('./pages/sandbox-pay.page').then((m) => m.SandboxPayPage), title: 'תשלום בדיקה — PORTAL X' },
-  { path: 'share', loadComponent: () => import('./pages/share.page').then((m) => m.SharePage), title: 'יצירת קישור אישי — PORTAL X' },
+  { path: 'demo', loadComponent: () => import('./demo/demo.page').then((m) => m.DemoPage), title: 'טעימה מהפורטל — PORTAL X' },
+  { path: 'share',loadComponent: () => import('./pages/share.page').then((m) => m.SharePage), title: 'יצירת קישור אישי — PORTAL X' },
   { path: 'join', loadComponent: () => import('./pages/join-code.page').then((m) => m.JoinCodePage), title: 'יש לי קוד משחק — PORTAL X' },
   { path: 'join/:code', loadComponent: () => import('./pages/join.page').then((m) => m.JoinPage), title: 'הצטרפות לחדר — PORTAL X' },
   { path: 'room/:code', loadComponent: () => import('./pages/room.page').then((m) => m.RoomPage), title: 'PORTAL X — במשחק' },

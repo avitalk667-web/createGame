@@ -22,6 +22,16 @@
         "Set-Location client; npx.cmd ng serve --port 4310"
       ],
       "port": 4310
+    },
+    {
+      "name": "demo-dev",
+      "runtimeExecutable": "powershell.exe",
+      "runtimeArgs": [
+        "-NoProfile",
+        "-Command",
+        "Set-Location client; npx.cmd ng serve --port 4330"
+      ],
+      "port": 4330
     }
   ]
 }
