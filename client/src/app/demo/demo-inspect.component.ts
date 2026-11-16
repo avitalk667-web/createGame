@@ -44,7 +44,12 @@ import { DEMO_INSPECT, DemoInspect, LETTER_FADED_NOTE } from './demo-content';
                 <circle cx="62" cy="70" r="29" fill="#c9a24e" stroke="#9a7430" stroke-width="2" />
                 <rect x="94" y="62" width="120" height="16" rx="6" fill="#d6b25e" />
                 <rect x="178" y="78" width="12" height="28" fill="#d6b25e" /><rect x="198" y="78" width="12" height="18" fill="#d6b25e" />
-                <text x="62" y="80" text-anchor="middle" class="t engr" font-size="34">4</text>
+                <!-- a worn engraving: gold on gold, only a faint edge of light shows it -->
+                <g transform="rotate(-16 62 70)">
+                  <text x="62.8" y="79.8" text-anchor="middle" class="t worn-lit" font-size="25">4</text>
+                  <text x="62" y="79" text-anchor="middle" class="t worn" font-size="25">4</text>
+                </g>
+                <path d="M44 58 l9 5 M70 88 l11 -4 M47 84 l5 -9 M74 54 l6 7 M56 92 l12 1" stroke="#a8823a" stroke-width="1.2" stroke-linecap="round" opacity=".8" />
               </svg>
             }
             @case ('letter') {
@@ -71,7 +76,9 @@ import { DEMO_INSPECT, DemoInspect, LETTER_FADED_NOTE } from './demo-content';
     .art { margin: .8rem auto; display:grid; place-items:center; }
     .art svg { width: min(220px, 60vw); height:auto; filter: drop-shadow(0 8px 24px rgba(0,0,0,.6)); }
     .t { font-family: var(--font-title); fill:#2a1a0a; font-weight:700; }
-    .engr { fill:#4a2e0a; stroke: rgba(255,236,180,.35); stroke-width:.6px; }
+    .engr { fill:#5a3a10; }
+    .worn { fill:#a8823a; opacity:.75; }
+    .worn-lit { fill:#f0d488; opacity:.45; }
     .paper { background: linear-gradient(160deg, #efe0bc, #d9c091); color:#2a1a0a; border-radius:6px; padding:1.1rem 1.3rem; font-family: var(--font-title);
       font-size:1.12rem; line-height:1.55; box-shadow: inset 0 0 40px rgba(90,50,10,.35), 0 10px 30px rgba(0,0,0,.5); text-align:right; width:100%; }
     .paper p { margin:.1rem 0; }
