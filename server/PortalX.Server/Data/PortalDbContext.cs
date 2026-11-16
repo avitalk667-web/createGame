@@ -230,6 +230,8 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.Property(x => x.Variant).HasMaxLength(8);
             e.Property(x => x.LastEvent).HasMaxLength(40);
             e.Property(x => x.ProductClickedId).HasMaxLength(64);
+            e.Property(x => x.ConsentEmail).HasMaxLength(254);
+            e.Property(x => x.ConsentVersion).HasMaxLength(32);
             e.HasOne<ReferralLink>().WithMany().HasForeignKey(x => x.ReferralLinkId).OnDelete(DeleteBehavior.SetNull);
         });
         b.Entity<DemoEvent>(e =>

@@ -2,12 +2,15 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using PortalX.Server.Challenge;
 using PortalX.Server.Data;
 using PortalX.Server.Demo;
 using PortalX.Server.Domain;
+using PortalX.Server.Mail;
 using PortalX.Server.Referrals;
 
 namespace PortalX.Tests;
@@ -303,41 +306,98 @@ public class DemoTests(HubIntegrationTests.Factory factory)
     }
     // ------------------------------------------------------------------ the coupon of a finished taste
 
-    private static async Task<JsonElement> CouponOf(HttpClient c)
+    private (HttpClient Browser, FakeEmailSender Mail) BrowserWithMail()
     {
-        var r = await c.PostAsync("/api/taste/coupon", null);
-        r.EnsureSuccessStatusCode();
-        return await r.Content.ReadFromJsonAsync<JsonElement>(Json);
+        var mail = new FakeEmailSender();
+        var f = factory.WithWebHostBuilder(b =>
+        {
+            b.ConfigureAppConfiguration((_, c) => c.AddInMemoryCollection(new Dictionary<string, string?> { ["PORTALX_SITE_URL"] = "https://portalx.test" }));
+            b.ConfigureTestServices(s => s.AddSingleton<IEmailSender>(mail));
+        });
+        return (f.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true }), mail);
     }
 
-    [Fact]
-    public async Task The_coupon_is_issued_only_after_the_door_opened_and_only_once_per_session()
+    private static async Task<(HttpStatusCode Status, JsonElement Body)> Post(HttpClient c, string url, object? body = null)
     {
-        var c = Browser();
+        var r = body == null ? await c.PostAsync(url, null) : await c.PostAsJsonAsync(url, body);
+        return (r.StatusCode, await r.Content.ReadFromJsonAsync<JsonElement>(Json));
+    }
+
+    private static string? Str(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    [Fact]
+    public async Task The_coupon_needs_an_address_and_consent_and_its_code_shows_only_after_the_email_was_sent()
+    {
+        var (c, mail) = BrowserWithMail();
         var since = DateTime.UtcNow.AddSeconds(-1);
         await StateOf(await c.PostAsJsonAsync("/api/taste/start", new { }));
         var id = await LatestSessionAsync(since);
+        var address = $"taste.{Guid.NewGuid():N}"[..20] + "@example.org";
 
-        var early = await CouponOf(c);
-        Assert.False(early.TryGetProperty("coupon", out var none) && none.ValueKind != JsonValueKind.Null);
-        Assert.Equal("not-completed", early.GetProperty("reason").GetString());
-
+        // before the door opened: nothing
+        Assert.Equal("not-completed", Str((await Post(c, "/api/taste/coupon/status")).Body, "state"));
+        Assert.Equal("not-completed", Str((await Post(c, "/api/taste/coupon", new { email = address, marketingConsent = true })).Body, "state"));
         await Code(c, "2741");
-        // a refresh and a second tab asking together still get one coupon
-        var replies = await Task.WhenAll(Enumerable.Range(0, 5).Select(_ => CouponOf(c)));
-        var codes = replies.Select(r => r.GetProperty("coupon").GetProperty("code").GetString()).Distinct().ToList();
-        var code = Assert.Single(codes);
+
+        // the form; no address, a bad address, or no consent: refused, and no coupon is made
+        var form = (await Post(c, "/api/taste/coupon/status")).Body;
+        Assert.Equal("form", Str(form, "state"));
+        Assert.False(form.TryGetProperty("coupon", out _));
+        Assert.Equal(HttpStatusCode.BadRequest, (await Post(c, "/api/taste/coupon", new { })).Status);
+        Assert.Equal(HttpStatusCode.BadRequest, (await Post(c, "/api/taste/coupon", new { email = "not-an-address", marketingConsent = true })).Status);
+        var noConsent = await Post(c, "/api/taste/coupon", new { email = address, marketingConsent = false });
+        Assert.Equal(HttpStatusCode.BadRequest, noConsent.Status);
+        Assert.Equal("no-consent", Str(noConsent.Body, "code"));
+        Assert.False(await Db(db => db.Coupons.AnyAsync(k => k.DemoSessionId == id)));
+
+        // the provider fails: no code on the screen, the same coupon kept for "נסה שוב"
+        mail.FailNext = 2;
+        var failed = (await Post(c, "/api/taste/coupon", new { email = address, marketingConsent = true })).Body;
+        Assert.Equal("failed", Str(failed, "state"));
+        Assert.False(failed.TryGetProperty("coupon", out _));
         var coupon = await Db(db => db.Coupons.AsNoTracking().SingleAsync(k => k.DemoSessionId == id));
-        Assert.Equal(code, coupon.Code);
-        Assert.Equal(10m, coupon.Value);
-        Assert.Equal(1, coupon.MaxRedemptions);
-        Assert.Equal(CampaignKinds.Taste, await Db(db => db.CouponCampaigns.Where(k => k.Id == coupon.CampaignId).Select(k => k.Kind).SingleAsync()));
-        Assert.InRange((coupon.EndsAt!.Value - coupon.StartsAt!.Value).TotalDays, 7.9, 8.1);
-        Assert.Equal(1, await Db(db => db.DemoEvents.CountAsync(e => e.SessionId == id && e.Type == "demo_coupon_issued")));
+        Assert.Equal(address, coupon.Email);
+        Assert.Equal("failed", coupon.EmailStatus);
+        Assert.DoesNotContain(coupon.Code, failed.GetRawText());
+        Assert.Equal("failed", Str((await Post(c, "/api/taste/coupon/status")).Body, "state"));
+
+        // the consent is on the server: on the session and on the mailing list
+        var session = await Db(db => db.DemoSessions.AsNoTracking().FirstAsync(x => x.Id == id));
+        Assert.Equal(address, session.ConsentEmail);
+        Assert.NotNull(session.MarketingConsentAt);
+        var consent = await Db(db => db.MarketingConsents.AsNoTracking().FirstAsync(x => x.Email == address));
+        Assert.Equal(ConsentStatus.Active, consent.Status);
+        Assert.Equal(DemoCouponService.ConsentSource, consent.Source);
+
+        // the retry: the same coupon to the same address, and now its code
+        var sent = (await Post(c, "/api/taste/coupon", new { retry = true })).Body;
+        Assert.Equal("sent", Str(sent, "state"));
+        Assert.Equal(coupon.Code, sent.GetProperty("coupon").GetProperty("code").GetString());
+        Assert.Equal(10m, sent.GetProperty("coupon").GetProperty("discountPercent").GetDecimal());
+        var email = Assert.Single(mail.Sent, m => m.To == address);
+        Assert.Contains(coupon.Code, email.Text);
+        Assert.Equal(ChallengeService.TasteSubject, email.Subject);
+        Assert.NotNull(email.UnsubscribeUrl);
+
+        // a refresh, a second tab, or sending again: the same coupon, never a second one, never a second email
+        var again = await Task.WhenAll(Enumerable.Range(0, 3).Select(_ => Post(c, "/api/taste/coupon", new { email = address, marketingConsent = true })));
+        Assert.All(again, r => Assert.Equal(coupon.Code, r.Body.GetProperty("coupon").GetProperty("code").GetString()));
+        Assert.Equal(coupon.Code, (await Post(c, "/api/taste/coupon/status")).Body.GetProperty("coupon").GetProperty("code").GetString());
+        Assert.Equal(1, await Db(db => db.Coupons.CountAsync(k => k.DemoSessionId == id)));
+        Assert.Single(mail.Sent, m => m.To == address);
+        var stored = await Db(db => db.Coupons.AsNoTracking().SingleAsync(k => k.DemoSessionId == id));
+        Assert.Equal(1, stored.MaxRedemptions);
+        Assert.InRange((stored.EndsAt!.Value - stored.StartsAt!.Value).TotalDays, 7.9, 8.1);
+
+        // another finished taste cannot take the same address
+        var (other, _) = BrowserWithMail();
+        await StateOf(await other.PostAsJsonAsync("/api/taste/start", new { }));
+        await Code(other, "2741");
+        Assert.Equal(HttpStatusCode.Conflict, (await Post(other, "/api/taste/coupon", new { email = address, marketingConsent = true })).Status);
 
         // without the session's cookie there is nothing to issue
         var stranger = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
-        Assert.Equal("no-session", (await CouponOf(stranger)).GetProperty("reason").GetString());
+        Assert.Equal("no-session", Str((await Post(stranger, "/api/taste/coupon/status")).Body, "state"));
     }
 
     // ------------------------------------------------------------------ stage F: the admin tab

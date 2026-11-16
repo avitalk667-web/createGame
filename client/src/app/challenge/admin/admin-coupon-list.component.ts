@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, OnInit, computed, inject, output, s
 import { ApiError } from '../../core/api.service';
 import {
   ADMIN_CHALLENGE_STYLES, AdminChallengeApi, COUPON_SOURCE_LABEL, COUPON_STATUS_LABEL, ChallengeCouponDetail, ChallengeCouponFilters, ChallengeCouponRow, EMAIL_STATUS_LABEL,
+  TASTE_EMAIL_STATUS_LABEL,
 } from './admin-challenge.api';
 
 const ACTION_LABEL: Record<string, string | undefined> = {
@@ -42,7 +43,7 @@ const ACTION_LABEL: Record<string, string | undefined> = {
     <p class="muted small">{{ rows().length }} קופונים{{ loading() ? ' · טוען…' : '' }}</p>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>קוד קופון</th><th>מקור</th><th>לקוח</th><th>ניקוד</th><th>הנחה</th><th>משחקים זכאים</th><th>תאריך הנפקה</th><th>תאריך תפוגה</th><th>סטטוס</th><th>רכישה</th><th>תאריך מימוש</th><th>מייל נשלח</th><th></th></tr></thead>
+        <thead><tr><th>קוד קופון</th><th>מקור</th><th>לקוח</th><th>ניקוד</th><th>הנחה</th><th>משחקים זכאים</th><th>תאריך הנפקה</th><th>תאריך תפוגה</th><th>סטטוס</th><th>רכישה</th><th>תאריך מימוש</th><th>אישור דיוור</th><th>מועד אישור</th><th>שליחת מייל</th><th>מועד שליחה</th><th></th></tr></thead>
         <tbody>
           @for (r of rows(); track r.id) {
             <tr [class.sel]="detail()?.id === r.id">
@@ -52,11 +53,13 @@ const ACTION_LABEL: Record<string, string | undefined> = {
               <td><span class="st" [attr.data-s]="r.status">{{ label[r.status] }}</span></td>
               <td>{{ r.purchasedGame ?? '—' }}@if (r.orderNumber) { <span class="muted small"> · הזמנה {{ r.orderNumber }}</span> }</td>
               <td>{{ r.redeemedAt ? (r.redeemedAt | date: 'd.M.yy HH:mm') : '—' }}</td>
-              <td>@if (r.emailStatus) { <span class="st" [attr.data-s]="r.emailStatus">{{ mail[r.emailStatus] ?? r.emailStatus }}</span> } @else { — }</td>
+              <td>{{ r.marketingConsent ? 'כן' : 'לא' }}</td><td>{{ r.consentAt ? (r.consentAt | date: 'd.M.yy HH:mm') : '—' }}</td>
+              <td>@if (r.emailStatus) { <span class="st" [attr.data-s]="r.emailStatus">{{ (r.source === 'taste' ? tasteMail : mail)[r.emailStatus] ?? r.emailStatus }}</span> } @else { — }</td>
+              <td>{{ r.emailSentAt ? (r.emailSentAt | date: 'd.M.yy HH:mm') : '—' }}</td>
               <td><button class="btn small ghost" type="button" (click)="open(r.id)">פרטים</button></td>
             </tr>
           } @empty {
-            <tr><td colspan="13" class="muted">אין קופונים להצגה.</td></tr>
+            <tr><td colspan="16" class="muted">אין קופונים להצגה.</td></tr>
           }
         </tbody>
       </table>
@@ -126,6 +129,7 @@ export class AdminCouponListComponent implements OnInit {
   label = COUPON_STATUS_LABEL;
   mail = EMAIL_STATUS_LABEL;
   source = COUPON_SOURCE_LABEL;
+  tasteMail = TASTE_EMAIL_STATUS_LABEL;
   actions = ACTION_LABEL;
   useLabel: Record<string, string | undefined> = { reserved: 'שמור לתשלום', redeemed: 'מומש', released: 'שוחרר (התשלום לא הושלם)', refunded: 'הוחזר' };
 

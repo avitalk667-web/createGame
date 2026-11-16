@@ -8,7 +8,7 @@ import { SettingsService } from '../core/settings.service';
 import { JoystickComponent } from '../ui/joystick.component';
 import { DEMO_ITEMS, DEMO_SPOTS, DemoSpot, DemoSpotId } from './demo-content';
 import { pendingCoupon } from '../challenge/challenge.service';
-import { DemoApi, DemoState, TasteCoupon, demoDevice, demoTrack } from './demo.api';
+import { DemoApi, DemoState, TasteCoupon, TasteCouponReply, demoDevice, demoTrack } from './demo.api';
 import { DemoGateSceneComponent } from './demo-gate-scene.component';
 import { DemoInspectComponent } from './demo-inspect.component';
 import { DemoKeypadComponent, KeypadStatus } from './demo-keypad.component';
@@ -175,30 +175,66 @@ type ItemId = (typeof DEMO_ITEMS)[number];
           <div class="rays" aria-hidden="true"></div>
           <p class="kicker">טעימה מהפורטל · הושלמה</p>
           <h2 id="finish-title" class="gold-title">כל הכבוד! פתחתם את שער הפורטל!</h2>
-          <p class="lead">הצלחתם לפתור את החידה ולגלות את סוד החדר.<br />אבל זו הייתה רק טעימה קטנה...<br />ההרפתקה האמיתית מחכה לכם במשחקי PORTAL&nbsp;X.</p>
           @if (seconds(); as t) { <p class="time">⏱ פתרתם ב־{{ duration(t) }}</p> }
 
+          <!-- the coupon: never shown before the address and the consent were given and the server confirmed the email was sent -->
           <div class="gift" aria-live="polite">
-            @if (coupon(); as c) {
-              <p class="gift-kicker">🎁 מתנה מיוחדת למי שהגיע עד הסוף!</p>
-              <p class="gift-big"><bdi>{{ c.discountPercent }}%</bdi> הנחה על רכישת משחק מלא</p>
-              @if (c.status === 'active' && left() > 0) {
-                <div class="code-row">
-                  <span class="code" dir="ltr">{{ c.code }}</span>
-                  <button type="button" class="btn primary copy" (click)="copyCode(c.code)">{{ copied() ? 'הקוד הועתק ✓' : 'העתקת הקוד' }}</button>
-                </div>
-                <p class="valid">בתוקף עד <b><bdi>{{ c.expiresAtText }}</bdi></b> · מוגבל ל־{{ c.validityDays }} ימים בלבד</p>
-                <p class="countdown" role="timer" aria-label="הזמן שנותר להטבה">נותרו <b>{{ countdown() }}</b></p>
-                <p class="muted small">קופון אישי לשימוש אחד, ברכישת אחד מהמשחקים שלמטה. הקוד ימולא אוטומטית בעמוד המשחק.</p>
-              } @else {
-                <p class="code-row"><span class="code used" dir="ltr">{{ c.code }}</span></p>
-                <p class="muted">{{ c.status === 'redeemed' ? 'כבר השתמשתם בקופון הזה ברכישה. תודה!' : c.status === 'cancelled' ? 'הקופון הזה בוטל.' : 'תוקף הקופון הסתיים ב־' + c.expiresAtText + '.' }}</p>
+            @switch (couponState()) {
+              @case ('sent') {
+                @if (coupon(); as c) {
+                  <p class="gift-kicker">📧 הקופון בדרך אליכם!</p>
+                  <p>שלחנו את ההטבה לכתובת המייל שהזנתם@if (sentTo()) { (<bdi dir="ltr">{{ sentTo() }}</bdi>) }.</p>
+                  @if (c.status === 'active' && left() > 0) {
+                    <p class="code-label">קוד הקופון שלכם:</p>
+                    <div class="code-row">
+                      <span class="code" dir="ltr">{{ c.code }}</span>
+                      <button type="button" class="btn primary copy" (click)="copyCode(c.code)">{{ copied() ? 'הקוד הועתק ✓' : 'העתקת קוד הקופון' }}</button>
+                    </div>
+                    <p class="gift-big"><bdi>{{ c.discountPercent }}%</bdi> הנחה על משחקים זכאים.</p>
+                    <p class="valid">בתוקף עד: <b><bdi>{{ c.expiresAtText }}</bdi></b></p>
+                    <p class="countdown" role="timer" aria-label="הזמן שנותר להטבה">נותרו <b>{{ countdown() }}</b></p>
+                  } @else {
+                    <p class="code-row"><span class="code used" dir="ltr">{{ c.code }}</span></p>
+                    <p class="muted">{{ c.status === 'redeemed' ? 'כבר השתמשתם בקופון הזה ברכישה. תודה!' : c.status === 'cancelled' ? 'הקופון הזה בוטל.' : 'תוקף הקופון הסתיים ב־' + c.expiresAtText + '.' }}</p>
+                  }
+                  <p class="muted small">לא קיבלתם את המייל? בדקו גם בתיקיית הספאם.</p>
+                }
               }
-            } @else if (couponState() === 'loading') {
-              <p class="muted" role="status">מכינים לכם מתנה…</p>
-            } @else if (couponState() === 'error') {
-              <p class="muted">לא הצלחנו להציג את ההטבה כרגע.</p>
-              <button type="button" class="btn small" (click)="loadCoupon()">לנסות שוב</button>
+              @case ('form') {
+                <p class="gift-kicker">נהניתם מהטעימה? מחכה לכם מתנה מיוחדת:</p>
+                <p class="gift-big"><bdi>{{ percent() }}%</bdi> הנחה על רכישת משחק מלא ב־PORTAL&nbsp;X!</p>
+                <p>כדי לקבל את הקופון, מלאו את כתובת המייל שלכם ואשרו קבלת עדכונים והטבות.</p>
+                <form class="coupon-form" (submit)="$event.preventDefault(); sendCoupon()" novalidate>
+                  <label class="field">כתובת מייל
+                    <input type="email" dir="ltr" autocomplete="email" inputmode="email" maxlength="254" required placeholder="name@example.com"
+                      [value]="email()" (input)="email.set($any($event.target).value); formError.set(null)" [attr.aria-invalid]="email() && !emailOk() ? true : null" />
+                  </label>
+                  <label class="consent">
+                    <input type="checkbox" required [checked]="consent()" (change)="consent.set($any($event.target).checked); formError.set(null)" />
+                    <span>אני מאשר/ת לקבל מיילים עם עדכונים, הטבות ומבצעים מ־PORTAL&nbsp;X. ניתן להסיר את ההרשמה בכל עת.</span>
+                  </label>
+                  @if (formError(); as e) { <p class="err" role="alert">{{ e }}</p> }
+                  <button type="submit" class="btn primary send" [disabled]="!emailOk() || !consent() || busySend()">{{ busySend() ? 'שולחים…' : 'שלחו לי את הקופון' }}</button>
+                </form>
+              }
+              @case ('sending') {
+                <p class="muted" role="status">שולחים את הקופון למייל שלכם…</p>
+              }
+              @case ('failed') {
+                <p class="err" role="alert">{{ failMessage() }}</p>
+                @if (sentTo()) { <p class="muted small">המייל יישלח שוב לכתובת <bdi dir="ltr">{{ sentTo() }}</bdi>.</p> }
+                <button type="button" class="btn primary" [disabled]="busySend()" (click)="retrySend()">{{ busySend() ? 'שולחים…' : 'נסה שוב' }}</button>
+              }
+              @case ('loading') {
+                <p class="muted" role="status">מכינים לכם מתנה…</p>
+              }
+              @case ('error') {
+                <p class="muted">לא הצלחנו להציג את ההטבה כרגע.</p>
+                <button type="button" class="btn small" (click)="loadCoupon()">לנסות שוב</button>
+              }
+              @default {
+                <p>ההרפתקה האמיתית מחכה לכם במשחקי PORTAL&nbsp;X.</p>
+              }
             }
           </div>
 
@@ -415,6 +451,14 @@ type ItemId = (typeof DEMO_ITEMS)[number];
     .gift-big { font-size: clamp(1.25rem, 4vw, 1.75rem); font-weight:800; }
     .gift-big bdi { color: var(--gold-2); font-size:1.3em; }
     .code-row { display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:.6rem; margin: .7rem 0 .5rem !important; }
+    .code-label { font-weight:700; margin-top:.7rem !important; }
+    .coupon-form { display:flex; flex-direction:column; gap:.7rem; max-width:440px; margin: .9rem auto 0; text-align:right; }
+    .field { display:flex; flex-direction:column; gap:.3rem; font-weight:700; }
+    .field input { min-height:48px; font-size:1.05rem; text-align:left; }
+    .consent { display:flex; align-items:flex-start; gap:.6rem; line-height:1.55; font-size:.98rem; cursor:pointer; }
+    .consent input { width:22px; height:22px; margin-top:.15rem; flex:none; accent-color: var(--gold); }
+    .send { min-height:50px; font-size:1.1rem; }
+    .send:disabled { opacity:.55; cursor:not-allowed; }
     .code { font: 800 clamp(1.25rem, 4.4vw, 1.7rem)/1 ui-monospace, Consolas, monospace; letter-spacing:.08em; padding:.5em .9em; border-radius:12px;
       background: rgba(5,10,30,.75); border:1px solid rgba(240,200,110,.6); color:#fff3cf; user-select:all; }
     .code.used { opacity:.55; text-decoration: line-through; }
@@ -498,9 +542,20 @@ export class DemoPage implements OnInit, OnDestroy {
   opening = signal(false);
   success = signal(false);
   seconds = signal<number | null>(null);
-  /** The personal coupon of the finished taste, as the server issued it. */
+  /** The personal coupon of the finished taste — set only once the server confirmed it was emailed. */
   coupon = signal<TasteCoupon | null>(null);
-  couponState = signal<'idle' | 'loading' | 'error'>('idle');
+  couponState = signal<'idle' | 'loading' | 'error' | 'form' | 'sending' | 'sent' | 'failed' | 'none'>('idle');
+  /** The coupon form: the address and the consent box (empty until the visitor ticks it). */
+  email = signal('');
+  consent = signal(false);
+  emailOk = computed(() => /^[^\s@<>()[\],;:"\\]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\.[A-Za-z]{2,}$/.test(this.email().trim()));
+  busySend = signal(false);
+  formError = signal<string | null>(null);
+  failMessage = signal('');
+  /** The address the coupon goes to, as the server shows it (partly hidden). */
+  sentTo = signal<string | null>(null);
+  /** The campaign's percent, from the server (10 until it answers). */
+  percent = signal(10);
   copied = signal(false);
   /** Milliseconds left until the coupon expires, by the server's clock (ticks every second). */
   left = signal(0);
@@ -526,6 +581,7 @@ export class DemoPage implements OnInit, OnDestroy {
   private doorTimer?: ReturnType<typeof setTimeout>;
   private countdownTimer?: ReturnType<typeof setInterval>;
   private copiedTimer?: ReturnType<typeof setTimeout>;
+  private statusTimer?: ReturnType<typeof setTimeout>;
 
   constructor() {
     effect(() => this.world?.setPaused(this.panelOpen() || this.showHelp()));
@@ -738,31 +794,95 @@ export class DemoPage implements OnInit, OnDestroy {
     this.success.set(true);
     if (sound) this.audio.sfx('complete');
     demoTrack('demo_offer_viewed');
-    // the coupon first: the games list is narrowed to what it is good for
-    this.loadCoupon().finally(() => this.loadGames());
+    // the games at once (all that can be bought); the coupon's state from the server (the form, or the coupon already sent)
+    this.loadGames();
+    void this.loadCoupon();
   }
 
-  /** The coupon from the server (issued on the first call, the same one later); the countdown follows the server's clock. */
+  /** What the server says about this session's coupon now (a refresh or a later visit): the form, or the sent coupon. */
   async loadCoupon() {
     this.couponState.set('loading');
     try {
-      const { coupon } = await this.api.coupon();
-      this.coupon.set(coupon ?? null);
-      this.couponState.set(coupon ? 'idle' : 'error');
-      if (!coupon) return;
-      const skew = Date.parse(coupon.serverNow) - Date.now();
-      const end = Date.parse(coupon.expiresAt);
-      const tick = () => {
-        const left = Math.max(0, end - (Date.now() + skew));
-        this.left.set(left);
-        if (!left) clearInterval(this.countdownTimer);
-      };
-      clearInterval(this.countdownTimer);
-      tick();
-      this.countdownTimer = setInterval(tick, 1000);
+      this.applyReply(await this.api.couponStatus());
     } catch {
       this.couponState.set('error');
     }
+  }
+
+  /** "שלחו לי את הקופון": checked again by the server, which answers with the code only once the email was accepted. */
+  async sendCoupon() {
+    if (!this.emailOk() || !this.consent() || this.busySend()) return;
+    await this.send({ email: this.email().trim(), marketingConsent: true });
+  }
+
+  /** "נסה שוב": the same coupon to the same address (the server never makes a second one). */
+  retrySend() {
+    return this.send({ retry: true });
+  }
+
+  private async send(body: { email?: string; marketingConsent?: boolean; retry?: boolean }) {
+    this.busySend.set(true);
+    this.formError.set(null);
+    try {
+      this.applyReply(await this.api.sendCoupon(body));
+    } catch (e) {
+      // a refused address or consent stays on the form; anything else is a failed send that can be tried again
+      if (e instanceof ApiError && ['bad-email', 'no-consent', 'email-used'].includes(e.code)) {
+        this.formError.set(e.message);
+        this.couponState.set('form');
+      } else {
+        this.failMessage.set(e instanceof ApiError && e.code === 'rate' ? e.message : 'לא הצלחנו לשלוח את הקופון כרגע. אפשר לנסות שוב.');
+        this.couponState.set(body.retry || this.sentTo() ? 'failed' : 'form');
+        if (!body.retry && !this.sentTo()) this.formError.set(this.failMessage());
+      }
+    } finally {
+      this.busySend.set(false);
+    }
+  }
+
+  private applyReply(r: TasteCouponReply) {
+    clearTimeout(this.statusTimer);
+    if (r.discountPercent) this.percent.set(r.discountPercent);
+    this.sentTo.set(r.email ?? null);
+    switch (r.state) {
+      case 'sent':
+        if (r.coupon) { this.showCoupon(r.coupon); return; }
+        this.couponState.set('error');
+        return;
+      case 'form':
+        this.couponState.set('form');
+        return;
+      case 'failed':
+        this.failMessage.set(r.message ?? 'לא הצלחנו לשלוח את הקופון כרגע. אפשר לנסות שוב.');
+        this.couponState.set('failed');
+        return;
+      case 'sending':
+        // another tab is sending it right now: look again in a moment
+        this.couponState.set('sending');
+        this.statusTimer = setTimeout(() => void this.loadCoupon(), 3000);
+        return;
+      default:
+        // switched off, the quota used up, or no finished session here: no coupon to offer
+        this.couponState.set('none');
+    }
+  }
+
+  /** The coupon the server confirmed was emailed; the countdown follows the server's clock. */
+  private showCoupon(coupon: TasteCoupon) {
+    this.coupon.set(coupon);
+    this.couponState.set('sent');
+    // the games list narrows to what the coupon is good for
+    this.loadGames();
+    const skew = Date.parse(coupon.serverNow) - Date.now();
+    const end = Date.parse(coupon.expiresAt);
+    const tick = () => {
+      const left = Math.max(0, end - (Date.now() + skew));
+      this.left.set(left);
+      if (!left) clearInterval(this.countdownTimer);
+    };
+    clearInterval(this.countdownTimer);
+    tick();
+    this.countdownTimer = setInterval(tick, 1000);
   }
 
   private loadGames() {
@@ -855,6 +975,7 @@ export class DemoPage implements OnInit, OnDestroy {
     clearInterval(this.cooldownTimer);
     clearInterval(this.countdownTimer);
     clearTimeout(this.copiedTimer);
+    clearTimeout(this.statusTimer);
     this.world?.dispose();
     this.world = undefined;
   }

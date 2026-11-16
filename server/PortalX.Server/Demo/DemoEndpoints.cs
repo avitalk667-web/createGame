@@ -58,14 +58,22 @@ public static class DemoEndpoints
             return reply == null ? Results.Json(NoSession, statusCode: 404) : Results.Ok(reply);
         }).RequireRateLimiting("demo-code");
 
-        // the personal coupon of a finished taste: issued here once per session (only after the server recorded the right
-        // code), and the same coupon on every later call (a refresh, a second tab)
-        demo.MapPost("/coupon", async (HttpRequest http, DemoCouponService s) =>
+        // the personal coupon of a finished taste: what the finish screen may show now (never issues, never sends; the code
+        // only once its email was accepted by the mail provider)
+        demo.MapPost("/coupon/status", async (HttpRequest http, DemoCouponService s) =>
         {
-            var (coupon, reason) = await s.IssueAsync(http.Cookies[DemoService.Cookie], DateTime.UtcNow);
             NoStore(http);
-            return Results.Ok(new { coupon, reason });
+            return Results.Ok(await s.StatusAsync(http.Cookies[DemoService.Cookie], DateTime.UtcNow));
         }).RequireRateLimiting("demo");
+        // "שלחו לי את הקופון": the address and the explicit consent, or a retry to the same address. One coupon per finished
+        // session, issued only with the consent; the limits are those of the challenge's coupon emails
+        demo.MapPost("/coupon", async (TasteCouponRequest? req, HttpRequest http, DemoCouponService s, PortalX.Server.Mail.SiteOptions site) =>
+        {
+            NoStore(http);
+            var (reply, status, code, message) = await s.SendAsync(http.Cookies[DemoService.Cookie], req ?? new TasteCouponRequest(null, null, null),
+                PortalX.Server.Mail.MailEndpoints.SiteUrl(site, http), DateTime.UtcNow);
+            return reply != null ? Results.Ok(reply) : Results.Json(new ApiError(code!, message!), statusCode: status);
+        }).RequireRateLimiting("challenge-issue");
 
         // the steps around the room that only the browser sees (an impression, a click, the offer, leaving); also sent with
         // navigator.sendBeacon while the page closes, so it always answers 204 and never fails the page

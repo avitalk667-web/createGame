@@ -32,6 +32,18 @@ export interface TasteCoupon {
   productIds: string[];
 }
 
+/**
+ * What the finish screen may show about the coupon. The code (coupon) comes only in state "sent", after the mail provider
+ * accepted the email; never before.
+ */
+export interface TasteCouponReply {
+  state: 'no-session' | 'not-completed' | 'inactive' | 'limit' | 'form' | 'sending' | 'sent' | 'failed';
+  coupon?: TasteCoupon | null;
+  email?: string | null;
+  message?: string | null;
+  discountPercent?: number | null;
+}
+
 export type DemoDevice = 'desktop' | 'mobile' | 'tablet';
 
 /** What kind of device this is, for the numbers only (the room adapts by its own quality setting). */
@@ -110,9 +122,14 @@ export class DemoApi {
     await this.request<unknown>('POST', '/api/taste/ref', { ref: code }).catch(() => {});
   }
 
-  /** The coupon of this browser's finished session: issued once by the server, the same one on every later call. */
-  coupon() {
-    return this.request<{ coupon: TasteCoupon | null; reason: string | null }>('POST', '/api/taste/coupon');
+  /** What the finish screen may show now (never issues or sends anything). */
+  couponStatus() {
+    return this.request<TasteCouponReply>('POST', '/api/taste/coupon/status');
+  }
+
+  /** "שלחו לי את הקופון": the address and the explicit consent (or a retry to the same address); the server emails the coupon. */
+  sendCoupon(body: { email?: string; marketingConsent?: boolean; retry?: boolean }) {
+    return this.request<TasteCouponReply>('POST', '/api/taste/coupon', body);
   }
 
   code(code: string) {

@@ -57,6 +57,7 @@ public sealed class ChallengeService(
     public const string ConsentVersion = "2026-11-challenge-v1";
     public const string ConsentText = "אני מסכים/ה לקבל מ-PORTAL X מיילים שיווקיים ועדכונים על משחקים חדשים, הטבות ומבצעים. ההסכמה אינה תנאי לקבלת הקופון, וניתן לבטל אותה בכל עת.";
     public const int MaxEmailAttempts = 8;
+    public const string TasteSubject = "פתחתם את שער הפורטל! קופון ההנחה שלכם מחכה לכם";
     public static readonly TimeSpan ResendWait = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan StaleSending = TimeSpan.FromMinutes(2);
 
@@ -339,10 +340,15 @@ public sealed class ChallengeService(
         else
         {
             var consent = await db.MarketingConsents.AsNoTracking().FirstOrDefaultAsync(m => m.Email == coupon.Email && m.Status == ConsentStatus.Active);
+            var taste = campaign.Kind == CampaignKinds.Taste;
             var model = new ChallengeEmailModel(coupon.Code, coupon.Value, coupon.EndsAt!.Value,
                 (int)Math.Round((coupon.EndsAt.Value - (coupon.StartsAt ?? coupon.CreatedAt)).TotalDays), campaign.MinimumScore - 1,
-                site.SiteUrl ?? siteUrl, site.ContactEmail, consent == null ? null : await links.UrlAsync(consent, site.SiteUrl ?? siteUrl));
-            var message = new EmailMessage(coupon.Email!, ChallengeEmailTemplate.Subject, ChallengeEmailTemplate.Html(model), ChallengeEmailTemplate.Text(model), model.UnsubscribeUrl);
+                site.SiteUrl ?? siteUrl, site.ContactEmail, consent == null ? null : await links.UrlAsync(consent, site.SiteUrl ?? siteUrl),
+                // the coupon of a finished taste ("טעימה מהפורטל") says why it came; the challenge's email is unchanged
+                SubjectLine: taste ? TasteSubject : null,
+                Lead: taste ? "הצלחתם לפתור את החידה ולפתוח את שער הפורטל ב„טעימה מהפורטל”." : null,
+                Reward: taste ? "כמתנה מיוחדת – הנחה על רכישת משחק מלא ב-PORTAL X!" : null);
+            var message = new EmailMessage(coupon.Email!, ChallengeEmailTemplate.SubjectOf(model), ChallengeEmailTemplate.Html(model), ChallengeEmailTemplate.Text(model), model.UnsubscribeUrl);
             for (var i = 0; i < 2; i++)
             {
                 attempts++;
@@ -533,7 +539,8 @@ public sealed class ChallengeService(
     public sealed record AdminCouponRow(
         Guid Id, string Code, string? Email, int? Score, DateTime IssuedAt, DateTime? ExpiresAt, string Status, string? EmailStatus,
         long? OrderNumber, string? PurchasedGame, DateTime? RedeemedAt, decimal? Discount, decimal? Paid, DateTime? CancelledAt, bool MarketingConsent,
-        string Source = CampaignKinds.Challenge, decimal Percent = 0, List<string>? Games = null, string? Customer = null);
+        string Source = CampaignKinds.Challenge, decimal Percent = 0, List<string>? Games = null, string? Customer = null,
+        DateTime? ConsentAt = null, DateTime? EmailSentAt = null);
 
     public async Task<List<AdminCouponRow>> CouponsAsync(ChallengeCouponFilter f)
     {
@@ -557,13 +564,18 @@ public sealed class ChallengeService(
         var names = await db.Products.AsNoTracking().ToDictionaryAsync(p => p.Id, p => p.Name);
         var consent = (await db.PlayerCouponEligibility.AsNoTracking().Where(e => e.CampaignId == c.Id && e.CouponId != null && e.MarketingConsent)
             .Select(e => e.CouponId!.Value).ToListAsync()).ToHashSet();
+        // a taste coupon's consent is kept on its session (the address typed and approved, and when)
+        var sessionIds = coupons.Where(k => k.DemoSessionId != null).Select(k => k.DemoSessionId!.Value).ToList();
+        var tasteConsent = await db.DemoSessions.AsNoTracking().Where(x => sessionIds.Contains(x.Id) && x.MarketingConsentAt != null)
+            .ToDictionaryAsync(x => x.Id, x => x.MarketingConsentAt);
         var rows = coupons.Select(k =>
         {
             var use = uses.FirstOrDefault(u => u.CouponId == k.Id);
+            var tasteAt = k.DemoSessionId is { } sid ? tasteConsent.GetValueOrDefault(sid) : null;
             return new AdminCouponRow(k.Id, k.Code, k.Email, k.FinalScore, k.CreatedAt, k.EndsAt, ChallengeRules.Status(k, use != null, now), k.EmailStatus,
-                use?.Number, use?.ProductName, use?.At, use?.Discount, use?.FinalPrice, k.CancelledAt, consent.Contains(k.Id),
+                use?.Number, use?.ProductName, use?.At, use?.Discount, use?.FinalPrice, k.CancelledAt, consent.Contains(k.Id) || tasteAt != null,
                 k.CampaignId == c.Id ? CampaignKinds.Challenge : CampaignKinds.Taste, k.Value,
-                k.Products.Select(p => names.GetValueOrDefault(p.ProductId, p.ProductId)).ToList(), k.Email ?? use?.Email);
+                k.Products.Select(p => names.GetValueOrDefault(p.ProductId, p.ProductId)).ToList(), k.Email ?? use?.Email, tasteAt, k.EmailSentAt);
         });
         if (f.Status != null) rows = rows.Where(r => r.Status == f.Status);
         return rows.ToList();
@@ -676,13 +688,13 @@ public sealed class ChallengeService(
         var sb = new StringBuilder("﻿");
         sb.AppendLine(string.Join(",", new[]
         {
-            "קוד קופון", "מקור", "אחוז הנחה", "משחקים זכאים", "מייל", "ניקוד", "תאריך הנפקה", "תאריך תפוגה", "סטטוס", "סטטוס מייל", "הסכמה לדיוור", "מספר הזמנה", "משחק שנרכש", "תאריך מימוש", "הנחה", "שולם", "תאריך ביטול",
+            "קוד קופון", "מקור", "אחוז הנחה", "משחקים זכאים", "מייל", "ניקוד", "תאריך הנפקה", "תאריך תפוגה", "סטטוס", "סטטוס מייל", "הסכמה לדיוור", "מספר הזמנה", "משחק שנרכש", "תאריך מימוש", "הנחה", "שולם", "תאריך ביטול", "מועד אישור דיוור", "מועד שליחת המייל",
         }.Select(Cell)));
         foreach (var r in rows)
             sb.AppendLine(string.Join(",", new object?[]
             {
                 r.Code, r.Source == CampaignKinds.Taste ? "סיום טעימה מהפורטל" : "אתגר 240", r.Percent, string.Join(" · ", r.Games ?? []), r.Customer, r.Score, Il(r.IssuedAt), Il(r.ExpiresAt), St(r.Status), r.EmailStatus, r.MarketingConsent ? "כן" : "לא", r.OrderNumber, r.PurchasedGame,
-                Il(r.RedeemedAt), r.Discount, r.Paid, Il(r.CancelledAt),
+                Il(r.RedeemedAt), r.Discount, r.Paid, Il(r.CancelledAt), Il(r.ConsentAt), Il(r.EmailSentAt),
             }.Select(Cell)));
         return Encoding.UTF8.GetBytes(sb.ToString());
     }

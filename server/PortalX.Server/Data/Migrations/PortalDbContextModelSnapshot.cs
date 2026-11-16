@@ -492,6 +492,14 @@ namespace PortalX.Server.Data.Migrations
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("ConsentEmail")
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)");
+
+                    b.Property<string>("ConsentVersion")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<DateTime?>("CooldownUntil")
                         .HasColumnType("timestamp with time zone");
 
@@ -515,6 +523,9 @@ namespace PortalX.Server.Data.Migrations
                         .HasColumnType("character varying(40)");
 
                     b.Property<DateTime>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("MarketingConsentAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("OfferViewedAt")

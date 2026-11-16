@@ -32,6 +32,7 @@ export interface ChallengeCouponRow {
   emailStatus?: string | null; orderNumber?: number | null; purchasedGame?: string | null; redeemedAt?: string | null;
   discount?: number | null; paid?: number | null; cancelledAt?: string | null; marketingConsent: boolean;
   source: string; percent: number; games?: string[] | null; customer?: string | null;
+  consentAt?: string | null; emailSentAt?: string | null;
 }
 
 export interface ChallengeCouponDetail {
@@ -51,7 +52,7 @@ export interface TasteCouponSettings {
   productIds: string[]; startedAt?: string | null; updatedAt: string;
 }
 export interface TasteCouponStatistics {
-  since: string; started: number; completed: number; issued: number; copied: number; productClicked: number; checkoutStarted: number;
+  since: string; started: number; completed: number; issued: number; leftEmail: number; consented: number; emailsSent: number; emailsFailed: number; copied: number; productClicked: number; checkoutStarted: number;
   redeemed: number; purchases: number; testRedemptions: number; cancelled: number; expired: number; active: number; remaining?: number | null;
   revenue: number; discounts: number; conversion: number;
   byGame: { productId: string; name: string; count: number; revenue: number }[];
@@ -132,3 +133,7 @@ export const ADMIN_CHALLENGE_STYLES = `
 
 export const COUPON_STATUS_LABEL: Record<string, string | undefined> = { active: 'פעיל', redeemed: 'מומש', expired: 'פג תוקף', cancelled: 'בוטל' };
 export const EMAIL_STATUS_LABEL: Record<string, string | undefined> = { pending: 'ממתין', sending: 'בשליחה', sent: 'נשלח', failed: 'נכשל', uncertain: 'לא ודאי' };
+/** The same statuses in the words of the taste coupons (a failed send waits for the visitor's "נסה שוב"). */
+export const TASTE_EMAIL_STATUS_LABEL: Record<string, string | undefined> = {
+  pending: 'ממתין לשליחה', sending: 'בשליחה', sent: 'נשלח בהצלחה', failed: 'השליחה נכשלה', uncertain: 'ממתין לניסיון חוזר',
+};

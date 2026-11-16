@@ -894,6 +894,13 @@ public class DemoSession
     /// <summary>Set only when the provider verified the payment of an order that started from this session.</summary>
     public DateTime? PurchasedAt { get; set; }
     public Guid? OrderId { get; set; }
+    /// <summary>
+    /// The explicit marketing consent given to get the coupon of the finished taste: the address typed and approved, when, and
+    /// the wording's version (the source is this session). Kept apart from the coupon; the mailing list itself is MarketingConsents.
+    /// </summary>
+    public string? ConsentEmail { get; set; }
+    public DateTime? MarketingConsentAt { get; set; }
+    public string? ConsentVersion { get; set; }
 }
 
 /// <summary>One step of the taste's funnel (demo_impression, demo_started, demo_completed, ...). Small and anonymous.</summary>

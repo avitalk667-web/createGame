@@ -3,8 +3,18 @@ using Microsoft.EntityFrameworkCore;
 using PortalX.Server.Challenge;
 using PortalX.Server.Data;
 using PortalX.Server.Domain;
+using PortalX.Server.Mail;
 
 namespace PortalX.Server.Demo;
+
+/// <summary>The coupon form of a finished taste: the address and the explicit consent, or a retry to the address already given.</summary>
+public sealed record TasteCouponRequest(string? Email, bool? MarketingConsent, bool? Retry);
+
+/// <summary>
+/// What the finish screen may show. Coupon is set only in state "sent": the code is never shown before the email provider
+/// confirmed the message. States: no-session, not-completed, inactive, limit, form, sending, sent, failed.
+/// </summary>
+public sealed record TasteCouponReply(string State, TasteCouponView? Coupon = null, string? Email = null, string? Message = null, decimal? DiscountPercent = null);
 
 public sealed record TasteCouponInput(bool? IsActive, decimal? DiscountPercentage, int? ValidityDays, int? MaxCoupons, List<string>? ProductIds);
 
@@ -20,7 +30,7 @@ public sealed record TasteCouponView(
 /// settings of its own — so the discount is priced and the use is taken only when a payment is confirmed. A refresh, a
 /// second tab or two requests at once get the same coupon (the session's coupon is unique in the database).
 /// </summary>
-public sealed class DemoCouponService(PortalDbContext db, DemoService demo)
+public sealed class DemoCouponService(PortalDbContext db, DemoService demo, ChallengeService challenge, ConsentRecorder consents)
 {
     public const string Name = "טעימה מהפורטל";
 
@@ -63,19 +73,142 @@ public sealed class DemoCouponService(PortalDbContext db, DemoService demo)
             (int)Math.Round((k.EndsAt.Value - issued).TotalDays), ChallengeRules.Status(k, redeemed, now), now, products);
     }
 
-    /// <summary>
-    /// The coupon of this browser's finished taste: the one already issued, or a new one. Null with a reason when there is
-    /// none: "no-session", "not-completed", "inactive" (switched off, paused or no games) or "limit" (the quota is used up).
-    /// </summary>
-    public async Task<(TasteCouponView? Coupon, string? Reason)> IssueAsync(string? token, DateTime now)
+    // ------------------------------------------------------------------ the visitor's side: the address, the consent, the email
+
+    public const string ConsentSource = "taste-demo";
+    public const string ConsentVersion = "2026-11-taste-v1";
+    public const string ConsentText = "אני מאשר/ת לקבל מיילים עם עדכונים, הטבות ומבצעים מ-PORTAL X. ניתן להסיר את ההרשמה בכל עת.";
+    public const string FailedMessage = "לא הצלחנו לשלוח את הקופון כרגע. אפשר לנסות שוב.";
+    public const string NoConsentMessage = "כדי לקבל את הקופון יש לאשר קבלת מיילים עם עדכונים והטבות.";
+    public const string EmailUsedMessage = "כתובת המייל הזו כבר קיבלה קופון טעימה. כל כתובת יכולה לקבל קופון אחד.";
+    public const string TooManyMessage = "ניסינו לשלוח כמה פעמים ולא הצלחנו. נסו שוב מאוחר יותר.";
+    private static readonly TimeSpan StaleSending = TimeSpan.FromMinutes(2);
+
+    private async Task<(DemoSession? Session, string? State)> SessionAsync(string? token, DateTime now)
     {
         var s = await demo.FindAsync(token, now);
         if (s == null) return (null, "no-session");
         if (s.CompletedAt == null) return (null, "not-completed");
+        return (s, null);
+    }
+
+    /// <summary>What the finish screen shows now (a refresh or a later visit). Never issues, never sends.</summary>
+    public async Task<TasteCouponReply> StatusAsync(string? token, DateTime now)
+    {
+        var (s, state) = await SessionAsync(token, now);
+        if (s == null) return new TasteCouponReply(state!);
+        var coupon = await db.Coupons.AsNoTracking().Include(k => k.Products).FirstOrDefaultAsync(k => k.DemoSessionId == s.Id);
+        if (coupon?.Email == null)
+        {
+            var c = await CampaignAsync();
+            if (!c.IsActive || c.IssuingPaused || c.Products.Count == 0) return new TasteCouponReply("inactive");
+            if (coupon == null && c.MaxCoupons > 0 && c.IssuedCouponsCount >= c.MaxCoupons) return new TasteCouponReply("limit");
+            return new TasteCouponReply("form", DiscountPercent: c.DiscountPercentage);
+        }
+        return await ReplyAsync(coupon, now);
+    }
+
+    /// <summary>The coupon as the screen may see it: the code only once the provider confirmed the email.</summary>
+    private async Task<TasteCouponReply> ReplyAsync(Coupon coupon, DateTime now, string? status = null)
+    {
+        var email = ChallengeRules.MaskEmail(coupon.Email ?? "");
+        return (status ?? coupon.EmailStatus) switch
+        {
+            "sent" => new TasteCouponReply("sent", await ViewAsync(coupon, now), email),
+            "sending" when status != null || coupon.EmailLastAttemptAt > now - StaleSending => new TasteCouponReply("sending", Email: email),
+            _ => new TasteCouponReply("failed", Email: email, Message: coupon.EmailAttempts >= ChallengeService.MaxEmailAttempts ? TooManyMessage : FailedMessage),
+        };
+    }
+
+    /// <summary>
+    /// "שלחו לי את הקופון": the server checks the address and the explicit consent, that this session finished the taste,
+    /// records the consent, issues this session's single coupon (or keeps the one it has) and emails it through the project's
+    /// mail service. The reply carries the code only when the provider accepted the message; on failure the same coupon
+    /// and the same address are kept for a retry ("נסה שוב" sends Retry), and no second coupon is ever made.
+    /// </summary>
+    public async Task<(TasteCouponReply? Reply, int Status, string? Code, string? Message)> SendAsync(string? token, TasteCouponRequest req, string siteUrl, DateTime now)
+    {
+        var (s, state) = await SessionAsync(token, now);
+        if (s == null) return (new TasteCouponReply(state!), 200, null, null);
+        var existing = await db.Coupons.AsNoTracking().FirstOrDefaultAsync(k => k.DemoSessionId == s.Id);
+        if (existing?.EmailStatus == "sent") return (await ReplyAsync(existing, now), 200, null, null);
+
+        string email;
+        if (req.Retry == true)
+        {
+            // the same address and the same coupon as before; the consent was recorded with them
+            if (existing?.Email == null || s.MarketingConsentAt == null) return (new TasteCouponReply("form"), 200, null, null);
+            email = existing.Email;
+        }
+        else
+        {
+            var normalized = ResultsEmailService.NormalizeEmail(req.Email);
+            if (normalized == null) return (null, 400, "bad-email", ResultsEmailService.BadEmailMessage);
+            if (req.MarketingConsent != true) return (null, 400, "no-consent", NoConsentMessage);
+            email = normalized;
+        }
+
+        var campaign = await CampaignAsync();
+        if (await db.Coupons.AnyAsync(k => k.CampaignId == campaign.Id && k.Email == email && k.DemoSessionId != s.Id))
+            return (null, 409, "email-used", EmailUsedMessage);
+        if (existing is { EmailStatus: "sending" } && existing.EmailLastAttemptAt > now - StaleSending)
+            return (new TasteCouponReply("sending", Email: ChallengeRules.MaskEmail(existing.Email ?? "")), 200, null, null);
+        if (existing != null && existing.EmailAttempts >= ChallengeService.MaxEmailAttempts)
+            return (await ReplyAsync(existing, now), 200, null, null);
+
+        // the consent first, on the server: this session's own record, and the mailing list (with its unsubscribe link)
+        if (req.Retry != true)
+        {
+            await db.DemoSessions.Where(x => x.Id == s.Id).ExecuteUpdateAsync(u => u
+                .SetProperty(x => x.ConsentEmail, email).SetProperty(x => x.MarketingConsentAt, now).SetProperty(x => x.ConsentVersion, ConsentVersion));
+            await consents.GrantAsync(email, ConsentSource, s.Id, ConsentVersion, ConsentText, now);
+        }
+
+        Coupon coupon;
+        if (existing == null)
+        {
+            var (issued, refused) = await IssueAsync(s, email, now);
+            if (issued == null) return refused == "email-used" ? (null, 409, "email-used", EmailUsedMessage) : (new TasteCouponReply(refused!), 200, null, null);
+            coupon = issued;
+        }
+        else
+        {
+            if (existing.Email != email)
+            {
+                // not sent yet and a corrected address: the same coupon goes to the new one
+                try
+                {
+                    await db.Coupons.Where(k => k.Id == existing.Id).ExecuteUpdateAsync(u => u.SetProperty(k => k.Email, email).SetProperty(k => k.UpdatedAt, now));
+                }
+                catch (DbUpdateException)
+                {
+                    return (null, 409, "email-used", EmailUsedMessage);
+                }
+            }
+            coupon = existing;
+        }
+
+        var sent = await challenge.SendEmailAsync(coupon.Id, "visitor", siteUrl);
+        var fresh = await db.Coupons.AsNoTracking().Include(k => k.Products).FirstAsync(k => k.Id == coupon.Id);
+        if (sent == "sent")
+            db.DemoEvents.Add(new DemoEvent { SessionId = s.Id, Type = "demo_coupon_sent", At = DateTime.UtcNow, Device = s.Device, Variant = s.Variant, ReferralLinkId = s.ReferralLinkId });
+        else
+            db.DemoEvents.Add(new DemoEvent { SessionId = s.Id, Type = "demo_coupon_send_failed", At = DateTime.UtcNow, Device = s.Device, Variant = s.Variant, ReferralLinkId = s.ReferralLinkId });
+        await db.SaveChangesAsync();
+        return (await ReplyAsync(fresh, DateTime.UtcNow, sent), 200, null, null);
+    }
+
+    /// <summary>
+    /// Issues this session's single coupon to the given address (only after the consent was recorded). Null with "inactive",
+    /// "limit" or "email-used" when it cannot be made. Two requests at once still make one coupon (the session's coupon is
+    /// unique in the database, and the campaign row is locked while the quota and the count move together).
+    /// </summary>
+    private async Task<(Coupon? Coupon, string? Refused)> IssueAsync(DemoSession s, string email, DateTime now)
+    {
         for (var attempt = 0; ; attempt++)
         {
-            var existing = await db.Coupons.AsNoTracking().Include(k => k.Products).FirstOrDefaultAsync(k => k.DemoSessionId == s.Id);
-            if (existing != null) return (await ViewAsync(existing, now), null);
+            var existing = await db.Coupons.AsNoTracking().FirstOrDefaultAsync(k => k.DemoSessionId == s.Id);
+            if (existing != null) return (existing, null);
             var campaign = await CampaignAsync();
             if (!campaign.IsActive || campaign.IssuingPaused || campaign.Products.Count == 0) return (null, "inactive");
             try
@@ -84,38 +217,39 @@ public sealed class DemoCouponService(PortalDbContext db, DemoService demo)
                 {
                     db.ChangeTracker.Clear();
                     await using var tx = await db.Database.BeginTransactionAsync();
-                    // the campaign's row lock: the quota and the count move together, one coupon at a time
                     await db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"CouponCampaigns\" WHERE \"Id\" = {campaign.Id} FOR UPDATE");
                     var c = await db.CouponCampaigns.AsNoTracking().Include(k => k.Products).FirstAsync(k => k.Id == campaign.Id);
-                    var again = await db.Coupons.AsNoTracking().Include(k => k.Products).FirstOrDefaultAsync(k => k.DemoSessionId == s.Id);
-                    if (again != null) { await tx.RollbackAsync(); return (await ViewAsync(again, now), (string?)null); }
-                    if (!c.IsActive || c.IssuingPaused || c.Products.Count == 0) { await tx.RollbackAsync(); return (null, "inactive"); }
+                    var again = await db.Coupons.AsNoTracking().FirstOrDefaultAsync(k => k.DemoSessionId == s.Id);
+                    if (again != null) { await tx.RollbackAsync(); return (again, (string?)null); }
+                    if (!c.IsActive || c.IssuingPaused || c.Products.Count == 0) { await tx.RollbackAsync(); return ((Coupon?)null, "inactive"); }
                     if (c.MaxCoupons > 0 && c.IssuedCouponsCount >= c.MaxCoupons) { await tx.RollbackAsync(); return (null, "limit"); }
+                    if (await db.Coupons.AnyAsync(k => k.CampaignId == c.Id && k.Email == email)) { await tx.RollbackAsync(); return (null, "email-used"); }
                     var id = Guid.NewGuid();
                     var coupon = new Coupon
                     {
                         Id = id, Code = ChallengeRules.NewCode(), Name = $"{Name} · קופון אישי", Kind = CouponKind.Percent, Value = c.DiscountPercentage,
                         StartsAt = now, EndsAt = ChallengeRules.ExpiresAt(now, c.ValidityDays), MaxRedemptions = 1, Active = true,
-                        CreatedAt = now, UpdatedAt = now, CampaignId = c.Id, DemoSessionId = s.Id,
+                        CreatedAt = now, UpdatedAt = now, CampaignId = c.Id, DemoSessionId = s.Id, Email = email, EmailStatus = "pending",
                         Products = c.Products.Select(p => new CouponProduct { CouponId = id, ProductId = p.ProductId }).ToList(),
                     };
                     db.Coupons.Add(coupon);
                     db.CouponEvents.Add(new CouponEvent
                     {
                         CouponId = id, Action = "issued", Actor = "system", At = now,
-                        DetailsJson = JsonSerializer.Serialize(new { source = CampaignKinds.Taste, discount = coupon.Value, validityDays = c.ValidityDays }),
+                        DetailsJson = JsonSerializer.Serialize(new { source = CampaignKinds.Taste, discount = coupon.Value, validityDays = c.ValidityDays, marketingConsent = true }),
                     });
                     db.DemoEvents.Add(new DemoEvent { SessionId = s.Id, Type = "demo_coupon_issued", At = now, Device = s.Device, Variant = s.Variant, ReferralLinkId = s.ReferralLinkId });
                     await db.SaveChangesAsync();
                     await db.CouponCampaigns.Where(k => k.Id == c.Id).ExecuteUpdateAsync(u => u
                         .SetProperty(k => k.IssuedCouponsCount, k => k.IssuedCouponsCount + 1).SetProperty(k => k.UpdatedAt, now));
                     await tx.CommitAsync();
-                    return (await ViewAsync(coupon, now), (string?)null);
+                    return (coupon, (string?)null);
                 });
             }
             catch (DbUpdateException) when (attempt < 2)
             {
-                // another request issued this session's coupon first (or, very rarely, the random code was taken): read again
+                // another request issued this session's coupon first, the address was taken at that moment, or (very
+                // rarely) the random code was taken: read again
                 db.ChangeTracker.Clear();
             }
         }
@@ -196,6 +330,11 @@ public sealed class DemoCouponService(PortalDbContext db, DemoService demo)
         var copied = await db.DemoEvents.AsNoTracking().Where(e => e.Type == "demo_coupon_copied" && e.At >= since && e.SessionId != null)
             .Select(e => e.SessionId).Distinct().CountAsync();
         var coupons = db.Coupons.AsNoTracking().Where(k => k.CampaignId == c.Id);
+        // the coupon form: who left an address, who gave the explicit consent, and what the mail provider accepted
+        var leftEmail = await sessions.CountAsync(s => s.ConsentEmail != null && s.MarketingConsentAt >= since);
+        var consented = await sessions.CountAsync(s => s.MarketingConsentAt >= since);
+        var emailsSent = await coupons.CountAsync(k => k.EmailStatus == "sent");
+        var emailsFailed = await coupons.CountAsync(k => k.EmailStatus == "failed" || k.EmailStatus == "uncertain");
         var cancelled = await coupons.CountAsync(k => k.CancelledAt != null);
         var uses = await (from r in db.CouponRedemptions.AsNoTracking()
                           join k in coupons on r.CouponId equals k.Id
@@ -209,7 +348,7 @@ public sealed class DemoCouponService(PortalDbContext db, DemoService demo)
         static double Pct(int part, int whole) => whole == 0 ? 0 : Math.Round(100.0 * part / whole, 1);
         return new
         {
-            since, started, completed, issued = c.IssuedCouponsCount, copied, productClicked, checkoutStarted = checkout,
+            since, started, completed, issued = c.IssuedCouponsCount, leftEmail, consented, emailsSent, emailsFailed, copied, productClicked, checkoutStarted = checkout,
             redeemed, purchases = real.Count, testRedemptions = uses.Count - real.Count, cancelled, expired,
             active = Math.Max(0, c.IssuedCouponsCount - redeemed - cancelled - expired),
             remaining = c.MaxCoupons == 0 ? (int?)null : Math.Max(0, c.MaxCoupons - c.IssuedCouponsCount),

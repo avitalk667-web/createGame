@@ -20,7 +20,7 @@ import { ADMIN_CHALLENGE_STYLES, AdminChallengeApi, ChallengeAdminView, TasteCou
           <span class="st" [attr.data-s]="v.campaign.isActive ? 'on' : 'off'">{{ v.campaign.isActive ? 'פעיל' : 'לא פעיל' }}</span>
         }
       </div>
-      <p class="muted small">מי שפותח את השער בטעימה החינמית מקבל קופון אישי לשימוש אחד, פעם אחת לכל טעימה. ההנפקה נעשית בשרת בלבד, אחרי שהשרת אישר את הקוד הנכון. שינוי ההגדרות חל על קופונים חדשים בלבד.</p>
+      <p class="muted small">מי שפותח את השער בטעימה החינמית יכול לקבל קופון אישי לשימוש אחד, פעם אחת לכל טעימה: אחרי שהזין מייל ואישר במפורש קבלת דיוור, השרת מנפיק את הקופון ושולח אותו במייל, והקוד מוצג באתר רק אחרי שספק המייל אישר את השליחה. שינוי ההגדרות חל על קופונים חדשים בלבד.</p>
       @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
       @if (view(); as v) {
         <form class="settings" (submit)="$event.preventDefault(); save()">
@@ -47,6 +47,8 @@ import { ADMIN_CHALLENGE_STYLES, AdminChallengeApi, ChallengeAdminView, TasteCou
         <div class="cards">
           <div class="card stat"><span>התחילו טעימה</span><b>{{ s.started | number }}</b></div>
           <div class="card stat"><span>השלימו את הטעימה</span><b>{{ s.completed | number }}</b></div>
+          <div class="card stat"><span>השאירו מייל</span><b>{{ s.leftEmail | number }}</b><small>אישרו דיוור: {{ s.consented | number }}</small></div>
+          <div class="card stat"><span>קופונים שנשלחו בהצלחה</span><b>{{ s.emailsSent | number }}</b><small>שליחות שנכשלו: {{ s.emailsFailed | number }}</small></div>
           <div class="card stat"><span>קופונים שהונפקו</span><b>{{ s.issued | number }}</b>
             <small>פעילים {{ s.active | number }} · פגי תוקף {{ s.expired | number }} · בוטלו {{ s.cancelled | number }}@if (s.remaining !== null && s.remaining !== undefined) { · נותרו {{ s.remaining | number }} }</small></div>
           <div class="card stat"><span>העתיקו את הקוד</span><b>{{ s.copied | number }}</b></div>

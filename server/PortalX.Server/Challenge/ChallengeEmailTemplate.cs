@@ -7,7 +7,7 @@ namespace PortalX.Server.Challenge;
 /// <summary>What the coupon email says; every value comes from the stored coupon and campaign.</summary>
 public sealed record ChallengeEmailModel(
     string Code, decimal DiscountPercent, DateTime ExpiresAtUtc, int ValidityDays, int ScoreAbove, string SiteUrl, string ContactEmail,
-    string? UnsubscribeUrl);
+    string? UnsubscribeUrl, string? SubjectLine = null, string? Lead = null, string? Reward = null);
 
 /// <summary>
 /// The personal coupon email (a service email: it carries the coupon the player asked for). Table layout, inline styles,
@@ -25,6 +25,11 @@ public static class ChallengeEmailTemplate
 
     public const string Subject = "הצלחתם באתגר PORTAL X! הקופון שלכם מחכה לכם!";
 
+    /// <summary>The subject of this email: the challenge's, unless the model brings its own (the coupon of a finished taste).</summary>
+    public static string SubjectOf(ChallengeEmailModel m) => m.SubjectLine ?? Subject;
+    private static string LeadOf(ChallengeEmailModel m) => m.Lead ?? $"הצלחתם לצבור יותר מ-{m.ScoreAbove} נקודות במשחק החינמי של PORTAL X.";
+    private static string RewardOf(ChallengeEmailModel m) => m.Reward ?? "הגעתם להישג מיוחד וקיבלתם הטבה!";
+
     private static string Pct(decimal v) => v.ToString("0.##", CultureInfo.InvariantCulture) + "%";
 
     /// <summary>The link that opens the games; the site keeps the code for this visit and fills it in on the game page.</summary>
@@ -40,7 +45,7 @@ public static class ChallengeEmailTemplate
 <html lang="he" dir="rtl">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark">
-<title>{E(Subject)}</title>
+<title>{E(SubjectOf(m))}</title>
 {MobileCss}
 </head>
 <body style="margin:0;padding:0;background:{Navy};" dir="rtl">
@@ -50,8 +55,8 @@ public static class ChallengeEmailTemplate
 <tr><td align="center" style="padding:8px 0 18px;font-family:{Font};font-size:30px;font-weight:bold;letter-spacing:4px;color:{GoldLight};" dir="ltr">PORTAL X</td></tr>
 <tr><td class="px" style="background:{Paper};border-radius:16px;border-top:4px solid {Gold};padding:28px 32px;font-family:{Font};color:{Ink};text-align:right;" dir="rtl">
   <h1 style="margin:0 0 10px;font-size:28px;line-height:1.3;color:{Navy};">כל הכבוד!</h1>
-  <p style="margin:0 0 8px;font-size:17px;line-height:1.6;">הצלחתם לצבור יותר מ-{m.ScoreAbove} נקודות במשחק החינמי של PORTAL X.</p>
-  <p style="margin:0 0 18px;font-size:17px;line-height:1.6;">הגעתם להישג מיוחד וקיבלתם הטבה!</p>
+  <p style="margin:0 0 8px;font-size:17px;line-height:1.6;">{E(LeadOf(m))}</p>
+  <p style="margin:0 0 18px;font-size:17px;line-height:1.6;">{E(RewardOf(m))}</p>
   <p style="margin:0 0 6px;font-size:15px;font-weight:bold;color:{Navy};">קוד הקופון האישי שלכם:</p>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px;"><tr><td align="center" style="background:{Navy};border:2px dashed {Gold};border-radius:14px;padding:18px 10px;font-family:'Courier New',monospace;font-size:32px;font-weight:bold;letter-spacing:3px;color:#ffffff;" dir="ltr">{E(m.Code)}</td></tr></table>
   <p style="margin:0 0 14px;font-size:20px;font-weight:bold;color:#7a5a12;text-align:center;">{Pct(m.DiscountPercent)} הנחה על רכישת אחד ממשחקי PORTAL X</p>
@@ -87,8 +92,8 @@ public static class ChallengeEmailTemplate
         var t = new StringBuilder();
         t.AppendLine("כל הכבוד!");
         t.AppendLine();
-        t.AppendLine($"הצלחתם לצבור יותר מ-{m.ScoreAbove} נקודות במשחק החינמי של PORTAL X.");
-        t.AppendLine("הגעתם להישג מיוחד וקיבלתם הטבה!");
+        t.AppendLine(LeadOf(m));
+        t.AppendLine(RewardOf(m));
         t.AppendLine();
         t.AppendLine("קוד הקופון האישי שלכם:");
         t.AppendLine(m.Code);
