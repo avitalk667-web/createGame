@@ -8,6 +8,7 @@ import { SettingsService } from '../core/settings.service';
 import { JoystickComponent } from '../ui/joystick.component';
 import { DEMO_ITEMS, DEMO_SPOTS, DemoSpot, DemoSpotId } from './demo-content';
 import { DemoApi, DemoState, demoDevice, demoTrack } from './demo.api';
+import { DemoGateSceneComponent } from './demo-gate-scene.component';
 import { DemoInspectComponent } from './demo-inspect.component';
 import { DemoKeypadComponent, KeypadStatus } from './demo-keypad.component';
 import { DemoWorld } from './demo-world';
@@ -24,25 +25,51 @@ type ItemId = (typeof DEMO_ITEMS)[number];
 @Component({
   selector: 'px-demo-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, JoystickComponent, DemoInspectComponent, DemoKeypadComponent],
+  imports: [RouterLink, JoystickComponent, DemoGateSceneComponent, DemoInspectComponent, DemoKeypadComponent],
   template: `
     <div class="stage" [class.hidden]="phase() === 'gate'"><canvas #canvas aria-label="החדר הנעול בתלת־ממד"></canvas></div>
 
     @switch (phase()) {
       @case ('gate') {
         <section class="gate" aria-labelledby="gate-title">
-          <div class="gate-glow" aria-hidden="true"></div>
-          <div class="gate-card">
-            <p class="kicker">טעימה מהפורטל</p>
-            <h1 id="gate-title" class="gold-title">הפורטל נפתח בפניכם...</h1>
-            <p class="lead">אתם עומדים להיכנס לחדר מסתורי. הדלת מאחוריכם ננעלה, ורק מי שיצליח לחשוף את הסוד יוכל לצאת.</p>
-            @if (resume(); as r) {
-              <p class="resume">{{ r.completed ? 'כבר פתחתם את השער בטעימה הזו.' : 'ממשיכים מאיפה שהפסקתם: ' + r.inspected.length + ' מתוך 4 סימנים נמצאו.' }}</p>
-            }
-            <button class="btn primary enter" (click)="enter()">{{ resume()?.completed ? 'חזרה לחדר הפתוח' : resume() ? 'המשך בחדר' : 'כניסה לחדר' }}</button>
-            <p class="muted small">טעימה חינמית · כ־3–5 דקות · ללא הרשמה</p>
+          <px-demo-gate-scene />
+          <div class="gate-scroll">
+            <div class="gate-card">
+              <p class="g-logo">PORTAL <span>X</span></p>
+              <p class="g-badge"><span>טעימה מהפורטל</span></p>
+              <h1 id="gate-title" class="g-title">הפורטל נפתח בפניכם...</h1>
+              <svg class="g-swoosh" viewBox="0 0 600 44" aria-hidden="true">
+                <defs>
+                  <linearGradient id="g-swoosh-gold" x1="0" x2="1">
+                    <stop offset="0" stop-color="#f0c060" stop-opacity="0" /><stop offset=".25" stop-color="#f6cf6a" />
+                    <stop offset=".5" stop-color="#fff6d6" /><stop offset=".75" stop-color="#f6cf6a" /><stop offset="1" stop-color="#f0c060" stop-opacity="0" />
+                  </linearGradient>
+                  <radialGradient id="g-swoosh-glow" r=".5"><stop offset="0" stop-color="#fff2c0" stop-opacity=".9" /><stop offset="1" stop-color="#ffd37a" stop-opacity="0" /></radialGradient>
+                </defs>
+                <path class="sw-blue" d="M60 30 C200 4 400 4 560 22" />
+                <path class="sw-line" d="M20 30 C170 8 430 8 580 26" />
+                <path class="sw-spark" d="M20 30 C170 8 430 8 580 26" />
+                <ellipse cx="300" cy="14" rx="70" ry="9" fill="url(#g-swoosh-glow)" />
+              </svg>
+              <p class="g-lead">אתם עומדים להיכנס לחדר מסתורי.<br class="wide-br" /> הדלת מאחוריכם ננעלה, ורק מי שיצליח לחשוף את הסוד יוכל לצאת.</p>
+              @if (resume(); as r) {
+                <p class="g-badge g-status"><span>{{ r.completed ? 'כבר פתחתם את השער בטעימה הזו.' : 'ממשיכים מאיפה שהפסקתם: ' + r.inspected.length + ' מתוך 4 סימנים נמצאו.' }}</span></p>
+              }
+              <div class="g-cta">
+                <button type="button" class="enter" (click)="enter()">
+                  <span class="label">{{ resume()?.completed ? 'חזרה לחדר הפתוח' : resume() ? 'המשך בחדר' : 'כניסה לחדר' }}</span>
+                  <svg class="chev" viewBox="0 0 28 24" aria-hidden="true"><path d="M13 4 L5 12 L13 20 M23 4 L15 12 L23 20" /></svg>
+                  <span class="shine" aria-hidden="true"></span>
+                </button>
+              </div>
+              <ul class="g-facts">
+                <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12M6 21h12M7 3c0 5 10 5 10 9s-10 4-10 9M17 3c0 5-10 5-10 9s10 4 10 9" /></svg>טעימה חינמית</li>
+                <li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3.5 2.5" /></svg>כ־3–5 דקות</li>
+                <li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" /><circle cx="12" cy="9.5" r="3" /><path d="M6.8 17.6c1.4-2.1 3.1-3 5.2-3s3.8.9 5.2 3M5.3 5.3l13.4 13.4" /></svg>ללא הרשמה</li>
+              </ul>
+              <a routerLink="/" class="g-home">חזרה לדף הבית</a>
+            </div>
           </div>
-          <a routerLink="/" class="home-link">חזרה לדף הבית</a>
         </section>
       }
       @case ('loading') {
@@ -203,19 +230,116 @@ type ItemId = (typeof DEMO_ITEMS)[number];
     .stage { position:absolute; inset:0; } .stage.hidden { visibility:hidden; }
     canvas { width:100%; height:100%; display:block; outline:none; touch-action:none; cursor:grab; }
 
-    .gate { position:absolute; inset:0; display:grid; place-items:center; padding:16px; text-align:center;
-      background: radial-gradient(ellipse at 50% 40%, #1b2a5c 0%, #0a1026 55%, #04060f 100%); }
-    .gate-glow { position:absolute; width:min(70vw, 520px); aspect-ratio: 3/4; border-radius: 50% 50% 8px 8px / 40% 40% 8px 8px;
-      background: radial-gradient(ellipse at 50% 55%, rgba(170,210,255,.55), rgba(60,110,220,.25) 45%, transparent 70%);
-      filter: blur(6px); animation: breathe 5s ease-in-out infinite; }
-    @keyframes breathe { 50% { transform: scale(1.05); opacity:.8; } }
-    .gate-card { position:relative; max-width:560px; }
+    /* the opening screen: the scenery (px-demo-gate-scene) behind, the words and the way in on top, all real text */
+    .gate { position:absolute; inset:0; overflow:hidden; background:#050816; }
+    .gate-scroll { position:absolute; inset:0; z-index:4; overflow-y:auto; overflow-x:hidden; display:grid; place-items:center;
+      --g-side: calc(clamp(0px, calc(50vw - 600px), 150px) + clamp(22px, 8vw, 150px));
+      padding: clamp(46px, 7vh, 64px) calc(var(--g-side) + 14px) max(18px, env(safe-area-inset-bottom)); }
+    .gate-card { width:min(820px, 100%); display:flex; flex-direction:column; align-items:center; text-align:center; }
+
+    .g-logo { margin:0 0 clamp(.7rem, 2.2vh, 1.3rem); font-family: var(--font-title); font-weight:800; letter-spacing:.06em; line-height:1;
+      font-size: clamp(1.6rem, min(3.6vw, 4.6vh), 2.6rem); direction:ltr;
+      background: linear-gradient(180deg, #fff6d2 8%, #f2cd6c 50%, #b07b22 92%); -webkit-background-clip:text; background-clip:text; color:transparent;
+      filter: drop-shadow(0 2px 0 rgba(70,44,8,.9)) drop-shadow(0 0 14px rgba(255,205,110,.45)); }
+    .g-logo span { font-size:1.28em; }
+
+    /* the framed gold plaques: an elongated hexagon with a gold rim and small diamonds */
+    .g-badge { --cut: 18px; margin:0; padding:2px; display:inline-block;
+      background: linear-gradient(180deg, #fff0b8, #c08f2c 50%, #f5d27a);
+      clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0, 100% 50%, calc(100% - var(--cut)) 100%, var(--cut) 100%, 0 50%);
+      filter: drop-shadow(0 0 10px rgba(255,200,100,.25)); }
+    .g-badge > span { position:relative; display:block; padding: .5em 3.1em; font-weight:800; color:#f7d98c;
+      font-size: clamp(1.02rem, min(2.3vw, 2.7vh), 1.6rem); background: linear-gradient(180deg, #17245a, #0a1233);
+      clip-path: polygon(calc(var(--cut) - 1px) 0, calc(100% - var(--cut) + 1px) 0, 100% 50%, calc(100% - var(--cut) + 1px) 100%, calc(var(--cut) - 1px) 100%, 0 50%); }
+    .g-badge > span::before, .g-badge > span::after { content:''; position:absolute; top:50%; width:8px; height:8px; margin-top:-4px;
+      background: linear-gradient(135deg, #fff1c0, #d4a23e); transform: rotate(45deg); }
+    .g-badge > span::before { right: 1.5em; } .g-badge > span::after { left: 1.5em; }
+
+    .g-title { margin: clamp(.9rem, 3vh, 1.6rem) 0 0; font-family: var(--font-title); font-weight:900; line-height:1.12;
+      font-size: clamp(2.2rem, min(7.2vw, 9.4vh), 5.6rem);
+      background: linear-gradient(180deg, #fffbe6 0%, #ffe08a 34%, #f1b740 62%, #b97a1c 100%); -webkit-background-clip:text; background-clip:text; color:transparent;
+      filter: drop-shadow(0 3px 0 #6d4810) drop-shadow(0 6px 6px rgba(0,0,0,.55)) drop-shadow(0 0 22px rgba(255,196,90,.38));
+      animation: g-appear 1.3s cubic-bezier(.2,.7,.2,1) .15s both; }
+    @keyframes g-appear { from { opacity:0; transform: translateY(14px) scale(.96); letter-spacing:.08em; } }
+
+    /* the line of light under the title: it draws itself, then a spark keeps running along it */
+    .g-swoosh { width: min(600px, 96%); height:auto; max-height: 5.4vh; margin: .1rem 0 clamp(.6rem, 2vh, 1rem); overflow:visible; }
+    .g-swoosh path { fill:none; stroke-linecap:round; }
+    .sw-line { stroke: url(#g-swoosh-gold); stroke-width:2.6; stroke-dasharray:620; animation: g-draw 1.4s ease-out .7s both; }
+    .sw-blue { stroke: rgba(120,180,255,.55); stroke-width:1.4; stroke-dasharray:620; animation: g-draw 1.6s ease-out .9s both; }
+    .sw-spark { stroke:#fffbe8; stroke-width:3.6; stroke-dasharray: 46 900; stroke-dashoffset: 46; opacity:0;
+      filter: drop-shadow(0 0 4px #ffe6a0); animation: g-spark 4.5s ease-in-out 2.1s infinite both; }
+    @keyframes g-draw { from { stroke-dashoffset:620; } to { stroke-dashoffset:0; } }
+    @keyframes g-spark { 0% { stroke-dashoffset:46; opacity:0; } 8% { opacity:.95; } 55% { stroke-dashoffset:-600; opacity:.9; } 60%, 100% { stroke-dashoffset:-600; opacity:0; } }
+
+    .g-lead { margin: 0 0 clamp(.8rem, 2.6vh, 1.6rem); max-width: 34ch; text-wrap: pretty; color:#f6f2ff; line-height:1.75; font-weight:500;
+      font-size: clamp(1.06rem, min(2.4vw, 3vh), 1.8rem); text-shadow: 0 2px 10px rgba(0,0,0,.65); animation: g-fade 1s ease-out .55s both; }
+    @keyframes g-fade { from { opacity:0; transform: translateY(8px); } }
+
+    .g-status { --cut: 14px; margin-bottom: clamp(1rem, 3vh, 1.5rem); }
+    .g-status > span { font-size: clamp(.95rem, min(2vw, 2.4vh), 1.3rem); padding: .45em 2.8em; color:#f2d891; }
+
+    /* the main button: a gold hexagon with an inner rim, a soft glow behind it and a light that crosses it now and then */
+    .g-cta { position:relative; z-index:0; width: min(600px, 100%); margin-bottom: clamp(1.2rem, 3.4vh, 2rem); animation: g-fade 1s ease-out .8s both; }
+    .g-cta::before { content:''; position:absolute; inset:-22px -30px; z-index:-1; pointer-events:none;
+      background: radial-gradient(closest-side, rgba(255,196,80,.5), rgba(255,170,60,.18) 55%, transparent); animation: g-pulse 3.4s ease-in-out infinite; }
+    @keyframes g-pulse { 50% { opacity:.55; transform: scale(.96); } }
+    .enter { --cut: 34px; position:relative; width:100%; min-height: clamp(56px, 9vh, 84px); border:0; cursor:pointer; overflow:hidden;
+      display:flex; align-items:center; justify-content:center; gap:.7em; padding: .5em calc(var(--cut) + 1rem);
+      font: 800 clamp(1.25rem, min(3.2vw, 3.8vh), 1.95rem)/1.15 var(--font); color:#2a1604; -webkit-tap-highlight-color: transparent;
+      background: linear-gradient(180deg, #fff6cc 0%, #ffdc72 28%, #f3b93f 60%, #c98a1f 100%);
+      clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0, 100% 50%, calc(100% - var(--cut)) 100%, var(--cut) 100%, 0 50%);
+      transition: transform .18s ease, filter .18s ease; }
+    .enter::before, .enter::after { content:''; position:absolute; pointer-events:none;
+      clip-path: polygon(var(--c) 0, calc(100% - var(--c)) 0, 100% 50%, calc(100% - var(--c)) 100%, var(--c) 100%, 0 50%); }
+    .enter::before { --c: 31px; inset:5px; background: linear-gradient(180deg, rgba(255,255,255,.85), rgba(150,90,12,.75)); }
+    .enter::after { --c: 30px; inset:7px; background: linear-gradient(180deg, #ffefb0 0%, #ffd463 32%, #f0b23a 64%, #d0921f 100%); }
+    .enter .label, .enter .chev { position:relative; z-index:1; }
+    .enter .label { text-shadow: 0 1px 0 rgba(255,240,190,.7); }
+    .chev { width: 1.15em; height:auto; flex:none; fill:none; stroke:#2a1604; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; }
+    .shine { position:absolute; z-index:1; top:0; bottom:0; left:-30%; width:22%; pointer-events:none;
+      background: linear-gradient(100deg, transparent, rgba(255,255,255,.65), transparent); transform: skewX(-18deg);
+      animation: g-shine 5.5s ease-in-out 2.4s infinite both; }
+    @keyframes g-shine { 0% { transform: translateX(0) skewX(-18deg); } 22%, 100% { transform: translateX(800%) skewX(-18deg); } }
+    @media (hover: hover) { .enter:hover { transform: scale(1.03); filter: brightness(1.08) saturate(1.05); } }
+    .enter:active { transform: translateY(2px) scale(.985); filter: brightness(.94); }
+    .enter:active::after { background: linear-gradient(180deg, #f6d576 0%, #f0b73f 45%, #e8ab33 75%, #ffe59a 100%); }
+    .g-cta:has(.enter:focus-visible) { outline: 3px solid #fff; outline-offset: 6px; border-radius: 14px; }
+
+    .g-facts { list-style:none; margin: 0 0 clamp(.9rem, 2.6vh, 1.4rem); padding: .75rem 0; display:flex; justify-content:center; flex-wrap:wrap; row-gap:.4rem;
+      width: min(680px, 100%); color:#ebe6f6; font-size: clamp(.9rem, min(1.9vw, 2.3vh), 1.25rem);
+      border-bottom: 1px solid; border-image: linear-gradient(90deg, transparent, rgba(224,185,92,.55), transparent) 1; }
+    .g-facts li { display:flex; align-items:center; gap:.45em; padding: 0 1.2em; }
+    .g-facts li + li { border-inline-start: 1px solid rgba(224,185,92,.45); }
+    .g-facts svg { width:1.35em; height:1.35em; flex:none; fill:none; stroke: var(--gold); stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+
+    .g-home { color:#fff; font-size: clamp(1rem, min(2vw, 2.4vh), 1.3rem); text-decoration: underline; text-underline-offset: 5px; text-decoration-thickness: 1px;
+      transition: color .2s, text-decoration-color .2s; padding:.3em .5em; }
+    .g-home:hover { color: var(--gold-2); text-decoration-color: var(--gold); }
+
+    @media (max-width: 699px) {
+      .gate-scroll { --g-side: clamp(16px, 6vw, 40px); padding-inline: calc(var(--g-side) + 8px); }
+      .wide-br { display:none; }
+      .g-badge > span { padding-inline: 2.4em; }
+      .enter { --cut: 24px; } .enter::before { --c: 21px; } .enter::after { --c: 20px; }
+      .g-facts { flex-wrap:nowrap; font-size: clamp(.74rem, 3.5vw, .9rem); }
+      .g-facts li { padding: 0 .55em; gap:.3em; white-space:nowrap; }
+      .g-facts svg { width:1.15em; height:1.15em; }
+    }
+    /* short screens (a laptop, a phone on its side): tighter spacing so the whole gate fits without scrolling */
+    @media (max-height: 820px) and (min-width: 700px) {
+      .g-lead { max-width: 44ch; line-height:1.6; }
+      .g-facts { padding-block: .5rem; }
+    }
+    @media (max-width: 340px) { .g-facts li { padding: 0 .35em; } .g-facts svg { display:none; } }
+    @media (prefers-reduced-motion: reduce) {
+      .g-title, .g-lead, .g-cta, .sw-line, .sw-blue { animation:none; }
+      .sw-spark, .shine, .g-cta::before { animation:none; display:none; }
+      .enter { transition:none; }
+    }
+
     .kicker { color: var(--gold); letter-spacing:.12em; font-weight:700; margin:0 0 .4rem; }
-    h1 { font-family: var(--font-title); font-size: clamp(2rem, 7vw, 3.4rem); margin:0 0 1rem; }
     .lead { font-size: clamp(1.05rem, 3.6vw, 1.3rem); line-height:1.6; margin:0 0 1.6rem; }
-    .enter { font-size:1.25rem; padding:.9em 2.4em; }
-    .resume { color: var(--gold-2); margin: 0 0 .9rem; font-weight:700; }
-    .home-link { position:absolute; bottom: max(16px, env(safe-area-inset-bottom)); color: var(--muted); }
 
     .loading { position:absolute; inset:0; display:grid; place-content:center; gap:.8rem; text-align:center; padding:16px;
       background: radial-gradient(ellipse at center, #121c40, #04060f 75%); }
