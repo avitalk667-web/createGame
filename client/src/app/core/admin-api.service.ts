@@ -159,6 +159,31 @@ export interface DrawList {
   }[];
 }
 
+/** One group of the "טעימה מהפורטל" tab (sessions by the day they started). */
+export interface TasteGroup { key: string; started: number; completed: number; productClicked: number; purchased: number }
+export interface TasteSession {
+  id: string; startedAt: string; device: string; variant: string; inspected: number; hints: number; attempts: number; seconds: number | null;
+  offer: boolean; product: string | null; checkout: boolean; purchase: string | null; testPurchase: boolean; lastEvent: string; leftPage: boolean; referral: string | null;
+}
+/** The funnel of the free taste in a range of Israel days (GET /api/admin/taste). */
+export interface TasteStats {
+  range: { from: string; to: string; bucket: 'day' | 'week' | 'month' };
+  funnel: {
+    impressions: number; clicks: number; started: number; completed: number; offerViewed: number; productClicked: number;
+    checkoutStarted: number; purchased: number; testPurchases: number; revenue: number;
+  };
+  rates: { click: number; start: number; completion: number; offer: number; product: number; checkout: number; purchase: number; overall: number; hints: number; abandoned: number };
+  time: { averageSeconds: number | null; medianSeconds: number | null; averageAttempts: number | null; averageHints: number | null };
+  stops: { step: string; count: number }[];
+  leftPage: number;
+  devices: TasteGroup[];
+  variants: TasteGroup[];
+  referrals: { name: string; started: number; completed: number; purchased: number }[];
+  products: { productId: string; name: string; purchases: number; revenue: number }[];
+  series: { start: string; impressions: number; started: number; completed: number; purchased: number }[];
+  sessions: TasteSession[];
+}
+
 /** One chart group of the statistics: a day, a week from Sunday or a month (Israel time), by its first day. */
 export interface StatPoint {
   start: string; revenue: number; purchases: number; gamesOpened: number; gamesStarted: number;
@@ -224,6 +249,9 @@ export class AdminApiService {
   referralsCsvUrl(f: ReferralFilters) { return '/api/admin/referrals.csv' + mailingQuery(f); }
   statistics(from: string, to: string, bucket: string) {
     return this.request<Statistics>('GET', '/api/admin/statistics?' + new URLSearchParams({ from, to, bucket }).toString());
+  }
+  taste(from: string, to: string, bucket: string) {
+    return this.request<TasteStats>('GET', '/api/admin/taste?' + new URLSearchParams({ from, to, bucket }).toString());
   }
   draw() { return this.request<DrawList>('GET', '/api/admin/draw'); }
   referral(id: string) { return this.request<ReferralDetails>('GET', `/api/admin/referrals/${id}`); }

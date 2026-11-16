@@ -83,6 +83,9 @@ public static class AdminEndpoints
         // the statistics tab: sales, activity, games and personal links in a range of Israel days
         secured.MapGet("/statistics", async (HttpRequest r, StatisticsService s) => Results.Ok(await s.GetAsync(StatisticsFilter.Parse(r, DateTime.UtcNow))));
 
+        // "טעימה מהפורטל": the funnel of the free taste in the same range of Israel days
+        secured.MapGet("/taste", async (HttpRequest r, PortalX.Server.Demo.DemoAdmin s) => Results.Ok(await s.GetAsync(StatisticsFilter.Parse(r, DateTime.UtcNow))));
+
         secured.MapGet("/orders", async (HttpRequest r, AdminService s) => Results.Ok(await s.OrderRowsAsync(AdminFilter.Parse(r))));
 
         secured.MapGet("/orders.csv", async (HttpRequest r, HttpContext ctx, AdminService s) =>

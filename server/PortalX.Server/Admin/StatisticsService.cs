@@ -47,7 +47,7 @@ public sealed class StatisticsService(PortalDbContext db)
 
     public static DateTime ToIsrael(DateTime utc) => TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), Israel);
 
-    private static DateTime StartUtc(DateOnly day) =>
+    internal static DateTime StartUtc(DateOnly day) =>
         TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(day.ToDateTime(TimeOnly.MinValue), DateTimeKind.Unspecified), Israel);
 
     /// <summary>The first day of the chart group a moment falls in (Israel time): its day, its week from Sunday, or its month.</summary>
@@ -62,7 +62,7 @@ public sealed class StatisticsService(PortalDbContext db)
         };
     }
 
-    private static IEnumerable<DateOnly> Buckets(StatisticsFilter f)
+    internal static IEnumerable<DateOnly> Buckets(StatisticsFilter f)
     {
         var first = BucketOf(StartUtc(f.From).AddHours(12), f.Bucket);
         for (var d = first; d <= f.To; d = f.Bucket switch { "week" => d.AddDays(7), "month" => d.AddMonths(1), _ => d.AddDays(1) })

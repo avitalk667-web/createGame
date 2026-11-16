@@ -300,4 +300,49 @@ public class DemoTests(HubIntegrationTests.Factory factory)
         var other = await TestPurchase.CreateOrderAsync(plain, factory.Services);
         Assert.Null(await Db(db => db.Orders.Where(o => o.Id == other.OrderId).Select(o => o.DemoSessionId).FirstAsync()));
     }
+    // ------------------------------------------------------------------ stage F: the admin tab
+
+    private async Task<JsonElement> AdminTasteAsync(HttpClient admin)
+    {
+        var r = await admin.GetAsync("/api/admin/taste");
+        r.EnsureSuccessStatusCode();
+        return await r.Content.ReadFromJsonAsync<JsonElement>(Json);
+    }
+
+    [Fact]
+    public async Task The_admin_tab_counts_the_funnel_and_never_counts_a_test_payment_as_a_purchase()
+    {
+        Assert.Equal(HttpStatusCode.Unauthorized, (await factory.CreateClient().GetAsync("/api/admin/taste")).StatusCode);
+
+        var admin = factory.CreateClient();
+        (await admin.PostAsJsonAsync("/api/admin/login", new { username = AdminTests.Username, password = AdminTests.Password })).EnsureSuccessStatusCode();
+        admin.DefaultRequestHeaders.Add(PortalX.Server.Admin.AdminAuth.CsrfHeader, "1");
+        var before = (await AdminTasteAsync(admin)).GetProperty("funnel");
+
+        var quitter = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
+        var set = (await quitter.PostAsJsonAsync("/api/taste/start", new { device = "tablet" })).Headers.GetValues("Set-Cookie").First();
+        var token = set[(DemoService.Cookie.Length + 1)..set.IndexOf(';')];
+
+        var solver = Browser();
+        await StateOf(await solver.PostAsJsonAsync("/api/taste/start", new { }));
+        await Code(solver, "2741");
+        var order = await TestPurchase.CreateOrderAsync(solver, factory.Services);
+        (await TestPurchase.PayAsync(solver, order)).EnsureSuccessStatusCode();
+
+        var after = await AdminTasteAsync(admin);
+        var f = after.GetProperty("funnel");
+        int Delta(string k) => f.GetProperty(k).GetInt32() - before.GetProperty(k).GetInt32();
+        Assert.Equal(2, Delta("started"));
+        Assert.Equal(1, Delta("completed"));
+        Assert.Equal(1, Delta("checkoutStarted"));
+        // the sandbox is a test payment: shown apart, never a purchase or revenue
+        Assert.Equal(1, Delta("testPurchases"));
+        Assert.Equal(0, Delta("purchased"));
+        Assert.Equal(before.GetProperty("revenue").GetDecimal(), f.GetProperty("revenue").GetDecimal());
+        // nothing that could open a session leaves the server
+        Assert.DoesNotContain(token, after.GetRawText());
+        Assert.DoesNotContain(RoomServiceHash(token), after.GetRawText());
+    }
+
+    private static string RoomServiceHash(string token) => PortalX.Server.Game.RoomService.Hash(token);
 }
