@@ -58,6 +58,15 @@ public static class DemoEndpoints
             return reply == null ? Results.Json(NoSession, statusCode: 404) : Results.Ok(reply);
         }).RequireRateLimiting("demo-code");
 
+        // the personal coupon of a finished taste: issued here once per session (only after the server recorded the right
+        // code), and the same coupon on every later call (a refresh, a second tab)
+        demo.MapPost("/coupon", async (HttpRequest http, DemoCouponService s) =>
+        {
+            var (coupon, reason) = await s.IssueAsync(http.Cookies[DemoService.Cookie], DateTime.UtcNow);
+            NoStore(http);
+            return Results.Ok(new { coupon, reason });
+        }).RequireRateLimiting("demo");
+
         // the steps around the room that only the browser sees (an impression, a click, the offer, leaving); also sent with
         // navigator.sendBeacon while the page closes, so it always answers 204 and never fails the page
         demo.MapPost("/event", async (DemoEventRequest? req, HttpRequest http, DemoService s, ReferralService referrals) =>

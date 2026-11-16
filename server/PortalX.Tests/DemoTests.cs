@@ -301,6 +301,45 @@ public class DemoTests(HubIntegrationTests.Factory factory)
         var other = await TestPurchase.CreateOrderAsync(plain, factory.Services);
         Assert.Null(await Db(db => db.Orders.Where(o => o.Id == other.OrderId).Select(o => o.DemoSessionId).FirstAsync()));
     }
+    // ------------------------------------------------------------------ the coupon of a finished taste
+
+    private static async Task<JsonElement> CouponOf(HttpClient c)
+    {
+        var r = await c.PostAsync("/api/taste/coupon", null);
+        r.EnsureSuccessStatusCode();
+        return await r.Content.ReadFromJsonAsync<JsonElement>(Json);
+    }
+
+    [Fact]
+    public async Task The_coupon_is_issued_only_after_the_door_opened_and_only_once_per_session()
+    {
+        var c = Browser();
+        var since = DateTime.UtcNow.AddSeconds(-1);
+        await StateOf(await c.PostAsJsonAsync("/api/taste/start", new { }));
+        var id = await LatestSessionAsync(since);
+
+        var early = await CouponOf(c);
+        Assert.False(early.TryGetProperty("coupon", out var none) && none.ValueKind != JsonValueKind.Null);
+        Assert.Equal("not-completed", early.GetProperty("reason").GetString());
+
+        await Code(c, "2741");
+        // a refresh and a second tab asking together still get one coupon
+        var replies = await Task.WhenAll(Enumerable.Range(0, 5).Select(_ => CouponOf(c)));
+        var codes = replies.Select(r => r.GetProperty("coupon").GetProperty("code").GetString()).Distinct().ToList();
+        var code = Assert.Single(codes);
+        var coupon = await Db(db => db.Coupons.AsNoTracking().SingleAsync(k => k.DemoSessionId == id));
+        Assert.Equal(code, coupon.Code);
+        Assert.Equal(10m, coupon.Value);
+        Assert.Equal(1, coupon.MaxRedemptions);
+        Assert.Equal(CampaignKinds.Taste, await Db(db => db.CouponCampaigns.Where(k => k.Id == coupon.CampaignId).Select(k => k.Kind).SingleAsync()));
+        Assert.InRange((coupon.EndsAt!.Value - coupon.StartsAt!.Value).TotalDays, 7.9, 8.1);
+        Assert.Equal(1, await Db(db => db.DemoEvents.CountAsync(e => e.SessionId == id && e.Type == "demo_coupon_issued")));
+
+        // without the session's cookie there is nothing to issue
+        var stranger = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
+        Assert.Equal("no-session", (await CouponOf(stranger)).GetProperty("reason").GetString());
+    }
+
     // ------------------------------------------------------------------ stage F: the admin tab
 
     private async Task<JsonElement> AdminTasteAsync(HttpClient admin)

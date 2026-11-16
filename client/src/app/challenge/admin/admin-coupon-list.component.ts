@@ -2,7 +2,7 @@ import { DatePipe, DecimalPipe, JsonPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, output, signal } from '@angular/core';
 import { ApiError } from '../../core/api.service';
 import {
-  ADMIN_CHALLENGE_STYLES, AdminChallengeApi, COUPON_STATUS_LABEL, ChallengeCouponDetail, ChallengeCouponFilters, ChallengeCouponRow, EMAIL_STATUS_LABEL,
+  ADMIN_CHALLENGE_STYLES, AdminChallengeApi, COUPON_SOURCE_LABEL, COUPON_STATUS_LABEL, ChallengeCouponDetail, ChallengeCouponFilters, ChallengeCouponRow, EMAIL_STATUS_LABEL,
 } from './admin-challenge.api';
 
 const ACTION_LABEL: Record<string, string | undefined> = {
@@ -24,8 +24,15 @@ const ACTION_LABEL: Record<string, string | undefined> = {
           <option value="">הכול</option><option value="active">פעיל</option><option value="redeemed">מומש</option><option value="expired">פג תוקף</option><option value="cancelled">בוטל</option>
         </select>
       </label>
+      <label>מקור
+        <select [value]="f().source ?? ''" (change)="setF('source', $any($event.target).value)">
+          <option value="">הכול</option><option value="challenge">אתגר 240</option><option value="taste">סיום טעימה מהפורטל</option>
+        </select>
+      </label>
       <label>הונפק מתאריך <input type="date" [value]="f().from ?? ''" (change)="setF('from', $any($event.target).value)" /></label>
       <label>עד תאריך <input type="date" [value]="f().to ?? ''" (change)="setF('to', $any($event.target).value)" /></label>
+      <label>תפוגה מתאריך <input type="date" [value]="f().expFrom ?? ''" (change)="setF('expFrom', $any($event.target).value)" /></label>
+      <label>תפוגה עד <input type="date" [value]="f().expTo ?? ''" (change)="setF('expTo', $any($event.target).value)" /></label>
       <div class="row">
         <button class="btn small" type="submit">סינון</button>
         <a class="btn small ghost" [href]="csvUrl()" download>ייצוא לאקסל (CSV)</a>
@@ -35,20 +42,21 @@ const ACTION_LABEL: Record<string, string | undefined> = {
     <p class="muted small">{{ rows().length }} קופונים{{ loading() ? ' · טוען…' : '' }}</p>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>קוד קופון</th><th>מייל</th><th>ניקוד</th><th>תאריך הנפקה</th><th>תאריך תפוגה</th><th>סטטוס</th><th>משחק שנרכש</th><th>תאריך מימוש</th><th>מייל נשלח</th><th></th></tr></thead>
+        <thead><tr><th>קוד קופון</th><th>מקור</th><th>לקוח</th><th>ניקוד</th><th>הנחה</th><th>משחקים זכאים</th><th>תאריך הנפקה</th><th>תאריך תפוגה</th><th>סטטוס</th><th>רכישה</th><th>תאריך מימוש</th><th>מייל נשלח</th><th></th></tr></thead>
         <tbody>
           @for (r of rows(); track r.id) {
             <tr [class.sel]="detail()?.id === r.id">
-              <td dir="ltr" class="code">{{ r.code }}</td><td dir="ltr">{{ r.email }}</td><td>{{ r.score }}</td>
+              <td dir="ltr" class="code">{{ r.code }}</td><td>{{ source[r.source] ?? r.source }}</td><td dir="ltr">{{ r.customer ?? r.email ?? '—' }}</td><td>{{ r.score ?? '—' }}</td>
+              <td>{{ r.percent }}%</td><td class="games" [title]="(r.games ?? []).join(' · ')">{{ (r.games ?? []).join(' · ') || '—' }}</td>
               <td>{{ r.issuedAt | date: 'd.M.yy HH:mm' }}</td><td>{{ r.expiresAt | date: 'd.M.yy HH:mm' }}</td>
               <td><span class="st" [attr.data-s]="r.status">{{ label[r.status] }}</span></td>
               <td>{{ r.purchasedGame ?? '—' }}@if (r.orderNumber) { <span class="muted small"> · הזמנה {{ r.orderNumber }}</span> }</td>
               <td>{{ r.redeemedAt ? (r.redeemedAt | date: 'd.M.yy HH:mm') : '—' }}</td>
-              <td><span class="st" [attr.data-s]="r.emailStatus">{{ mail[r.emailStatus ?? ''] ?? '—' }}</span></td>
+              <td>@if (r.emailStatus) { <span class="st" [attr.data-s]="r.emailStatus">{{ mail[r.emailStatus] ?? r.emailStatus }}</span> } @else { — }</td>
               <td><button class="btn small ghost" type="button" (click)="open(r.id)">פרטים</button></td>
             </tr>
           } @empty {
-            <tr><td colspan="10" class="muted">אין קופונים להצגה.</td></tr>
+            <tr><td colspan="13" class="muted">אין קופונים להצגה.</td></tr>
           }
         </tbody>
       </table>
@@ -62,7 +70,7 @@ const ACTION_LABEL: Record<string, string | undefined> = {
           <button class="btn small ghost" type="button" (click)="detail.set(null)" aria-label="סגירת הפרטים">✕</button>
         </div>
         <dl>
-          <dt>מייל</dt><dd dir="ltr">{{ d.email }}</dd>
+          <dt>מייל</dt><dd dir="ltr">{{ d.email ?? '—' }}</dd>
           <dt>ניקוד במשחק</dt><dd>{{ d.score }}@if (d.roomCode) { <span class="muted small"> · משחק {{ d.roomCode }}</span> }</dd>
           <dt>הנחה</dt><dd>{{ d.discountPercent }}%</dd>
           <dt>משחקים</dt><dd>{{ d.games.join(' · ') }}</dd>
@@ -91,7 +99,7 @@ const ACTION_LABEL: Record<string, string | undefined> = {
         @if (actionError()) { <p class="error" role="alert">{{ actionError() }}</p> }
         <div class="row">
           @if (d.status === 'active') {
-            <button class="btn small" type="button" (click)="resend(d.id)" [disabled]="busy()">שליחת המייל שוב</button>
+            @if (d.email) { <button class="btn small" type="button" (click)="resend(d.id)" [disabled]="busy()">שליחת המייל שוב</button> }
             <button class="btn small danger" type="button" (click)="cancel(d.id)" [disabled]="busy()">ביטול הקופון</button>
           }
         </div>
@@ -101,6 +109,7 @@ const ACTION_LABEL: Record<string, string | undefined> = {
   styles: [ADMIN_CHALLENGE_STYLES + `
     .filters { display:flex; flex-wrap:wrap; gap:.6rem 1rem; align-items:flex-end; padding:.8rem 1rem; margin-bottom:.6rem; }
     td.code { font-family: ui-monospace, monospace; font-weight:700; }
+    td.games { max-width:220px; overflow:hidden; text-overflow:ellipsis; }
     tr.sel td { background: rgba(224,185,92,.08); }
     .detail { margin-top:1rem; }
     .bar { display:flex; justify-content:space-between; align-items:center; gap:1rem; }
@@ -116,6 +125,7 @@ export class AdminCouponListComponent implements OnInit {
   private api = inject(AdminChallengeApi);
   label = COUPON_STATUS_LABEL;
   mail = EMAIL_STATUS_LABEL;
+  source = COUPON_SOURCE_LABEL;
   actions = ACTION_LABEL;
   useLabel: Record<string, string | undefined> = { reserved: 'שמור לתשלום', redeemed: 'מומש', released: 'שוחרר (התשלום לא הושלם)', refunded: 'הוחזר' };
 
@@ -132,7 +142,7 @@ export class AdminCouponListComponent implements OnInit {
 
   setF(k: keyof ChallengeCouponFilters, v: string) {
     this.f.update((f) => ({ ...f, [k]: v.trim() || undefined }));
-    if (k === 'status') void this.load();
+    if (k === 'status' || k === 'source') void this.load();
   }
 
   async load() {

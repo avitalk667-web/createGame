@@ -537,6 +537,8 @@ public class Coupon
     public int EmailAttempts { get; set; }
     public string? EmailLastError { get; set; }
     public string? EmailMessageId { get; set; }
+    /// <summary>The finished free taste (/demo) that earned this personal coupon; at most one coupon per taste session.</summary>
+    public Guid? DemoSessionId { get; set; }
 }
 
 /// <summary>
@@ -544,9 +546,20 @@ public class Coupon
 /// one personal coupon. Every setting is the admin's; a change applies to new coupons only — an issued coupon keeps its
 /// own discount, games and expiry.
 /// </summary>
+/// <summary>Where a campaign's personal coupons come from. Each kind keeps its own settings and its own coupons.</summary>
+public static class CampaignKinds
+{
+    /// <summary>"Challenge 240": a high score in the free game.</summary>
+    public const string Challenge = "challenge-240";
+    /// <summary>Finishing the free taste of the portal (/demo).</summary>
+    public const string Taste = "taste";
+}
+
 public class CouponCampaign
 {
     public Guid Id { get; set; }
+    /// <summary>CampaignKinds: which path issues this campaign's coupons (existing rows are the challenge).</summary>
+    public string Kind { get; set; } = CampaignKinds.Challenge;
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
     /// <summary>The campaign is on: the entry popup and the progress are shown and coupons may be issued.</summary>

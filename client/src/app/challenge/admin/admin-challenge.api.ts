@@ -31,6 +31,7 @@ export interface ChallengeCouponRow {
   id: string; code: string; email?: string | null; score?: number | null; issuedAt: string; expiresAt?: string | null; status: ChallengeCouponStatus;
   emailStatus?: string | null; orderNumber?: number | null; purchasedGame?: string | null; redeemedAt?: string | null;
   discount?: number | null; paid?: number | null; cancelledAt?: string | null; marketingConsent: boolean;
+  source: string; percent: number; games?: string[] | null; customer?: string | null;
 }
 
 export interface ChallengeCouponDetail {
@@ -42,7 +43,23 @@ export interface ChallengeCouponDetail {
   events: { action: string; actor: string; at: string; details: Record<string, unknown> }[];
 }
 
-export interface ChallengeCouponFilters { search?: string; status?: string; from?: string; to?: string }
+export interface ChallengeCouponFilters { search?: string; status?: string; from?: string; to?: string; source?: string; expFrom?: string; expTo?: string }
+
+/** The coupons of a finished taste ("טעימה מהפורטל"): settings and the funnel, beside the challenge. */
+export interface TasteCouponSettings {
+  id: string; isActive: boolean; discountPercentage: number; validityDays: number; maxCoupons: number; issuedCouponsCount: number;
+  productIds: string[]; startedAt?: string | null; updatedAt: string;
+}
+export interface TasteCouponStatistics {
+  since: string; started: number; completed: number; issued: number; copied: number; productClicked: number; checkoutStarted: number;
+  redeemed: number; purchases: number; testRedemptions: number; cancelled: number; expired: number; active: number; remaining?: number | null;
+  revenue: number; discounts: number; conversion: number;
+  byGame: { productId: string; name: string; count: number; revenue: number }[];
+}
+export interface TasteCouponView { campaign: TasteCouponSettings; statistics: TasteCouponStatistics }
+export type TasteCouponUpdate = Pick<TasteCouponSettings, "isActive" | "discountPercentage" | "validityDays" | "maxCoupons" | "productIds">;
+
+export const COUPON_SOURCE_LABEL: Record<string, string | undefined> = { "challenge-240": "אתגר 240", taste: "סיום טעימה מהפורטל" };
 
 export type CampaignUpdate = Partial<Pick<ChallengeCampaignSettings,
   'name' | 'description' | 'minimumScore' | 'discountPercentage' | 'validityDays' | 'maxCoupons' | 'sourceProductId' | 'productIds' | 'showEntryPopup' | 'showProgress'>>;
@@ -83,6 +100,8 @@ export class AdminChallengeApi {
   csvUrl(f: ChallengeCouponFilters) { return '/api/admin/challenge/coupons.csv' + query(f); }
   coupon(id: string) { return this.request<ChallengeCouponDetail>('GET', `/api/admin/challenge/coupons/${id}`); }
   cancel(id: string) { return this.request<ChallengeCouponDetail>('POST', `/api/admin/challenge/coupons/${id}/cancel`); }
+  tasteView() { return this.request<TasteCouponView>('GET', '/api/admin/challenge/taste'); }
+  tasteUpdate(u: TasteCouponUpdate) { return this.request<TasteCouponView>('PUT', '/api/admin/challenge/taste', u); }
   resend(id: string) { return this.request<ChallengeCouponDetail>('POST', `/api/admin/challenge/coupons/${id}/resend`); }
 }
 

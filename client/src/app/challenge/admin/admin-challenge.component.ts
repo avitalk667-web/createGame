@@ -4,17 +4,19 @@ import { AdminChallengeApi, ChallengeAdminView } from './admin-challenge.api';
 import { AdminCouponCampaignComponent } from './admin-coupon-campaign.component';
 import { AdminCouponListComponent } from './admin-coupon-list.component';
 import { AdminCouponStatisticsComponent } from './admin-coupon-statistics.component';
+import { AdminTasteCouponsComponent } from './admin-taste-coupons.component';
 
-/** The admin tab "Challenge 240 and coupons": settings, figures and the personal coupons. */
+/** The admin tab "Challenge 240 and coupons": settings, figures, the coupons of a finished taste and all the personal coupons. */
 @Component({
   selector: 'px-admin-challenge',
-  imports: [AdminCouponCampaignComponent, AdminCouponStatisticsComponent, AdminCouponListComponent],
+  imports: [AdminCouponCampaignComponent, AdminCouponStatisticsComponent, AdminTasteCouponsComponent, AdminCouponListComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
     @if (view(); as v) {
       <px-admin-coupon-campaign [view]="v" (changed)="view.set($event)" />
       <px-admin-coupon-statistics [stats]="v.statistics" />
+      <px-admin-taste-coupons [catalog]="v" />
       <px-admin-coupon-list (changed)="reload()" />
     } @else if (!error()) {
       <p class="muted">טוען…</p>

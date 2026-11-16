@@ -19,6 +19,19 @@ export interface DemoCodeReply {
   alreadyCompleted: boolean;
 }
 
+/** The personal coupon of a finished taste, as the server issued it (the percent and the dates are never set here). */
+export interface TasteCoupon {
+  code: string;
+  discountPercent: number;
+  issuedAt: string;
+  expiresAt: string;
+  expiresAtText: string;
+  validityDays: number;
+  status: string;
+  serverNow: string;
+  productIds: string[];
+}
+
 export type DemoDevice = 'desktop' | 'mobile' | 'tablet';
 
 /** What kind of device this is, for the numbers only (the room adapts by its own quality setting). */
@@ -27,7 +40,8 @@ export function demoDevice(): DemoDevice {
   return Math.min(screen.width, screen.height) < 600 ? 'mobile' : 'tablet';
 }
 
-export type DemoReportedEvent = 'demo_impression' | 'demo_click' | 'demo_offer_viewed' | 'demo_product_clicked' | 'demo_abandoned';
+export type DemoReportedEvent = 'demo_impression' | 'demo_click' | 'demo_offer_viewed' | 'demo_product_clicked' | 'demo_abandoned'
+  | 'demo_coupon_copied';
 
 /**
  * Reports one step that only the browser sees. Sent with sendBeacon (it survives the page closing or navigating), never
@@ -94,6 +108,11 @@ export class DemoApi {
   /** "/demo?ref=CODE": the server checks the personal link and keeps it for this visit (nothing is kept here). */
   async ref(code: string) {
     await this.request<unknown>('POST', '/api/taste/ref', { ref: code }).catch(() => {});
+  }
+
+  /** The coupon of this browser's finished session: issued once by the server, the same one on every later call. */
+  coupon() {
+    return this.request<{ coupon: TasteCoupon | null; reason: string | null }>('POST', '/api/taste/coupon');
   }
 
   code(code: string) {

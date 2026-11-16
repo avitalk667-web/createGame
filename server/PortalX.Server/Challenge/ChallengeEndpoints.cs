@@ -52,6 +52,16 @@ public static class ChallengeEndpoints
     {
         secured.MapGet("/challenge", async (ChallengeService s) => Results.Ok(await s.AdminViewAsync()));
 
+        // the coupons of a finished taste ("טעימה מהפורטל"): their own settings and figures, beside those of the challenge
+        secured.MapGet("/challenge/taste", async (PortalX.Server.Demo.DemoCouponService s) => Results.Ok(await s.AdminViewAsync()));
+        secured.MapPut("/challenge/taste", async (PortalX.Server.Demo.TasteCouponInput u, HttpContext ctx, PortalX.Server.Demo.DemoCouponService s, AdminService a) =>
+        {
+            var (error, before, after) = await s.UpdateAsync(u);
+            if (error != null) return Results.BadRequest(new ApiError("invalid", error));
+            await a.AuditAsync(AdminAuth.Name(ctx.User), "taste-coupons-updated", "challenge", null, new { before, after });
+            return Results.Ok(await s.AdminViewAsync());
+        });
+
         secured.MapPut("/challenge", async (CampaignInput u, HttpContext ctx, ChallengeService s, AdminService a) =>
         {
             var (error, before, after) = await s.UpdateAsync(u);

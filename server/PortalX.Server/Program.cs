@@ -77,6 +77,7 @@ builder.Services.AddScoped<PortalX.Server.Challenge.ChallengeService>();
 // "טעימה מהפורטל": the anonymous sessions of the free taste at /demo
 builder.Services.AddScoped<PortalX.Server.Demo.DemoService>();
 builder.Services.AddScoped<PortalX.Server.Demo.DemoAdmin>();
+builder.Services.AddScoped<PortalX.Server.Demo.DemoCouponService>();
 builder.Services.AddHostedService<PortalX.Server.Mail.MailRetentionService>();
 builder.Services.AddAdminAuth();
 

@@ -29,7 +29,8 @@ public sealed record CampaignInput(
     string? Name, string? Description, int? MinimumScore, decimal? DiscountPercentage, int? ValidityDays, int? MaxCoupons,
     string? SourceProductId, List<string>? ProductIds, bool? ShowEntryPopup, bool? ShowProgress);
 
-public sealed record ChallengeCouponFilter(string? Search, string? Status, DateTime? From, DateTime? To)
+public sealed record ChallengeCouponFilter(string? Search, string? Status, DateTime? From, DateTime? To,
+    string? Source = null, DateTime? ExpiresFrom = null, DateTime? ExpiresTo = null)
 {
     public static ChallengeCouponFilter Parse(HttpRequest r)
     {
@@ -37,7 +38,8 @@ public sealed record ChallengeCouponFilter(string? Search, string? Status, DateT
         // dates are Israel days ("yyyy-MM-dd"): from the start of the first to the end of the last
         static DateTime? D(string? s, bool end) => DateTime.TryParseExact(s, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d)
             ? ChallengeService.IsraelDayStartUtc(end ? d.AddDays(1) : d) : null;
-        return new ChallengeCouponFilter(S("search")?.ToLowerInvariant(), S("status"), D(S("from"), false), D(S("to"), true));
+        return new ChallengeCouponFilter(S("search")?.ToLowerInvariant(), S("status"), D(S("from"), false), D(S("to"), true),
+            S("source"), D(S("expFrom"), false), D(S("expTo"), true));
     }
 }
 
@@ -76,7 +78,7 @@ public sealed class ChallengeService(
     /// <summary>The active campaign of a free game, as the site shows it (never its counts).</summary>
     public async Task<object> PublicAsync()
     {
-        var c = await db.CouponCampaigns.AsNoTracking().Where(x => x.IsActive).OrderByDescending(x => x.UpdatedAt).FirstOrDefaultAsync();
+        var c = await db.CouponCampaigns.AsNoTracking().Where(x => x.Kind == CampaignKinds.Challenge && x.IsActive).OrderByDescending(x => x.UpdatedAt).FirstOrDefaultAsync();
         if (c == null) return new { active = false };
         return new
         {
@@ -101,7 +103,7 @@ public sealed class ChallengeService(
         var player = string.IsNullOrEmpty(t) ? null : room.Players.FirstOrDefault(p => p.TokenHash == RoomService.Hash(t));
         if (player == null) return (null, null, new ServiceError(403, "not-in-room", "רק משתתף במשחק יכול לבדוק את הזכאות שלו."));
         var campaign = room.ProductId == null ? null : await db.CouponCampaigns.AsNoTracking().Include(c => c.Products)
-            .Where(c => c.SourceProductId == room.ProductId).OrderByDescending(c => c.IsActive).ThenByDescending(c => c.UpdatedAt).FirstOrDefaultAsync();
+            .Where(c => c.Kind == CampaignKinds.Challenge && c.SourceProductId == room.ProductId).OrderByDescending(c => c.IsActive).ThenByDescending(c => c.UpdatedAt).FirstOrDefaultAsync();
         if (campaign == null) return (null, new ChallengeStatus("inactive", InactiveMessage, null, 0, 0), null);
         return (new Ctx(campaign, room, player, ChallengeRules.BrowserKey(browserId)), null, null);
     }
@@ -406,7 +408,7 @@ public sealed class ChallengeService(
     /// <summary>The campaign, created switched off with the spec's defaults the first time the admin opens it.</summary>
     public async Task<CouponCampaign> GetOrCreateAsync()
     {
-        var c = await db.CouponCampaigns.Include(x => x.Products).OrderBy(x => x.CreatedAt).FirstOrDefaultAsync();
+        var c = await db.CouponCampaigns.Include(x => x.Products).Where(x => x.Kind == CampaignKinds.Challenge).OrderBy(x => x.CreatedAt).FirstOrDefaultAsync();
         if (c != null) return c;
         var free = await db.Products.AsNoTracking().Where(p => p.IsFree).OrderBy(p => p.Id == "gate-of-secrets" ? 0 : 1).ThenBy(p => p.SortOrder).FirstOrDefaultAsync()
             ?? throw new InvalidOperationException("no free game in the catalog");
@@ -422,7 +424,7 @@ public sealed class ChallengeService(
         catch (DbUpdateException)
         {
             db.ChangeTracker.Clear();
-            return await db.CouponCampaigns.Include(x => x.Products).OrderBy(x => x.CreatedAt).FirstAsync();
+            return await db.CouponCampaigns.Include(x => x.Products).Where(x => x.Kind == CampaignKinds.Challenge).OrderBy(x => x.CreatedAt).FirstAsync();
         }
         return c;
     }
@@ -530,13 +532,19 @@ public sealed class ChallengeService(
 
     public sealed record AdminCouponRow(
         Guid Id, string Code, string? Email, int? Score, DateTime IssuedAt, DateTime? ExpiresAt, string Status, string? EmailStatus,
-        long? OrderNumber, string? PurchasedGame, DateTime? RedeemedAt, decimal? Discount, decimal? Paid, DateTime? CancelledAt, bool MarketingConsent);
+        long? OrderNumber, string? PurchasedGame, DateTime? RedeemedAt, decimal? Discount, decimal? Paid, DateTime? CancelledAt, bool MarketingConsent,
+        string Source = CampaignKinds.Challenge, decimal Percent = 0, List<string>? Games = null, string? Customer = null);
 
     public async Task<List<AdminCouponRow>> CouponsAsync(ChallengeCouponFilter f)
     {
         var c = await GetOrCreateAsync();
         var now = DateTime.UtcNow;
-        var q = db.Coupons.AsNoTracking().Where(k => k.CampaignId == c.Id);
+        // the challenge's coupons and those of a finished taste ("source" picks one; both by default)
+        var taste = await db.CouponCampaigns.AsNoTracking().Where(x => x.Kind == CampaignKinds.Taste).Select(x => x.Id).ToListAsync();
+        var campaigns = f.Source switch { "challenge" => [c.Id], "taste" => taste, _ => taste.Append(c.Id).ToList() };
+        var q = db.Coupons.AsNoTracking().Include(k => k.Products).Where(k => k.CampaignId != null && campaigns.Contains(k.CampaignId.Value));
+        if (f.ExpiresFrom is { } ef) q = q.Where(k => k.EndsAt >= ef);
+        if (f.ExpiresTo is { } et) q = q.Where(k => k.EndsAt < et);
         if (f.Search != null) q = q.Where(k => k.Email!.Contains(f.Search) || k.Code.ToLower().Contains(f.Search));
         if (f.From is { } from) q = q.Where(k => k.CreatedAt >= from);
         if (f.To is { } to) q = q.Where(k => k.CreatedAt < to);
@@ -545,14 +553,17 @@ public sealed class ChallengeService(
         var uses = await (from r in db.CouponRedemptions.AsNoTracking()
                           join o in db.Orders.AsNoTracking() on r.OrderId equals o.Id
                           where ids.Contains(r.CouponId) && r.Status == RedemptionStatus.Redeemed
-                          select new { r.CouponId, o.Number, o.ProductName, At = o.PaidAt ?? r.UpdatedAt, r.Discount, r.FinalPrice }).ToListAsync();
+                          select new { r.CouponId, o.Number, o.ProductName, o.Email, At = o.PaidAt ?? r.UpdatedAt, r.Discount, r.FinalPrice }).ToListAsync();
+        var names = await db.Products.AsNoTracking().ToDictionaryAsync(p => p.Id, p => p.Name);
         var consent = (await db.PlayerCouponEligibility.AsNoTracking().Where(e => e.CampaignId == c.Id && e.CouponId != null && e.MarketingConsent)
             .Select(e => e.CouponId!.Value).ToListAsync()).ToHashSet();
         var rows = coupons.Select(k =>
         {
             var use = uses.FirstOrDefault(u => u.CouponId == k.Id);
             return new AdminCouponRow(k.Id, k.Code, k.Email, k.FinalScore, k.CreatedAt, k.EndsAt, ChallengeRules.Status(k, use != null, now), k.EmailStatus,
-                use?.Number, use?.ProductName, use?.At, use?.Discount, use?.FinalPrice, k.CancelledAt, consent.Contains(k.Id));
+                use?.Number, use?.ProductName, use?.At, use?.Discount, use?.FinalPrice, k.CancelledAt, consent.Contains(k.Id),
+                k.CampaignId == c.Id ? CampaignKinds.Challenge : CampaignKinds.Taste, k.Value,
+                k.Products.Select(p => names.GetValueOrDefault(p.ProductId, p.ProductId)).ToList(), k.Email ?? use?.Email);
         });
         if (f.Status != null) rows = rows.Where(r => r.Status == f.Status);
         return rows.ToList();
@@ -665,12 +676,12 @@ public sealed class ChallengeService(
         var sb = new StringBuilder("﻿");
         sb.AppendLine(string.Join(",", new[]
         {
-            "קוד קופון", "מייל", "ניקוד", "תאריך הנפקה", "תאריך תפוגה", "סטטוס", "סטטוס מייל", "הסכמה לדיוור", "מספר הזמנה", "משחק שנרכש", "תאריך מימוש", "הנחה", "שולם", "תאריך ביטול",
+            "קוד קופון", "מקור", "אחוז הנחה", "משחקים זכאים", "מייל", "ניקוד", "תאריך הנפקה", "תאריך תפוגה", "סטטוס", "סטטוס מייל", "הסכמה לדיוור", "מספר הזמנה", "משחק שנרכש", "תאריך מימוש", "הנחה", "שולם", "תאריך ביטול",
         }.Select(Cell)));
         foreach (var r in rows)
             sb.AppendLine(string.Join(",", new object?[]
             {
-                r.Code, r.Email, r.Score, Il(r.IssuedAt), Il(r.ExpiresAt), St(r.Status), r.EmailStatus, r.MarketingConsent ? "כן" : "לא", r.OrderNumber, r.PurchasedGame,
+                r.Code, r.Source == CampaignKinds.Taste ? "סיום טעימה מהפורטל" : "אתגר 240", r.Percent, string.Join(" · ", r.Games ?? []), r.Customer, r.Score, Il(r.IssuedAt), Il(r.ExpiresAt), St(r.Status), r.EmailStatus, r.MarketingConsent ? "כן" : "לא", r.OrderNumber, r.PurchasedGame,
                 Il(r.RedeemedAt), r.Discount, r.Paid, Il(r.CancelledAt),
             }.Select(Cell)));
         return Encoding.UTF8.GetBytes(sb.ToString());

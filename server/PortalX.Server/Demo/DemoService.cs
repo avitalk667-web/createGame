@@ -199,7 +199,7 @@ public sealed class DemoService(PortalDbContext db, IConfiguration config, ILogg
     /// recorded by the server itself where it happens, never taken from the browser.</summary>
     public static readonly HashSet<string> ReportedEvents = new()
     {
-        "demo_impression", "demo_click", "demo_offer_viewed", "demo_product_clicked", "demo_abandoned",
+        "demo_impression", "demo_click", "demo_offer_viewed", "demo_product_clicked", "demo_abandoned", "demo_coupon_copied",
     };
 
     /// <summary>
@@ -235,6 +235,11 @@ public sealed class DemoService(PortalDbContext db, IConfiguration config, ILogg
                     .ExecuteUpdateAsync(u => u.SetProperty(x => x.ProductClickedAt, x => x.ProductClickedAt ?? now)
                         .SetProperty(x => x.ProductClickedId, id).SetProperty(x => x.LastSeenAt, now).SetProperty(x => x.LastEvent, type));
                 await AddAsync(Event(s, type, now, productId: id));
+                break;
+            case "demo_coupon_copied":
+                // copying the personal coupon of the finished taste, once per session
+                if (s.CompletedAt != null && !await db.DemoEvents.AnyAsync(e => e.SessionId == s.Id && e.Type == type))
+                    await AddAsync(Event(s, type, now));
                 break;
             case "demo_abandoned":
                 // leaving the room before solving it, once per session; the session's LastEvent keeps the step before leaving

@@ -143,6 +143,9 @@ namespace PortalX.Server.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("DemoSessionId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Email")
                         .HasMaxLength(254)
                         .HasColumnType("character varying(254)");
@@ -210,6 +213,10 @@ namespace PortalX.Server.Data.Migrations
                     b.HasIndex("Code")
                         .IsUnique();
 
+                    b.HasIndex("DemoSessionId")
+                        .IsUnique()
+                        .HasFilter("\"DemoSessionId\" IS NOT NULL");
+
                     b.HasIndex("CampaignId", "BrowserKey")
                         .IsUnique()
                         .HasFilter("\"CampaignId\" IS NOT NULL AND \"BrowserKey\" IS NOT NULL");
@@ -254,6 +261,13 @@ namespace PortalX.Server.Data.Migrations
                     b.Property<bool>("IssuingPaused")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("challenge-240");
+
                     b.Property<int>("MaxCoupons")
                         .HasColumnType("integer");
 
@@ -286,6 +300,10 @@ namespace PortalX.Server.Data.Migrations
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Kind")
+                        .IsUnique()
+                        .HasFilter("\"Kind\" = 'taste'");
 
                     b.HasIndex("SourceProductId");
 

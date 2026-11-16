@@ -7,7 +7,8 @@ import { Product, formatPreviousPrice, formatPrice, playersLabel } from '../core
 import { SettingsService } from '../core/settings.service';
 import { JoystickComponent } from '../ui/joystick.component';
 import { DEMO_ITEMS, DEMO_SPOTS, DemoSpot, DemoSpotId } from './demo-content';
-import { DemoApi, DemoState, demoDevice, demoTrack } from './demo.api';
+import { pendingCoupon } from '../challenge/challenge.service';
+import { DemoApi, DemoState, TasteCoupon, demoDevice, demoTrack } from './demo.api';
 import { DemoGateSceneComponent } from './demo-gate-scene.component';
 import { DemoInspectComponent } from './demo-inspect.component';
 import { DemoKeypadComponent, KeypadStatus } from './demo-keypad.component';
@@ -53,11 +54,11 @@ type ItemId = (typeof DEMO_ITEMS)[number];
               </svg>
               <p class="g-lead">אתם עומדים להיכנס לחדר מסתורי.<br class="wide-br" /> הדלת מאחוריכם ננעלה, ורק מי שיצליח לחשוף את הסוד יוכל לצאת.</p>
               @if (resume(); as r) {
-                <p class="g-badge g-status"><span>{{ r.completed ? 'כבר פתחתם את השער בטעימה הזו.' : 'ממשיכים מאיפה שהפסקתם: ' + r.inspected.length + ' מתוך 4 סימנים נמצאו.' }}</span></p>
+                <p class="g-badge g-status"><span>{{ r.completed ? 'כבר פתחתם את השער — ההטבה שלכם מחכה.' : 'ממשיכים מאיפה שהפסקתם: ' + r.inspected.length + ' מתוך 4 סימנים נמצאו.' }}</span></p>
               }
               <div class="g-cta">
                 <button type="button" class="enter" (click)="enter()">
-                  <span class="label">{{ resume()?.completed ? 'חזרה לחדר הפתוח' : resume() ? 'המשך בחדר' : 'כניסה לחדר' }}</span>
+                  <span class="label">{{ resume()?.completed ? 'להטבה שלכם' : resume() ? 'המשך בחדר' : 'כניסה לחדר' }}</span>
                   <svg class="chev" viewBox="0 0 28 24" aria-hidden="true"><path d="M13 4 L5 12 L13 20 M23 4 L15 12 L23 20" /></svg>
                   <span class="shine" aria-hidden="true"></span>
                 </button>
@@ -164,65 +165,77 @@ type ItemId = (typeof DEMO_ITEMS)[number];
             </section>
           </div>
         }
-
-        @if (success() && offer()) {
-          <!-- the offer: the real games of the catalog, as the server lists them (names, pictures and prices are never set here) -->
-          <div class="overlay win-bg offer-wrap">
-            <section class="offer" role="dialog" aria-modal="true" aria-labelledby="offer-title">
-              <p class="kicker">טעימה מהפורטל · הושלמה</p>
-              <h2 id="offer-title" class="gold-title">נהניתם מהטעימה? ההרפתקה האמיתית מתחילה עכשיו!</h2>
-              <p class="lead">פתרתם חידה אחת. דמיינו מה מחכה לכם במשחק מלא – חדרים מסתוריים, חידות מתוחכמות, סודות נסתרים וחוויה משותפת עם החברים או המשפחה.</p>
-              @if (products(); as list) {
-                @if (list.length) {
-                  <h3 class="pick">בחרו את ההרפתקה הבאה שלכם</h3>
-                  <div class="games">
-                    @for (p of list; track p.id) {
-                      <article class="game">
-                        <a class="cover" [routerLink]="['/games', p.id]" (click)="productClicked(p)" [attr.aria-label]="'לצפייה במשחק ' + p.name"><img [src]="p.coverImage" [alt]="p.name" loading="lazy" (error)="$any($event.target).style.visibility = 'hidden'" /></a>
-                        <div class="g-body">
-                          <h4><a [routerLink]="['/games', p.id]" (click)="productClicked(p)">{{ p.name }}</a></h4>
-                          <p class="tagline">{{ p.tagline }}</p>
-                          <div class="g-buy">
-                            <div class="g-price">
-                              @if (previousPrice(p); as was) {
-                                <s><span class="sr-only">מחיר קודם: </span><bdi>{{ was }}</bdi></s>
-                              }
-                              <b><span class="sr-only">מחיר: </span><bdi>{{ price(p) }}</bdi></b>
-                              <small>{{ players(p) }}</small>
-                            </div>
-                            <a class="btn primary" [routerLink]="['/games', p.id]" (click)="productClicked(p)">לצפייה במשחק</a>
-                          </div>
-                        </div>
-                      </article>
-                    }
-                  </div>
-                }
-              } @else {
-                <p class="muted" role="status">טוענים את המשחקים…</p>
-              }
-              <div class="offer-actions">
-                <a class="btn" routerLink="/" fragment="games">לצפייה בכל המשחקים</a>
-                <button class="btn ghost" (click)="closeOffer()">להסתכל שוב בחדר</button>
-              </div>
-            </section>
-          </div>
-        } @else if (success()) {
-          <div class="overlay win-bg">
-            <section class="win" role="dialog" aria-modal="true" aria-labelledby="win-title">
-              <div class="rays" aria-hidden="true"></div>
-              <p class="kicker">הסוד שמאחורי השעון · נפתר</p>
-              <h2 id="win-title" class="gold-title">עשיתם את זה!</h2>
-              <p class="lead">פיצחתם את החידה הראשונה שלכם ופתחתם את השער. אבל זו רק ההתחלה...</p>
-              <p>מאחורי הפורטל מחכים לכם חדרים נוספים, סודות נסתרים וחידות שיאתגרו אתכם ואת החברים שלכם.</p>
-              @if (seconds(); as t) { <p class="time">⏱ פתרתם ב־{{ duration(t) }}</p> }
-              <div class="win-actions">
-                <button class="btn primary" (click)="showOffer()">בחרו את ההרפתקה הבאה שלכם</button>
-                <button class="btn ghost" (click)="closeOffer()">להסתכל שוב בחדר</button>
-              </div>
-            </section>
-          </div>
-        }
       }
+    }
+
+    @if (success()) {
+      <!-- the end of the taste: once the server recorded the right code there is no way back into the room, only what comes next -->
+      <div class="overlay win-bg finish-wrap">
+        <section class="finish" role="dialog" aria-modal="true" aria-labelledby="finish-title">
+          <div class="rays" aria-hidden="true"></div>
+          <p class="kicker">טעימה מהפורטל · הושלמה</p>
+          <h2 id="finish-title" class="gold-title">כל הכבוד! פתחתם את שער הפורטל!</h2>
+          <p class="lead">הצלחתם לפתור את החידה ולגלות את סוד החדר.<br />אבל זו הייתה רק טעימה קטנה...<br />ההרפתקה האמיתית מחכה לכם במשחקי PORTAL&nbsp;X.</p>
+          @if (seconds(); as t) { <p class="time">⏱ פתרתם ב־{{ duration(t) }}</p> }
+
+          <div class="gift" aria-live="polite">
+            @if (coupon(); as c) {
+              <p class="gift-kicker">🎁 מתנה מיוחדת למי שהגיע עד הסוף!</p>
+              <p class="gift-big"><bdi>{{ c.discountPercent }}%</bdi> הנחה על רכישת משחק מלא</p>
+              @if (c.status === 'active' && left() > 0) {
+                <div class="code-row">
+                  <span class="code" dir="ltr">{{ c.code }}</span>
+                  <button type="button" class="btn primary copy" (click)="copyCode(c.code)">{{ copied() ? 'הקוד הועתק ✓' : 'העתקת הקוד' }}</button>
+                </div>
+                <p class="valid">בתוקף עד <b><bdi>{{ c.expiresAtText }}</bdi></b> · מוגבל ל־{{ c.validityDays }} ימים בלבד</p>
+                <p class="countdown" role="timer" aria-label="הזמן שנותר להטבה">נותרו <b>{{ countdown() }}</b></p>
+                <p class="muted small">קופון אישי לשימוש אחד, ברכישת אחד מהמשחקים שלמטה. הקוד ימולא אוטומטית בעמוד המשחק.</p>
+              } @else {
+                <p class="code-row"><span class="code used" dir="ltr">{{ c.code }}</span></p>
+                <p class="muted">{{ c.status === 'redeemed' ? 'כבר השתמשתם בקופון הזה ברכישה. תודה!' : c.status === 'cancelled' ? 'הקופון הזה בוטל.' : 'תוקף הקופון הסתיים ב־' + c.expiresAtText + '.' }}</p>
+              }
+            } @else if (couponState() === 'loading') {
+              <p class="muted" role="status">מכינים לכם מתנה…</p>
+            } @else if (couponState() === 'error') {
+              <p class="muted">לא הצלחנו להציג את ההטבה כרגע.</p>
+              <button type="button" class="btn small" (click)="loadCoupon()">לנסות שוב</button>
+            }
+          </div>
+
+          @if (products(); as list) {
+            @if (list.length) {
+              <h3 class="pick">בחרו את ההרפתקה הבאה שלכם</h3>
+              <div class="games">
+                @for (p of list; track p.id) {
+                  <article class="game">
+                    <a class="cover" [routerLink]="['/games', p.id]" (click)="productClicked(p)" [attr.aria-label]="'לצפייה במשחק ' + p.name"><img [src]="p.coverImage" [alt]="p.name" loading="lazy" (error)="$any($event.target).style.visibility = 'hidden'" /></a>
+                    <div class="g-body">
+                      <h4><a [routerLink]="['/games', p.id]" (click)="productClicked(p)">{{ p.name }}</a></h4>
+                      <p class="tagline">{{ p.tagline }}</p>
+                      <div class="g-buy">
+                        <div class="g-price">
+                          @if (previousPrice(p); as was) {
+                            <s><span class="sr-only">מחיר קודם: </span><bdi>{{ was }}</bdi></s>
+                          }
+                          <b><span class="sr-only">מחיר: </span><bdi>{{ price(p) }}</bdi></b>
+                          <small>{{ players(p) }}</small>
+                        </div>
+                        <a class="btn primary" [routerLink]="['/games', p.id]" (click)="productClicked(p)">לרכישת המשחק</a>
+                      </div>
+                    </div>
+                  </article>
+                }
+              </div>
+            }
+          } @else {
+            <p class="muted" role="status">טוענים את המשחקים…</p>
+          }
+          <div class="offer-actions">
+            <a class="btn" routerLink="/" fragment="games">לצפייה בכל המשחקים</a>
+            <a class="btn ghost" routerLink="/">לדף הבית</a>
+          </div>
+        </section>
+      </div>
     }
   `,
   styles: [`
@@ -382,24 +395,32 @@ type ItemId = (typeof DEMO_ITEMS)[number];
     .skip { position:fixed; bottom: calc(max(14px, env(safe-area-inset-bottom)) + 20px); left:50%; transform:translateX(-50%); z-index:11; }
 
     .win-bg { background: radial-gradient(ellipse at 50% 40%, rgba(80,130,230,.35), rgba(3,6,16,.86) 70%); }
-    .win { position:relative; max-width:560px; text-align:center; padding: 2rem 1.4rem; border-radius:22px; overflow:hidden;
-      background: linear-gradient(180deg, rgba(22,32,74,.96), rgba(10,16,40,.96)); border:1px solid var(--gold); box-shadow: 0 0 60px rgba(224,185,92,.35), var(--shadow);
-      animation: rise .7s cubic-bezier(.2,.9,.3,1.2) both; }
-    .win > * { position:relative; }
     .rays { position:absolute !important; inset:-50%; pointer-events:none; background: conic-gradient(from 0deg, transparent 0 8%, rgba(255,214,120,.10) 10% 14%, transparent 16% 33%,
       rgba(255,214,120,.10) 35% 39%, transparent 41% 58%, rgba(255,214,120,.10) 60% 64%, transparent 66% 83%, rgba(255,214,120,.10) 85% 89%, transparent 91%);
       animation: spin 24s linear infinite; }
-    .win h2 { font-family: var(--font-title); font-size: clamp(2.4rem, 9vw, 3.6rem); margin: .2rem 0 .6rem; }
-    .win .lead { font-size: 1.2rem; font-weight:700; margin-bottom:.8rem; }
     .time { color: var(--gold-2); }
-    .win-actions { display:flex; flex-direction:column; gap:.6rem; margin-top:1.2rem; }
-    /* the offer: a scrolling page over the room, the catalog cards in a responsive grid */
-    .offer-wrap { overflow-y:auto; align-items:start; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); }
-    .offer { position:relative; width:100%; max-width:980px; margin: auto; text-align:center; padding: 1.6rem clamp(1rem, 3vw, 2rem); border-radius:22px;
+    /* the finish screen: a scrolling page over the room (or the gate), the coupon, then the catalog cards in a responsive grid */
+    .finish-wrap { z-index: 70; overflow-y:auto; align-items:start; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); }
+    .finish { position:relative; overflow:hidden; width:100%; max-width:980px; margin: auto; text-align:center; padding: 1.6rem clamp(1rem, 3vw, 2rem); border-radius:22px;
       background: linear-gradient(180deg, rgba(22,32,74,.97), rgba(10,16,40,.97)); border:1px solid var(--gold); box-shadow: 0 0 60px rgba(224,185,92,.25), var(--shadow);
       animation: rise .6s cubic-bezier(.2,.9,.3,1.1) both; }
-    .offer h2 { font-family: var(--font-title); font-size: clamp(1.7rem, 5.4vw, 2.6rem); line-height:1.2; margin:.2rem auto .7rem; max-width:22ch; text-wrap:balance; }
-    .offer .lead { max-width:60ch; margin:0 auto 1.2rem; line-height:1.7; font-size:clamp(1rem, 2.6vw, 1.12rem); }
+    .finish > * { position:relative; }
+    .finish h2 { font-family: var(--font-title); font-size: clamp(1.7rem, 5.4vw, 2.6rem); line-height:1.2; margin:.2rem auto .7rem; max-width:22ch; text-wrap:balance; }
+    .finish .lead { font-weight:600; max-width:60ch; margin:0 auto 1.2rem; line-height:1.7; font-size:clamp(1rem, 2.6vw, 1.12rem); }
+    .gift { max-width:620px; margin: 0 auto 1.4rem; padding: 1.1rem clamp(.9rem, 3vw, 1.6rem); border-radius:18px;
+      background: linear-gradient(180deg, rgba(255,214,120,.14), rgba(255,214,120,.04)); border:2px dashed rgba(240,200,110,.75);
+      box-shadow: 0 0 34px rgba(224,185,92,.22) inset; }
+    .gift p { margin: .3rem 0; }
+    .gift-kicker { font-family: var(--font-title); color: var(--gold-2); font-size: clamp(1.15rem, 3.4vw, 1.45rem); font-weight:800; }
+    .gift-big { font-size: clamp(1.25rem, 4vw, 1.75rem); font-weight:800; }
+    .gift-big bdi { color: var(--gold-2); font-size:1.3em; }
+    .code-row { display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:.6rem; margin: .7rem 0 .5rem !important; }
+    .code { font: 800 clamp(1.25rem, 4.4vw, 1.7rem)/1 ui-monospace, Consolas, monospace; letter-spacing:.08em; padding:.5em .9em; border-radius:12px;
+      background: rgba(5,10,30,.75); border:1px solid rgba(240,200,110,.6); color:#fff3cf; user-select:all; }
+    .code.used { opacity:.55; text-decoration: line-through; }
+    .copy { min-width: 9.5em; }
+    .valid { color:#ece6f6; }
+    .countdown { font-size:1.1rem; } .countdown b { color: var(--gold-2); font-variant-numeric: tabular-nums; }
     .pick { font-family: var(--font-title); color: var(--gold-2); font-size:1.35rem; margin: .4rem 0 .9rem; }
     .games { display:grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 1rem; text-align:right; }
     .game { display:flex; flex-direction:column; border-radius:16px; overflow:hidden; background: rgba(255,255,255,.04); border:1px solid var(--line);
@@ -418,7 +439,7 @@ type ItemId = (typeof DEMO_ITEMS)[number];
     .g-price small { flex-basis:100%; color: var(--muted); }
     .offer-actions { display:flex; justify-content:center; flex-wrap:wrap; gap:.6rem; margin-top:1.3rem; }
     @media (max-width: 520px) { .offer-actions .btn { flex:1 1 100%; } .g-buy .btn { flex:1 1 100%; } }
-    @media (prefers-reduced-motion: reduce) { .offer, .game { animation:none; transition:none; } }
+    @media (prefers-reduced-motion: reduce) { .finish, .game, .rays { animation:none; transition:none; } }
     @keyframes rise { from { opacity:0; transform: translateY(24px) scale(.94); } }
     @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -477,9 +498,19 @@ export class DemoPage implements OnInit, OnDestroy {
   opening = signal(false);
   success = signal(false);
   seconds = signal<number | null>(null);
-  /** The offer after the success card: the games of the catalog that can be bought now. */
-  offer = signal(false);
-  /** null while loading; on failure an empty list (the "all games" link stays). */
+  /** The personal coupon of the finished taste, as the server issued it. */
+  coupon = signal<TasteCoupon | null>(null);
+  couponState = signal<'idle' | 'loading' | 'error'>('idle');
+  copied = signal(false);
+  /** Milliseconds left until the coupon expires, by the server's clock (ticks every second). */
+  left = signal(0);
+  countdown = computed(() => {
+    const t = Math.max(0, Math.floor(this.left() / 1000));
+    const d = Math.floor(t / 86400), h = Math.floor((t % 86400) / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+    const clock = [h, m, sec].map((n) => String(n).padStart(2, '0')).join(':');
+    return d ? `${d === 1 ? 'יום אחד' : d + ' ימים'} ו־${clock} שעות` : `${clock} שעות`;
+  });
+  /** The games the coupon is good for that can be bought now; null while loading, on failure an empty list (the "all games" link stays). */
   products = signal<Product[] | null>(null);
   readonly price = formatPrice;
   readonly previousPrice = formatPreviousPrice;
@@ -493,6 +524,8 @@ export class DemoPage implements OnInit, OnDestroy {
   private toastTimer?: ReturnType<typeof setTimeout>;
   private cooldownTimer?: ReturnType<typeof setInterval>;
   private doorTimer?: ReturnType<typeof setTimeout>;
+  private countdownTimer?: ReturnType<typeof setInterval>;
+  private copiedTimer?: ReturnType<typeof setTimeout>;
 
   constructor() {
     effect(() => this.world?.setPaused(this.panelOpen() || this.showHelp()));
@@ -520,6 +553,12 @@ export class DemoPage implements OnInit, OnDestroy {
   enter() {
     demoTrack('demo_click');
     this.audio.unlock();
+    if (this.resume()?.completed) {
+      // already solved: the finish screen with the coupon, never the room again
+      this.completed.set(true);
+      this.seconds.set(this.resume()?.seconds ?? null);
+      return this.showSuccess(false);
+    }
     this.audio.sfx('whoosh');
     this.start();
   }
@@ -698,18 +737,61 @@ export class DemoPage implements OnInit, OnDestroy {
     this.opening.set(false);
     this.success.set(true);
     if (sound) this.audio.sfx('complete');
+    demoTrack('demo_offer_viewed');
+    // the coupon first: the games list is narrowed to what it is good for
+    this.loadCoupon().finally(() => this.loadGames());
   }
 
-  showOffer() {
-    this.offer.set(true);
-    demoTrack('demo_offer_viewed');
-    if (this.products()?.length) return;
+  /** The coupon from the server (issued on the first call, the same one later); the countdown follows the server's clock. */
+  async loadCoupon() {
+    this.couponState.set('loading');
+    try {
+      const { coupon } = await this.api.coupon();
+      this.coupon.set(coupon ?? null);
+      this.couponState.set(coupon ? 'idle' : 'error');
+      if (!coupon) return;
+      const skew = Date.parse(coupon.serverNow) - Date.now();
+      const end = Date.parse(coupon.expiresAt);
+      const tick = () => {
+        const left = Math.max(0, end - (Date.now() + skew));
+        this.left.set(left);
+        if (!left) clearInterval(this.countdownTimer);
+      };
+      clearInterval(this.countdownTimer);
+      tick();
+      this.countdownTimer = setInterval(tick, 1000);
+    } catch {
+      this.couponState.set('error');
+    }
+  }
+
+  private loadGames() {
     this.products.set(null);
     // the same public list as the home page; only what the server says can be bought now (published, priced, on sale)
-    this.catalog.products().then((list) => this.products.set(list.filter((p) => p.purchasable))).catch(() => this.products.set([]));
+    this.catalog.products().then((list) => {
+      const eligible = this.coupon()?.productIds;
+      this.products.set(list.filter((p) => p.purchasable && (!eligible?.length || eligible.includes(p.id))));
+    }).catch(() => this.products.set([]));
   }
 
+  async copyCode(code: string) {
+    try {
+      await navigator.clipboard.writeText(code);
+    } catch {
+      /* no clipboard permission: the code stays selectable */
+    }
+    this.copied.set(true);
+    clearTimeout(this.copiedTimer);
+    this.copiedTimer = setTimeout(() => this.copied.set(false), 2500);
+    demoTrack('demo_coupon_copied');
+  }
+
+  /** The way to a game: the coupon goes with this tab (filled in on the game page; the server checks it again). */
   productClicked(p: Product) {
+    const c = this.coupon();
+    if (c && c.status === 'active' && this.left() > 0) {
+      try { sessionStorage.setItem(pendingCoupon.key, c.code); } catch { /* it can still be typed */ }
+    }
     demoTrack('demo_product_clicked', p.id);
   }
 
@@ -717,12 +799,6 @@ export class DemoPage implements OnInit, OnDestroy {
   @HostListener('window:pagehide')
   leave() {
     if (this.session && !this.completed()) demoTrack('demo_abandoned');
-  }
-
-  /** Back to the open room; the success card returns from the door (or on the next visit). */
-  closeOffer() {
-    this.offer.set(false);
-    this.success.set(false);
   }
 
   private startCooldown(seconds: number) {
@@ -777,6 +853,8 @@ export class DemoPage implements OnInit, OnDestroy {
     clearTimeout(this.toastTimer);
     clearTimeout(this.doorTimer);
     clearInterval(this.cooldownTimer);
+    clearInterval(this.countdownTimer);
+    clearTimeout(this.copiedTimer);
     this.world?.dispose();
     this.world = undefined;
   }

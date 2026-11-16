@@ -54,6 +54,9 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.Property(x => x.Description).HasMaxLength(500);
             e.Property(x => x.DiscountPercentage).HasPrecision(5, 2);
             e.Property(x => x.SourceProductId).HasMaxLength(64);
+            e.Property(x => x.Kind).HasMaxLength(32).HasDefaultValue(CampaignKinds.Challenge);
+            // one settings row for the taste coupons, however many admins open the tab at once
+            e.HasIndex(x => x.Kind).IsUnique().HasFilter("\"Kind\" = 'taste'");
             e.HasOne<Product>().WithMany().HasForeignKey(x => x.SourceProductId).OnDelete(DeleteBehavior.Restrict);
             e.HasMany(x => x.Products).WithOne().HasForeignKey(p => p.CampaignId).OnDelete(DeleteBehavior.Cascade);
             e.ToTable(t =>
@@ -340,6 +343,8 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.HasIndex(x => new { x.CampaignId, x.PlayerId }).IsUnique().HasFilter("\"CampaignId\" IS NOT NULL");
             e.HasIndex(x => new { x.CampaignId, x.Email }).IsUnique().HasFilter("\"CampaignId\" IS NOT NULL");
             e.HasIndex(x => new { x.CampaignId, x.BrowserKey }).IsUnique().HasFilter("\"CampaignId\" IS NOT NULL AND \"BrowserKey\" IS NOT NULL");
+            // one coupon per finished taste session, whatever arrives at once
+            e.HasIndex(x => x.DemoSessionId).IsUnique().HasFilter("\"DemoSessionId\" IS NOT NULL");
             e.Property(x => x.Email).HasMaxLength(254);
             e.Property(x => x.BrowserKey).HasMaxLength(64);
             e.Property(x => x.CancelledBy).HasMaxLength(64);
