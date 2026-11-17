@@ -46,6 +46,7 @@ builder.Services.AddSingleton(sp => PaymentGateway.Create(
 builder.Services.AddScoped<CouponService>();
 builder.Services.AddScoped<PurchaseService>();
 builder.Services.AddScoped<SumitReconciler>();
+builder.Services.AddSingleton<SumitSweepSignal>();
 builder.Services.AddHostedService<SumitReconciliationService>();
 builder.Services.Configure<AdminOptions>(builder.Configuration.GetSection("Admin"));
 builder.Services.AddScoped<AdminService>();

@@ -24,11 +24,24 @@ public static partial class StaticCaching
             headers.Pragma = "no-cache";
             headers.Expires = "0";
         }
-        else if (HashedBundle().IsMatch(name))
+        else if (HashedBundle().IsMatch(name) || IsVersionedModel(ctx))
             headers.CacheControl = "public, max-age=31536000, immutable";
+        // videos and pictures keep their name when replaced: a day, then a cheap revalidation (ETag / Last-Modified)
+        else if (DayLong.Contains(Path.GetExtension(name)))
+            headers.CacheControl = "public, max-age=86400";
         else
             headers.CacheControl = "public, max-age=3600";
     }
+
+    /// <summary>A 3D model asked for with its version (library.glb?v=…): a new version is a new address.</summary>
+    private static bool IsVersionedModel(StaticFileResponseContext ctx) =>
+        ctx.File.Name.EndsWith(".glb", StringComparison.OrdinalIgnoreCase)
+        && !string.IsNullOrWhiteSpace(ctx.Context.Request.Query["v"].ToString());
+
+    private static readonly HashSet<string> DayLong = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".mp4", ".webm", ".webp", ".avif", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico",
+    };
 
     /// <summary>The usual web types, plus 3D models (.glb), which ASP.NET does not serve by default.</summary>
     private static readonly FileExtensionContentTypeProvider Types = CreateTypes();

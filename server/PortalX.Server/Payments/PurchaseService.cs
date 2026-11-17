@@ -26,7 +26,7 @@ public sealed record WebhookOutcome(WebhookStatus Status, string Result);
 /// </summary>
 public sealed class PurchaseService(
     PortalDbContext db, PaymentGateway gateway, ScenarioCatalog scenarios, RoomService rooms, CouponService coupons,
-    IHostEnvironment env, ILogger<PurchaseService> logger)
+    IHostEnvironment env, ILogger<PurchaseService> logger, SumitSweepSignal sweepSignal)
 {
     public static bool IsPlayable(Product p, ScenarioCatalog scenarios) => p.ScenarioId != null && scenarios.Find(p.ScenarioId) != null;
 
@@ -118,6 +118,8 @@ public sealed class PurchaseService(
         }
         logger.LogInformation("Order {Number} created for {Product} ({Price} {Currency}, provider {Provider})",
             order.Number, product.Id, order.PriceSnapshot, order.Currency, provider.Name);
+        // a SUMIT order waits for a payment: the periodic check wakes for its first checkpoint (10 minutes)
+        if (provider is SumitPaymentProvider) sweepSignal.Nudge(SumitReconciler.NextDueAt(order));
         // the order is saved first, so a payment can never arrive for an order the server does not know
         try
         {

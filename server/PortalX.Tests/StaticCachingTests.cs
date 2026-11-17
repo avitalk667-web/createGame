@@ -35,4 +35,30 @@ public class StaticCachingTests(HubIntegrationTests.Factory factory)
         js.EnsureSuccessStatusCode();
         Assert.Equal(TimeSpan.FromDays(365), js.Headers.CacheControl!.MaxAge);
     }
+
+    [Theory]
+    // a versioned 3D model: a new version is a new address, so a year
+    [InlineData("/models/library/library.glb?v=3", 365 * 86400, true)]
+    // the same model without a version keeps the short rule
+    [InlineData("/models/library/library.glb", 3600, false)]
+    // videos and pictures keep their names when replaced: a day, then revalidated
+    [InlineData("/video/gameplay-tutorial.mp4", 86400, false)]
+    [InlineData("/video/gameplay-tutorial-poster.webp", 86400, false)]
+    [InlineData("/apple-touch-icon.png", 86400, false)]
+    // anything else that keeps its name stays at an hour
+    [InlineData("/manifest.webmanifest", 3600, false)]
+    public async Task Static_files_are_cached_only_as_long_as_it_is_safe(string url, int seconds, bool immutable)
+    {
+        var res = await factory.CreateClient().GetAsync(url);
+        res.EnsureSuccessStatusCode();
+        var cc = res.Headers.CacheControl!;
+        Assert.True(cc.Public, cc.ToString());
+        Assert.Equal(TimeSpan.FromSeconds(seconds), cc.MaxAge);
+        Assert.Equal(immutable, cc.Extensions.Any(e => e.Name == "immutable"));
+        // a later visit asks "changed?" and gets a short answer instead of the whole file
+        Assert.NotNull(res.Headers.ETag);
+        var again = new HttpRequestMessage(HttpMethod.Get, url);
+        again.Headers.IfNoneMatch.Add(res.Headers.ETag!);
+        Assert.Equal(System.Net.HttpStatusCode.NotModified, (await factory.CreateClient().SendAsync(again)).StatusCode);
+    }
 }

@@ -716,6 +716,166 @@ public class SumitPaymentTests
         Assert.Equal(OrderStatus.Cancelled, (await s.Order(c.Id)).Status);
     }
 
+    // ------------------------------------------------------------------ scheduling the periodic check (Neon scale to zero)
+
+    [Fact]
+    public void The_planned_time_is_exactly_when_an_order_becomes_due()
+    {
+        var created = new DateTime(2026, 11, 1, 12, 0, 0, DateTimeKind.Utc);
+        DateTime?[] lasts = [null, created.AddMinutes(3), created.AddMinutes(10), created.AddMinutes(30), created.AddMinutes(64),
+            created.AddMinutes(65), created.AddMinutes(70), created.AddHours(5)];
+        foreach (var expires in new DateTime?[] { created.AddHours(1), null, created.AddMinutes(20) })
+            foreach (var last in lasts)
+            {
+                var o = new Order { CreatedAt = created, CheckoutExpiresAt = expires, LastReconciledAt = last };
+                var at = SumitReconciler.NextDueAt(o);
+                Assert.True(SumitReconciler.IsDue(o, at), $"last {last}, expires {expires}: due at {at}");
+                Assert.False(SumitReconciler.IsDue(o, at.AddSeconds(-1)), $"last {last}, expires {expires}: due before {at}");
+            }
+    }
+
+    [Fact]
+    public void The_check_sleeps_until_the_next_checkpoint_or_the_backup_and_never_spins()
+    {
+        var now = new DateTime(2026, 11, 1, 12, 0, 0, DateTimeKind.Utc);
+        // nothing open: only the backup check, hours away (the database can scale to zero meanwhile)
+        Assert.Equal(SumitReconciliationService.Backup, SumitReconciliationService.WaitUntil(null, now));
+        Assert.True(SumitReconciliationService.Backup >= TimeSpan.FromHours(1));
+        Assert.Equal(TimeSpan.FromMinutes(10).Add(TimeSpan.FromSeconds(2)), SumitReconciliationService.WaitUntil(now.AddMinutes(10), now));
+        Assert.Equal(SumitReconciliationService.MinGap, SumitReconciliationService.WaitUntil(now.AddMinutes(-5), now));
+        Assert.Equal(SumitReconciliationService.Backup, SumitReconciliationService.WaitUntil(now.AddDays(1), now));
+    }
+
+    [Fact]
+    public async Task A_new_order_asks_for_its_first_checkpoint_without_any_call()
+    {
+        var s = Start();
+        var signal = s.F.Services.GetRequiredService<SumitSweepSignal>();
+        Assert.Null(signal.Hint);
+        var b = await BuyAsync(s);
+        var order = await s.Order(b.Id);
+        // the database keeps microseconds, the hint was taken before saving
+        Assert.InRange(signal.Hint!.Value - order.CreatedAt.AddMinutes(10), TimeSpan.FromMilliseconds(-1), TimeSpan.FromMilliseconds(1));
+        Assert.Equal(0, s.Sumit.Count(List));
+    }
+
+    [Fact]
+    public async Task A_nudge_wakes_the_sleep_early_and_a_later_one_does_not()
+    {
+        var signal = new SumitSweepSignal();
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var sleep = signal.SleepUntilAsync(DateTime.UtcNow.AddHours(3), CancellationToken.None);
+        signal.Nudge(DateTime.UtcNow.AddHours(5)); // later than the planned wake: changes nothing
+        await Task.Delay(100);
+        Assert.False(sleep.IsCompleted);
+        signal.Nudge(DateTime.UtcNow.AddMilliseconds(200));
+        await sleep.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5));
+        // a nudge given before the sleep still counts
+        signal.Clear();
+        signal.Nudge(DateTime.UtcNow);
+        await signal.SleepUntilAsync(DateTime.UtcNow.AddHours(3), CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>Runs the check only at the times it plans for itself, as the background service does.</summary>
+    private static async Task<List<DateTime>> FollowThePlanAsync(Site s, DateTime from, Action<DateTime>? before = null, int max = 10)
+    {
+        var at = new List<DateTime>();
+        var (_, next) = await s.Rec(r => r.SweepAndPlanAsync(from));
+        while (next is { } due && at.Count < max)
+        {
+            var wake = due.AddSeconds(2);
+            before?.Invoke(wake);
+            at.Add(wake);
+            (_, next) = await s.Rec(r => r.SweepAndPlanAsync(wake));
+        }
+        return at;
+    }
+
+    [Fact]
+    public async Task An_unpaid_order_is_checked_at_10_and_30_minutes_and_at_the_close_and_then_never_again()
+    {
+        var s = Start();
+        var b = await BuyAsync(s);
+        var created = await OnlyThisOpenAsync(s, b);
+        var close = (await s.Order(b.Id)).CheckoutExpiresAt!.Value + SumitReconciler.CloseGrace;
+        var wakes = await FollowThePlanAsync(s, created.AddMinutes(1));
+        Assert.Equal([created.AddMinutes(10).AddSeconds(2), created.AddMinutes(30).AddSeconds(2), close.AddSeconds(2)], wakes);
+        Assert.Equal(3, s.Sumit.Count(List));
+        Assert.Equal(OrderStatus.Cancelled, (await s.Order(b.Id)).Status);
+        await AssertNotOpenableAsync(s, b, "cancelled");
+    }
+
+    [Fact]
+    public async Task A_late_payment_with_no_notification_is_found_at_the_next_planned_check()
+    {
+        var s = Start();
+        var b = await BuyAsync(s);
+        var created = await OnlyThisOpenAsync(s, b);
+        long? payment = null;
+        // the buyer pays 40 minutes in, after the second checkpoint, and SUMIT's notification never arrives
+        var wakes = await FollowThePlanAsync(s, created.AddMinutes(1),
+            before: wake => { if (wake > created.AddMinutes(40) && payment == null) payment = s.Sumit.Pay(b.Id, b.Price); });
+        var order = await s.Order(b.Id);
+        Assert.Equal(OrderStatus.Paid, order.Status);
+        Assert.Equal(payment.ToString(), order.ProviderTransactionId);
+        Assert.Equal(3, wakes.Count);
+        Assert.Equal(1, await s.Db(db => db.Entitlements.CountAsync(e => e.OrderId == b.Id)));
+    }
+
+    [Fact]
+    public async Task After_a_restart_the_open_orders_come_from_the_database()
+    {
+        var before = Start();
+        var b = await BuyAsync(before);
+        var created = await OnlyThisOpenAsync(before, b);
+        var payment = before.Sumit.Pay(b.Id, b.Price);
+        // a new server: nothing in memory, no nudge; its first check reads the order and plans its checkpoint
+        var after = Start();
+        after.Sumit.Payments[payment] = before.Sumit.Payments[payment];
+        Assert.Null(after.F.Services.GetRequiredService<SumitSweepSignal>().Hint);
+        var (count, next) = await after.Rec(r => r.SweepAndPlanAsync(created.AddMinutes(2)));
+        Assert.Equal(0, count);
+        Assert.Equal(created.AddMinutes(10), next);
+        await after.Rec(r => r.SweepAndPlanAsync(next!.Value.AddSeconds(2)));
+        Assert.Equal(OrderStatus.Paid, (await after.Order(b.Id)).Status);
+    }
+
+    [Fact]
+    public async Task When_sumit_is_down_the_check_comes_back_soon_and_closes_nothing()
+    {
+        var s = Start();
+        var b = await BuyAsync(s);
+        var created = await OnlyThisOpenAsync(s, b);
+        var late = created.AddHours(3);
+        s.Sumit.Down = true;
+        var (_, next) = await s.Rec(r => r.SweepAndPlanAsync(late));
+        Assert.Equal(late + SumitReconciler.FailureRetry, next);
+        Assert.Equal(OrderStatus.Pending, (await s.Order(b.Id)).Status);
+        s.Sumit.Down = false;
+        var payment = s.Sumit.Pay(b.Id, b.Price);
+        await s.Rec(r => r.SweepAndPlanAsync(next!.Value));
+        Assert.Equal(payment.ToString(), (await s.Order(b.Id)).ProviderTransactionId);
+        Assert.Equal(OrderStatus.Paid, (await s.Order(b.Id)).Status);
+    }
+
+    [Fact]
+    public async Task A_notification_and_a_planned_check_for_one_payment_make_one_game()
+    {
+        var s = Start();
+        var b = await BuyAsync(s);
+        var created = await OnlyThisOpenAsync(s, b);
+        s.Sumit.Pay(b.Id, b.Price);
+        Assert.Equal(HttpStatusCode.OK, (await IpnAsync(s, b)).StatusCode);
+        Assert.Equal("paid", (await ViewAsync(s, b)).GetProperty("status").GetString());
+        // the paid order is no longer open: the plan has nothing left for it, and nothing is applied twice
+        var (count, next) = await s.Rec(r => r.SweepAndPlanAsync(created.AddMinutes(10).AddSeconds(2)));
+        Assert.Equal(0, count);
+        Assert.Null(next);
+        Assert.Equal(1, await s.Db(db => db.Entitlements.CountAsync(e => e.OrderId == b.Id)));
+        Assert.Equal(1, s.Sumit.Count(Get));
+    }
+
     [Fact]
     public async Task The_daily_limit_stops_the_calls_and_never_marks_anything_paid()
     {

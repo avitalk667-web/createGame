@@ -36,6 +36,19 @@ public sealed class SumitReconciler(PortalDbContext db, PurchaseService purchase
         return now >= close && now - last >= RetryOpen;
     }
 
+    /// <summary>
+    /// The first moment <see cref="IsDue"/> becomes true for this order (exactly the same rules), so the periodic
+    /// check can sleep until then instead of asking the database every few minutes.
+    /// </summary>
+    public static DateTime NextDueAt(Order o)
+    {
+        var last = o.LastReconciledAt ?? DateTime.MinValue;
+        var close = CloseAt(o);
+        var pending = CheckpointsAfterCreation.Select(c => o.CreatedAt + c).Append(close).Where(at => last < at).ToList();
+        // every checkpoint was looked at already: only the rare retry after the close remains
+        return pending.Count > 0 ? pending.Min() : last + RetryOpen;
+    }
+
     private static DateTime CloseAt(Order o) => (o.CheckoutExpiresAt ?? o.CreatedAt + TimeSpan.FromHours(1)) + CloseGrace;
 
     public async Task<bool> IpnMatchesAsync(Guid orderId, string session)
@@ -126,15 +139,26 @@ public sealed class SumitReconciler(PortalDbContext db, PurchaseService purchase
         return order.Status == OrderStatus.Pending ? await CloseAsync(order, "cancel") : result;
     }
 
+    /// <summary>After a failed list call the orders stay due; the next try comes this much later (as before).</summary>
+    public static readonly TimeSpan FailureRetry = TimeSpan.FromMinutes(5);
+
     /// <summary>The periodic check: one list call for all the orders due, no call at all when none is due.</summary>
-    public async Task<int> SweepAsync(DateTime now)
+    public async Task<int> SweepAsync(DateTime now) => (await SweepAndPlanAsync(now)).Checked;
+
+    /// <summary>
+    /// The periodic check, plus when the next one is needed: the earliest checkpoint of the open orders read from
+    /// the database now (null when no SUMIT order is open). The database stays the only record of open orders.
+    /// </summary>
+    public async Task<(int Checked, DateTime? NextDueAt)> SweepAndPlanAsync(DateTime now)
     {
-        if (Provider is not { } provider) return 0;
+        if (Provider is not { } provider) return (0, null);
         var open = await db.Orders.AsNoTracking()
             .Where(o => o.Provider == provider.Name && o.Status == OrderStatus.Pending)
             .OrderBy(o => o.CreatedAt).Take(200).ToListAsync();
         var due = open.Where(o => IsDue(o, now)).ToList();
-        if (due.Count == 0) return 0;
+        // the orders not looked at now keep their own next checkpoint
+        var next = Earliest(open.Where(o => !due.Contains(o)).Select(NextDueAt));
+        if (due.Count == 0) return (0, next);
         List<SumitPayment> payments;
         bool complete;
         try
@@ -144,25 +168,36 @@ public sealed class SumitReconciler(PortalDbContext db, PurchaseService purchase
         catch (SumitException ex)
         {
             logger.LogWarning("SUMIT sweep failed: {Reason}", ex.Message);
-            return 0;
+            // nothing was recorded, so these orders are still due: try again a little later
+            return (0, Earliest([next, now + FailureRetry]));
         }
         var ids = due.Select(o => o.Id).ToList();
         await db.Orders.Where(o => ids.Contains(o.Id)).ExecuteUpdateAsync(s => s.SetProperty(o => o.LastReconciledAt, now));
         foreach (var order in due)
         {
             var mine = payments.Where(p => p.ExternalIdentifier == order.Id.ToString()).Select(p => p.Id).Distinct().ToList();
+            var settled = false;
             try
             {
-                foreach (var id in mine) await VerifyAsync(provider, order, id, "sweep");
-                if (mine.Count == 0 && complete && now >= CloseAt(order)) await CloseAsync(order, "expired");
+                foreach (var id in mine) settled |= await VerifyAsync(provider, order, id, "sweep") == "applied:paid";
+                if (mine.Count == 0 && complete && now >= CloseAt(order)) { await CloseAsync(order, "expired"); settled = true; }
             }
             catch (SumitException ex)
             {
                 logger.LogWarning("Order {Number}: SUMIT sweep check failed: {Reason}", order.Number, ex.Message);
             }
+            // an order still open after this look is due again at its next checkpoint (or the rare retry)
+            if (!settled)
+            {
+                order.LastReconciledAt = now;
+                next = Earliest([next, NextDueAt(order)]);
+            }
         }
-        return due.Count;
+        return (due.Count, next);
     }
+
+    private static DateTime? Earliest(IEnumerable<DateTime?> times) => times.Where(t => t != null).Min();
+    private static DateTime? Earliest(IEnumerable<DateTime> times) => times.Select(t => (DateTime?)t).Min();
 
     private async Task<bool> ClaimAsync(Guid orderId, DateTime now)
     {
@@ -230,27 +265,99 @@ public sealed class SumitReconciler(PortalDbContext db, PurchaseService purchase
             order.PriceSnapshot, order.Currency, Provider!.IsTest, Source: source));
 }
 
-/// <summary>Runs the periodic check while the server is awake. With any other provider it does nothing at all.</summary>
-public sealed class SumitReconciliationService(IServiceScopeFactory scopes, PaymentGateway gateway, ILogger<SumitReconciliationService> logger) : BackgroundService
+/// <summary>
+/// Wakes the periodic check when a new SUMIT order is saved. Only a hint to look sooner: the check itself always
+/// reads the open orders from the database, and a missed hint is covered by the backup check.
+/// </summary>
+public sealed class SumitSweepSignal
 {
-    private static readonly TimeSpan Period = TimeSpan.FromMinutes(5);
+    private readonly SemaphoreSlim _signal = new(0, 1);
+    private readonly object _lock = new();
+    private DateTime? _hint;
+
+    /// <summary>A new order needs a look at <paramref name="dueAt"/> (its first checkpoint). Costs no database call.</summary>
+    public void Nudge(DateTime dueAt)
+    {
+        lock (_lock) _hint = _hint is { } h && h <= dueAt ? h : dueAt;
+        try { _signal.Release(); }
+        catch (SemaphoreFullException) { /* already signalled */ }
+    }
+
+    /// <summary>The earliest time a nudge asked for, if any.</summary>
+    public DateTime? Hint { get { lock (_lock) return _hint; } }
+
+    /// <summary>Forgets the hints; called right before the check reads the open orders, which include those orders.</summary>
+    public void Clear() { lock (_lock) _hint = null; }
+
+    /// <summary>
+    /// Sleeps until <paramref name="wakeAt"/>, or earlier when a nudge asks for an earlier time
+    /// (a nudge given before the wait still counts).
+    /// </summary>
+    public async Task SleepUntilAsync(DateTime wakeAt, CancellationToken stop)
+    {
+        while (!stop.IsCancellationRequested)
+        {
+            var target = Hint is { } h && h < wakeAt ? h : wakeAt;
+            var left = target - DateTime.UtcNow;
+            if (left <= TimeSpan.Zero) return;
+            try
+            {
+                // woken by a nudge: work out the target again; otherwise the time has come
+                if (!await _signal.WaitAsync(left, stop)) return;
+            }
+            catch (OperationCanceledException) { return; }
+        }
+    }
+}
+
+/// <summary>
+/// Runs the periodic check while the server is awake. With any other provider it does nothing at all.
+/// It no longer asks the database every few minutes (that kept Neon from ever scaling to zero): it looks
+/// once after start-up (open orders from before a restart), when a new order is saved, at each open order's
+/// next checkpoint (10 and 30 minutes, the close, the hourly retry) and, as a backup, every few hours.
+/// </summary>
+public sealed class SumitReconciliationService(IServiceScopeFactory scopes, PaymentGateway gateway, SumitSweepSignal signal,
+    ILogger<SumitReconciliationService> logger) : BackgroundService
+{
+    /// <summary>The backup check, even with no open order known: catches anything a missed nudge left behind.</summary>
+    public static readonly TimeSpan Backup = TimeSpan.FromHours(3);
+    /// <summary>Never two checks closer than this, whatever the plan says (no busy loop).</summary>
+    public static readonly TimeSpan MinGap = TimeSpan.FromSeconds(30);
+    /// <summary>A checkpoint is looked at just after its moment, so it is surely due.</summary>
+    private static readonly TimeSpan Margin = TimeSpan.FromSeconds(2);
+
+    /// <summary>How long to sleep after a check, given the next checkpoint the database showed.</summary>
+    public static TimeSpan WaitUntil(DateTime? nextDueAt, DateTime now)
+    {
+        var wake = now + Backup;
+        if (nextDueAt is { } due && due + Margin < wake) wake = due + Margin;
+        var wait = wake - now;
+        return wait < MinGap ? MinGap : wait;
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stop)
     {
         if (gateway.Provider is not SumitPaymentProvider) return;
-        await Task.Delay(TimeSpan.FromMinutes(1), stop).ContinueWith(_ => { });
+        // after a restart: one look at the open orders in the database, so none is forgotten
+        await signal.SleepUntilAsync(DateTime.UtcNow + TimeSpan.FromMinutes(1), stop);
         while (!stop.IsCancellationRequested)
         {
+            TimeSpan wait;
             try
             {
+                // orders saved from here on are seen by the query below, or nudge again
+                signal.Clear();
                 using var scope = scopes.CreateScope();
-                await scope.ServiceProvider.GetRequiredService<SumitReconciler>().SweepAsync(DateTime.UtcNow);
+                var (_, next) = await scope.ServiceProvider.GetRequiredService<SumitReconciler>().SweepAndPlanAsync(DateTime.UtcNow);
+                wait = WaitUntil(next, DateTime.UtcNow);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                // e.g. the database is waking up or unreachable: try again as often as before
                 logger.LogWarning("SUMIT periodic check failed ({Type})", ex.GetType().Name);
+                wait = SumitReconciler.FailureRetry;
             }
-            await Task.Delay(Period, stop).ContinueWith(_ => { });
+            await signal.SleepUntilAsync(DateTime.UtcNow + wait, stop);
         }
     }
 }

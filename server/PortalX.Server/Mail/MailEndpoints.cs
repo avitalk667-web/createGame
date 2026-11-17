@@ -302,11 +302,26 @@ public sealed class MailingAdmin(PortalDbContext db, UnsubscribeLinks links)
 /// </summary>
 public sealed class MailRetentionService(IServiceScopeFactory scopes, SiteOptions site, ILogger<MailRetentionService> logger) : BackgroundService
 {
+    /// <summary>
+    /// Once a day at a fixed hour (01:00 UTC, night in Israel), not after every start-up: a restart or a wake-up
+    /// of the server no longer wakes the database for it. Rows are kept for months, so a skipped night costs nothing.
+    /// </summary>
+    public static readonly TimeSpan RunAtUtc = TimeSpan.FromHours(1);
+
+    /// <summary>The next run strictly after <paramref name="now"/> (UTC).</summary>
+    public static DateTime NextRun(DateTime now)
+    {
+        var today = now.Date + RunAtUtc;
+        return today > now ? today : today.AddDays(1);
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stop)
     {
-        await Task.Delay(TimeSpan.FromMinutes(2), stop).ContinueWith(_ => { });
         while (!stop.IsCancellationRequested)
         {
+            var now = DateTime.UtcNow;
+            await Task.Delay(NextRun(now) - now, stop).ContinueWith(_ => { });
+            if (stop.IsCancellationRequested) return;
             try
             {
                 using var scope = scopes.CreateScope();
@@ -323,7 +338,6 @@ public sealed class MailRetentionService(IServiceScopeFactory scopes, SiteOption
             {
                 logger.LogWarning("Retention run failed ({Type})", ex.GetType().Name);
             }
-            await Task.Delay(TimeSpan.FromHours(24), stop).ContinueWith(_ => { });
         }
     }
 }
