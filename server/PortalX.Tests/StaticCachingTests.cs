@@ -42,8 +42,8 @@ public class StaticCachingTests(HubIntegrationTests.Factory factory)
     // the same model without a version keeps the short rule
     [InlineData("/models/library/library.glb", 3600, false)]
     // videos and pictures keep their names when replaced: a day, then revalidated
-    [InlineData("/video/gameplay-tutorial.mp4", 86400, false)]
-    [InlineData("/video/gameplay-tutorial-poster.webp", 86400, false)]
+    [InlineData("/video/gameplay-showcase.mp4", 86400, false)]
+    [InlineData("/video/gameplay-showcase-poster.webp", 86400, false)]
     [InlineData("/apple-touch-icon.png", 86400, false)]
     // anything else that keeps its name stays at an hour
     [InlineData("/manifest.webmanifest", 3600, false)]

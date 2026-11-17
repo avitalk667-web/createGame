@@ -13,8 +13,8 @@ import { TUTORIAL_VIDEO } from '../core/tutorial-video';
   template: `
     <section id="tutorial" class="tutorial" aria-labelledby="tutorial-title">
       <div class="tutorial-head">
-        <h2 id="tutorial-title">רוצים לראות איך משחקים?</h2>
-        <p>צפו בסרטון קצר ותגלו כמה פשוט להיכנס להרפתקה, לפתור חידות ולשחק יחד!</p>
+        <h2 id="tutorial-title">רוצים לראות איך זה נראה באמת?</h2>
+        <p>הצצה קטנה לעולם של PORTAL X – כך חוקרים, אוספים רמזים, מפעילים מנגנונים ופותרים חידות יחד.</p>
       </div>
       <div class="frame">
         <video #player controls preload="none" playsinline controlslist="nodownload noremoteplayback" disablepictureinpicture
