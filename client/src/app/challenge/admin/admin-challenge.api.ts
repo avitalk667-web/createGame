@@ -108,27 +108,16 @@ export class AdminChallengeApi {
 
 /** Styles shared by the three admin parts (the admin page's own look). */
 export const ADMIN_CHALLENGE_STYLES = `
-  h2 { font-family:var(--font-title); font-size:1.3rem; margin:1.2rem 0 .6rem; }
+  /* cards, tables, headings and inputs come from the admin theme (src/admin-theme.scss) */
   h3 { margin:.4rem 0; color:var(--gold-2); }
-  .cards { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:.8rem; }
-  .stat { display:flex; flex-direction:column; gap:.2rem; padding:1rem; }
-  .stat span { color:var(--muted); font-size:.9rem; } .stat b { font-size:1.6rem; color:var(--gold-2); } .stat small { color:var(--muted); }
-  .table-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:var(--radius); }
-  table { width:100%; border-collapse:collapse; font-size:.9rem; }
-  th, td { padding:.5rem .6rem; text-align:start; border-bottom:1px solid rgba(201,162,77,.15); white-space:nowrap; }
-  th { background:var(--panel-solid); color:var(--gold-2); }
   label { display:flex; flex-direction:column; gap:.2rem; font-size:.88rem; color:var(--muted); }
   label.check { flex-direction:row; align-items:center; gap:.45rem; color:var(--text); }
-  input, select { min-height:40px; }
-  select { background:var(--panel-solid); color:var(--text); border:1px solid var(--line); border-radius:10px; padding:.45rem .6rem; }
   .row { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
   .st { padding:.1em .55em; border-radius:999px; border:1px solid var(--line); font-size:.8rem; white-space:nowrap; }
   .st[data-s=active], .st[data-s=on], .st[data-s=sent] { border-color:var(--ok); color:#9be3b4; }
   .st[data-s=redeemed] { border-color:var(--gold); color:var(--gold-2); }
   .st[data-s=expired], .st[data-s=cancelled], .st[data-s=off], .st[data-s=failed] { border-color:var(--bad); color:#ffc2b5; }
   .error { color:#ffc2b5; } .ok { color:#9be3b4; } .small { font-size:.82rem; }
-  @media (max-width: 900px) { .cards { grid-template-columns:repeat(2, minmax(0,1fr)); } }
-  @media (max-width: 560px) { .cards { grid-template-columns:1fr; } }
 `;
 
 export const COUPON_STATUS_LABEL: Record<string, string | undefined> = { active: 'פעיל', redeemed: 'מומש', expired: 'פג תוקף', cancelled: 'בוטל' };

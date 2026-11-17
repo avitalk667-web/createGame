@@ -63,10 +63,31 @@ public static class MailEndpoints
             await s.AuditAsync(AdminAuth.Name(ctx.User), "mailing-exported", null, null, new { f.Consent, f.Status, f.Game, f.SourceKind, f.From, f.To, searched = f.Search != null });
             return Results.File(bytes, "text/csv; charset=utf-8", $"portalx-mailing-{DateTime.UtcNow:yyyy-MM-dd}.csv");
         });
+
+        // one customer: every way the address came in, and the full history of its marketing consent
+        secured.MapGet("/mailing/customer", async (string? email, MailingAdmin m) =>
+        {
+            var e = MailingAdmin.Normalize(email);
+            if (e == null) return Results.Json(new ApiError("bad-email", "כתובת לא תקינה."), statusCode: 400);
+            var c = await m.CustomerAsync(e);
+            return c == null ? Results.Json(new ApiError("not-found", "הכתובת לא נמצאה."), statusCode: 404) : Results.Ok(c);
+        });
+
+        // the marketing audience: active consents only, checked here on the server at the moment of export (a revoked
+        // address — the central block list — never leaves the server). Each row carries its own unsubscribe link.
+        secured.MapGet("/mailing/audience.csv", async (HttpRequest r, HttpContext ctx, MailingAdmin m, AdminService s, SiteOptions site) =>
+        {
+            var (bytes, count) = await m.AudienceCsvAsync(SiteUrl(site, r));
+            await s.AuditAsync(AdminAuth.Name(ctx.User), "mailing-audience-exported", null, null, new { count });
+            return Results.File(bytes, "text/csv; charset=utf-8", $"portalx-marketing-audience-{DateTime.UtcNow:yyyy-MM-dd}.csv");
+        });
     }
 }
 
-/// <summary>SourceKind: "results" (asked for game results), "referral" (made a personal link) or "group" (asked for the group link).</summary>
+/// <summary>
+/// SourceKind: "results" (asked for game results), "referral" (made a personal link), "group" (asked for the group link),
+/// "challenge" (got a "Challenge 240" coupon) or "taste" (got the coupon of a finished taste).
+/// </summary>
 public sealed record MailingFilter(string? Search, string? Consent, string? Status, string? Game, DateTime? From, DateTime? To, string? SourceKind = null)
 {
     public static MailingFilter Parse(HttpRequest r)
@@ -81,10 +102,11 @@ public sealed record MailingFilter(string? Search, string? Consent, string? Stat
 public sealed record MailingRow(
     string Email, DateTime? LastResultsRequestAt, DateTime? LastSentAt, string? LastGame, string? LastGameName, string? ResultsStatus, int ResultsRequests,
     string Consent, DateTime? ConsentedAt, DateTime? RevokedAt, string? ConsentSource, bool GroupLinkRequested, string? Source,
-    IReadOnlyList<string> Sources, string? FirstName = null, string? LastName = null, string? ReferralUrl = null, DateTime? ReferralCreatedAt = null)
+    IReadOnlyList<string> Sources, string? FirstName = null, string? LastName = null, string? ReferralUrl = null, DateTime? ReferralCreatedAt = null,
+    DateTime? FirstCouponAt = null, int Coupons = 0)
 {
-    /// <summary>When the address first came in through what is shown (a results request, a consent or a personal link).</summary>
-    public DateTime? RegisteredAt => LastResultsRequestAt ?? ConsentedAt ?? ReferralCreatedAt;
+    /// <summary>When the address first came in through what is shown (a results request, a consent, a personal link or a coupon).</summary>
+    public DateTime? RegisteredAt => LastResultsRequestAt ?? ConsentedAt ?? ReferralCreatedAt ?? FirstCouponAt;
 }
 
 /// <summary>
@@ -93,13 +115,43 @@ public sealed record MailingRow(
 /// </summary>
 public sealed class MailingAdmin(PortalDbContext db, UnsubscribeLinks links)
 {
+    /// <summary>One customer per address: trimmed and lower-cased, as every form stores it.</summary>
+    public static string? Normalize(string? email) => string.IsNullOrWhiteSpace(email) ? null : email.Trim().ToLowerInvariant();
+
+    /// <summary>
+    /// The only addresses that may get marketing mail: an active, explicit consent. Revoked addresses stay in the table
+    /// (the central block list) and are never part of it; only a new explicit tick makes one active again.
+    /// </summary>
+    public IQueryable<MarketingConsent> Mailable() => db.MarketingConsents.AsNoTracking().Where(c => c.Status == ConsentStatus.Active);
+
+    private sealed record IssuedCoupon(string Email, string Kind, string Code, DateTime CreatedAt, bool Redeemed, bool Cancelled, DateTime? EndsAt);
+
+    /// <summary>The personal coupons issued to addresses (Challenge 240 and the finished taste), by campaign kind.</summary>
+    private async Task<List<IssuedCoupon>> CouponEmailsAsync(string? only = null)
+    {
+        var q = db.Coupons.AsNoTracking().Where(k => k.Email != null && k.CampaignId != null);
+        if (only != null) q = q.Where(k => k.Email == only);
+        var list = await q.Join(db.CouponCampaigns.AsNoTracking(), k => k.CampaignId, c => (Guid?)c.Id, (k, c) => new
+            {
+                k.Email, c.Kind, k.Code, k.CreatedAt, k.CancelledAt, k.EndsAt,
+                Redeemed = db.CouponRedemptions.Any(r => r.CouponId == k.Id && r.Status == RedemptionStatus.Redeemed),
+            })
+            .ToListAsync();
+        return list.Select(x => new IssuedCoupon(Normalize(x.Email)!, x.Kind, x.Code, x.CreatedAt, x.Redeemed, x.CancelledAt != null, x.EndsAt)).ToList();
+    }
+
     public async Task<object> ListAsync(MailingFilter f, string siteUrl)
     {
         var rows = await RowsAsync(f, siteUrl);
+        var all = await RowsAsync(new MailingFilter(null, null, null, null, null, null), siteUrl);
         return new
         {
             totals = new
             {
+                // one customer per normalized address, whatever the number of ways it came in
+                customers = all.Count,
+                challengeCustomers = all.Count(r => r.Sources.Contains("challenge")),
+                tasteCustomers = all.Count(r => r.Sources.Contains("taste")),
                 // addresses that asked for results (service mail — not subscribers)
                 resultsAddresses = await db.ResultEmailRequests.Select(x => x.Email).Distinct().CountAsync(),
                 resultsSent = await db.ResultEmailRequests.CountAsync(x => x.Status == ResultEmailStatus.Sent),
@@ -123,7 +175,8 @@ public sealed class MailingAdmin(PortalDbContext db, UnsubscribeLinks links)
         var names = (await db.Products.AsNoTracking().OrderBy(p => p.SortOrder).ToListAsync())
             .GroupBy(p => p.ScenarioId ?? p.Id).ToDictionary(g => g.Key, g => g.First().Name);
         var byEmail = requests.GroupBy(x => x.Email).ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.RequestedAt).ToList());
-        var emails = byEmail.Keys.Union(consents.Keys).Union(groupEmails).Union(referrals.Keys).Distinct();
+        var coupons = (await CouponEmailsAsync()).GroupBy(x => x.Email).ToDictionary(g => g.Key, g => g.ToList());
+        var emails = byEmail.Keys.Union(consents.Keys).Union(groupEmails).Union(referrals.Keys).Union(coupons.Keys).Distinct();
 
         var rows = emails.Select(e =>
         {
@@ -138,12 +191,16 @@ public sealed class MailingAdmin(PortalDbContext db, UnsubscribeLinks links)
             if (reqs.Count > 0) sources.Add("results");
             if (link != null) sources.Add("referral");
             if (groupEmails.Contains(e)) sources.Add("group");
+            var issued = coupons.GetValueOrDefault(e) ?? [];
+            if (issued.Any(x => x.Kind == CampaignKinds.Challenge)) sources.Add("challenge");
+            if (issued.Any(x => x.Kind == CampaignKinds.Taste)) sources.Add("taste");
             // the last mail that really went out: results, or the personal link
             var lastSent = new[] { reqs.Where(x => x.SentAt != null).Max(x => x.SentAt), link?.LastEmailStatus == "sent" ? link.LastEmailAt : null }.Max();
             return new MailingRow(e, last?.RequestedAt, lastSent, lastGame, lastGame != null && names.TryGetValue(lastGame, out var n) ? n : lastGame,
                 last == null ? null : last.Status == ResultEmailStatus.Sending ? "pending" : last.Status.ToString().ToLowerInvariant(), reqs.Count,
                 consent, c?.ConsentedAt, c?.RevokedAt, c?.Source, groupEmails.Contains(e), last?.ScenarioId ?? c?.Source,
-                sources, link?.FirstName, link?.LastName, link == null ? null : PortalX.Server.Referrals.ReferralService.LinkUrl(link, siteUrl), link?.CreatedAt);
+                sources, link?.FirstName, link?.LastName, link == null ? null : PortalX.Server.Referrals.ReferralService.LinkUrl(link, siteUrl), link?.CreatedAt,
+                issued.Count == 0 ? null : issued.Min(x => x.CreatedAt), issued.Count);
         });
 
         if (f.Search != null) rows = rows.Where(r => r.Email.Contains(f.Search));
@@ -156,12 +213,61 @@ public sealed class MailingAdmin(PortalDbContext db, UnsubscribeLinks links)
         return rows.OrderByDescending(r => r.RegisteredAt).Take(5000).ToList();
     }
 
+    /// <summary>One address: its sources, coupons, results requests, personal link and every consent grant and revocation.</summary>
+    public async Task<object?> CustomerAsync(string email)
+    {
+        var consent = await db.MarketingConsents.AsNoTracking().FirstOrDefaultAsync(x => x.Email == email);
+        var events = await db.MarketingConsentEvents.AsNoTracking().Where(x => x.Email == email).OrderBy(x => x.Id)
+            .Select(x => new { x.Action, x.Source, x.ConsentVersion, x.At }).ToListAsync();
+        var link = await db.ReferralLinks.AsNoTracking().FirstOrDefaultAsync(x => x.Email == email);
+        var results = (await db.ResultEmailRequests.AsNoTracking().Where(x => x.Email == email).OrderByDescending(x => x.RequestedAt).Take(50).ToListAsync())
+            .Select(x => new { x.ScenarioId, x.RequestedAt, status = x.Status.ToString().ToLowerInvariant(), x.SentAt }).ToList();
+        var group = await db.CommunityLinkRequests.AsNoTracking().CountAsync(x => x.Email == email);
+        var coupons = await CouponEmailsAsync(email);
+        if (consent == null && events.Count == 0 && link == null && results.Count == 0 && group == 0 && coupons.Count == 0) return null;
+        var now = DateTime.UtcNow;
+        return new
+        {
+            email,
+            consent = consent == null ? "none" : consent.Status == ConsentStatus.Active ? "active" : consent.Status == ConsentStatus.Revoked ? "revoked" : "pending",
+            consentedAt = consent?.ConsentedAt, revokedAt = consent?.RevokedAt, consentSource = consent?.Source, consentVersion = consent?.ConsentVersion,
+            // marketing mail may go to this address only while this is true (decided on the server, never by the page)
+            mailable = consent?.Status == ConsentStatus.Active,
+            history = events,
+            referral = link == null ? null : new { link.FirstName, link.LastName, link.CreatedAt, status = link.DisabledAt == null ? "active" : "disabled" },
+            results,
+            groupLinkRequests = group,
+            coupons = coupons.OrderByDescending(x => x.CreatedAt).Select(x => new
+            {
+                x.Code, source = x.Kind, issuedAt = x.CreatedAt, expiresAt = x.EndsAt,
+                status = x.Cancelled ? "cancelled" : x.Redeemed ? "redeemed" : x.EndsAt is { } end && end < now ? "expired" : "active",
+            }),
+        };
+    }
+
+    /// <summary>The marketing audience as CSV: active consents only, each with its personal unsubscribe link.</summary>
+    public async Task<(byte[] Bytes, int Count)> AudienceCsvAsync(string siteUrl)
+    {
+        static string Cell(object? v) => CsvText.Cell(v);
+        var list = await Mailable().OrderBy(c => c.ConsentedAt).ToListAsync();
+        var names = await db.ReferralLinks.AsNoTracking().ToDictionaryAsync(x => x.Email, x => new { x.FirstName, x.LastName });
+        var sb = new StringBuilder("﻿");
+        sb.AppendLine(string.Join(",", new[] { "כתובת מייל", "שם פרטי", "שם משפחה", "תאריך הסכמה", "מקור ההסכמה", "גרסת נוסח", "קישור הסרה" }.Select(Cell)));
+        foreach (var c in list)
+        {
+            names.TryGetValue(c.Email, out var n);
+            sb.AppendLine(string.Join(",", new object?[] { c.Email, n?.FirstName, n?.LastName, c.ConsentedAt, c.Source, c.ConsentVersion, await links.UrlAsync(c, siteUrl) }.Select(Cell)));
+        }
+        return (Encoding.UTF8.GetBytes(sb.ToString()), list.Count);
+    }
+
     public async Task<byte[]> CsvAsync(MailingFilter f, string siteUrl)
     {
         static string Cell(object? v) => CsvText.Cell(v);
         static string Sources(IReadOnlyList<string> s) => string.Join(" · ", s.Select(x => x switch
         {
-            "results" => "בקשת תוצאות משחק", "referral" => "יצירת קישור אישי", "group" => "קישור לקבוצה", _ => x,
+            "results" => "בקשת תוצאות משחק", "referral" => "יצירת קישור אישי", "group" => "קישור לקבוצה",
+            "challenge" => "קופון אתגר 240", "taste" => "קופון טעימה מהפורטל", _ => x,
         }));
         static string Consent(string c) => c switch { "active" => "פעילה", "revoked" => "בוטלה", "pending" => "ממתינה לאימות", _ => "אין" };
         static string Status(string? s) => s switch { "sent" => "נשלח", "failed" => "נכשל", "pending" => "ממתין", "uncertain" => "לא ודאי", _ => "" };

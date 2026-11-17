@@ -1,5 +1,6 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, output, signal } from '@angular/core';
 import { AdminApiService, Statistics } from '../core/admin-api.service';
+import { AdminTasteSummaryComponent } from './admin-taste-summary.component';
 import { CHART_COLORS, ChartRow, ChartSeries, StatChartComponent } from '../ui/stat-chart.component';
 
 type Preset = 'today' | 'week' | 'month' | 'year' | 'custom';
@@ -25,7 +26,7 @@ const [GOLD, BLUE, PINK] = CHART_COLORS;
  */
 @Component({
   selector: 'px-admin-stats',
-  imports: [StatChartComponent],
+  imports: [StatChartComponent, AdminTasteSummaryComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <form class="filters card" (submit)="$event.preventDefault(); load()">
@@ -48,7 +49,7 @@ const [GOLD, BLUE, PINK] = CHART_COLORS;
     </form>
 
     @if (error()) { <p class="msg-box">{{ error() }}</p> }
-    @if (loading() && !data()) { <p class="muted">טוענים נתונים...</p> }
+    @if (loading() && !data()) { <p class="loading">טוענים נתונים...</p> }
 
     @if (data(); as d) {
       <h2>מכירות והכנסות</h2>
@@ -113,37 +114,31 @@ const [GOLD, BLUE, PINK] = CHART_COLORS;
           </table>
         </div>
       }
+      <px-admin-taste-summary [from]="d.range.from" [to]="d.range.to" heading="טעימת הפורטל בטווח" (open)="openTaste.emit()" />
+
       <p class="muted small">הכנסות: רק תשלומים שספק הסליקה אישר, בניכוי החזרים ביום ההחזר. רכישות בדיקה, הזמנות ממתינות, תשלומים שנכשלו והזמנות שבוטלו אינם נספרים כהכנסה.</p>
     }
   `,
   styles: [`
-    .filters { display:flex; flex-wrap:wrap; gap:.6rem 1rem; align-items:flex-end; padding:.8rem 1rem; margin-bottom:1rem; }
-    .filters label { display:flex; flex-direction:column; gap:.2rem; font-size:.85rem; color:var(--muted); }
+    /* cards, tables, toolbars and headings come from the admin theme (src/admin-theme.scss) */
     .presets { display:flex; flex-wrap:wrap; gap:.35rem; }
     .range { margin-inline-start:auto; }
-    h2 { font-family:var(--font-title); font-size:1.3rem; margin:1.2rem 0 .6rem; }
-    .cards { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:.8rem; }
-    .cards.three { grid-template-columns:repeat(3, minmax(0,1fr)); }
-    .stat { display:flex; flex-direction:column; gap:.2rem; padding:1rem; }
-    .stat span { color:var(--muted); font-size:.9rem; } .stat b { font-size:1.7rem; color:var(--gold-2); } .stat small { color:var(--muted); }
     .charts { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:.8rem; margin-top:.8rem; }
-    .table-wrap { overflow-x:auto; padding:0; margin-top:.8rem; }
+    .table-wrap { margin-top:.8rem; }
     /* the game comparison and its table: one above the other, both full width */
     .split { display:flex; flex-direction:column; gap:.8rem; }
     .split .table-wrap { margin-top:0; }
-    table { width:100%; border-collapse:collapse; font-size:.9rem; }
-    th, td { padding:.5rem .6rem; text-align:start; border-bottom:1px solid rgba(201,162,77,.15); white-space:nowrap; }
-    th { background:var(--panel-solid); color:var(--gold-2); }
     tr.sum td { color:var(--muted); font-weight:700; }
-    .msg-box { padding:.6rem .9rem; border-radius:10px; background:rgba(255,120,100,.12); color:#ffd2c8; }
     .small { font-size:.8rem; }
-    select { background:var(--panel-solid); color:var(--text); border:1px solid var(--line); border-radius:10px; padding:.45rem .6rem; min-height:40px; }
-    @media (max-width: 900px) { .cards, .cards.three { grid-template-columns:repeat(2, minmax(0,1fr)); } .charts { grid-template-columns:1fr; } }
-    @media (max-width: 560px) { .cards, .cards.three { grid-template-columns:1fr; } .range { margin-inline-start:0; } }
+    .funnel-mini { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:.6rem; }
+    @media (max-width: 900px) { .charts { grid-template-columns:1fr; } }
+    @media (max-width: 560px) { .range { margin-inline-start:0; } }
   `],
 })
 export class AdminStatsComponent {
   private api = inject(AdminApiService);
+  /** The taste summary asks for the full taste tab. */
+  openTaste = output<void>();
 
   presets: { id: Preset; label: string }[] = [
     { id: 'today', label: 'היום' }, { id: 'week', label: 'השבוע האחרון' }, { id: 'month', label: 'החודש האחרון' },

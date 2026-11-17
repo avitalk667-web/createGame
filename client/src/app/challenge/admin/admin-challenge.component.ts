@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, inject, input, signal } from '@angular/core';
 import { ApiError } from '../../core/api.service';
 import { AdminChallengeApi, ChallengeAdminView } from './admin-challenge.api';
 import { AdminCouponCampaignComponent } from './admin-coupon-campaign.component';
@@ -6,7 +6,10 @@ import { AdminCouponListComponent } from './admin-coupon-list.component';
 import { AdminCouponStatisticsComponent } from './admin-coupon-statistics.component';
 import { AdminTasteCouponsComponent } from './admin-taste-coupons.component';
 
-/** The admin tab "Challenge 240 and coupons": settings, figures, the coupons of a finished taste and all the personal coupons. */
+/**
+ * "Challenge 240" and the personal coupons, shown inside the admin tab "קופונים והנחות": the campaign settings and figures,
+ * the coupons of a finished taste and every issued coupon. `section` picks one part (the tab shows them as sub-tabs).
+ */
 @Component({
   selector: 'px-admin-challenge',
   imports: [AdminCouponCampaignComponent, AdminCouponStatisticsComponent, AdminTasteCouponsComponent, AdminCouponListComponent],
@@ -14,10 +17,12 @@ import { AdminTasteCouponsComponent } from './admin-taste-coupons.component';
   template: `
     @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
     @if (view(); as v) {
-      <px-admin-coupon-campaign [view]="v" (changed)="view.set($event)" />
-      <px-admin-coupon-statistics [stats]="v.statistics" />
-      <px-admin-taste-coupons [catalog]="v" />
-      <px-admin-coupon-list (changed)="reload()" />
+      @if (section() === 'all' || section() === 'challenge') {
+        <px-admin-coupon-campaign [view]="v" (changed)="view.set($event)" />
+        <px-admin-coupon-statistics [stats]="v.statistics" />
+      }
+      @if (section() === 'all' || section() === 'taste') { <px-admin-taste-coupons [catalog]="v" /> }
+      @if (section() === 'all' || section() === 'issued') { <px-admin-coupon-list (changed)="reload()" /> }
     } @else if (!error()) {
       <p class="muted">טוען…</p>
     }
@@ -26,6 +31,7 @@ import { AdminTasteCouponsComponent } from './admin-taste-coupons.component';
 })
 export class AdminChallengeComponent implements OnInit {
   private api = inject(AdminChallengeApi);
+  section = input<'all' | 'challenge' | 'taste' | 'issued'>('all');
   view = signal<ChallengeAdminView | null>(null);
   error = signal<string | null>(null);
 

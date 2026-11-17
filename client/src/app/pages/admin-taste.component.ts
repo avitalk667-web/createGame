@@ -47,7 +47,7 @@ const DEVICE: Record<string, string> = { desktop: 'מחשב', mobile: 'נייד'
     </form>
 
     @if (error()) { <p class="msg-box">{{ error() }}</p> }
-    @if (loading() && !data()) { <p class="muted">טוענים נתונים...</p> }
+    @if (loading() && !data()) { <p class="loading">טוענים נתונים...</p> }
 
     @if (data(); as d) {
       <h2>המשפך</h2>
@@ -140,11 +140,9 @@ const DEVICE: Record<string, string> = { desktop: 'מחשב', mobile: 'נייד'
     }
   `,
   styles: [`
-    .filters { display:flex; flex-wrap:wrap; gap:.6rem 1rem; align-items:flex-end; padding:.8rem 1rem; margin-bottom:1rem; }
-    .filters label { display:flex; flex-direction:column; gap:.2rem; font-size:.85rem; color:var(--muted); }
+    /* cards, tables, toolbars and headings come from the admin theme (src/admin-theme.scss) */
     .presets { display:flex; flex-wrap:wrap; gap:.35rem; }
     .range { margin-inline-start:auto; }
-    h2 { font-family:var(--font-title); font-size:1.3rem; margin:1.2rem 0 .6rem; }
     .funnel { display:grid; gap:.45rem; padding:1rem; }
     .step { display:grid; grid-template-columns: 9.5rem minmax(0,1fr) 3.5rem 8rem; align-items:center; gap:.7rem; }
     .s-label { color:var(--muted); font-size:.92rem; }
@@ -152,22 +150,14 @@ const DEVICE: Record<string, string> = { desktop: 'מחשב', mobile: 'נייד'
     .s-bar i { display:block; height:100%; min-width:2px; border-radius:6px; background:linear-gradient(90deg, #d9a645, #f2c96a); }
     .step b { color:var(--gold-2); font-size:1.1rem; text-align:end; }
     .step small { color:var(--muted); }
-    .cards { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:.8rem; margin-top:.8rem; }
-    .stat { display:flex; flex-direction:column; gap:.2rem; padding:1rem; }
-    .stat span { color:var(--muted); font-size:.9rem; } .stat b { font-size:1.7rem; color:var(--gold-2); } .stat small { color:var(--muted); }
+    .cards { margin-top:.8rem; }
     .charts { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:.8rem; margin-top:.8rem; }
     .split { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:.8rem; }
-    .table-wrap { overflow-x:auto; padding:0; }
-    table { width:100%; border-collapse:collapse; font-size:.9rem; }
-    th, td { padding:.5rem .6rem; text-align:start; border-bottom:1px solid rgba(201,162,77,.15); white-space:nowrap; }
-    th { background:var(--panel-solid); color:var(--gold-2); }
     .mono { font-family:monospace; direction:ltr; }
-    .msg-box { padding:.6rem .9rem; border-radius:10px; background:rgba(255,120,100,.12); color:#ffd2c8; }
     .small { font-size:.8rem; }
-    select { background:var(--panel-solid); color:var(--text); border:1px solid var(--line); border-radius:10px; padding:.45rem .6rem; min-height:40px; }
-    @media (max-width: 900px) { .cards { grid-template-columns:repeat(2, minmax(0,1fr)); } .charts, .split { grid-template-columns:1fr; } }
+    @media (max-width: 900px) { .charts, .split { grid-template-columns:1fr; } }
     @media (max-width: 560px) {
-      .cards { grid-template-columns:1fr; } .range { margin-inline-start:0; }
+      .range { margin-inline-start:0; }
       .step { grid-template-columns: 7rem minmax(0,1fr) 2.6rem; } .step small { grid-column: 1 / -1; margin-top:-.3rem; }
     }
   `],

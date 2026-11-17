@@ -72,6 +72,7 @@ export interface MailingRow {
   resultsRequests: number; consent: 'active' | 'revoked' | 'pending' | 'none'; consentedAt?: string | null; revokedAt?: string | null;
   consentSource?: string | null; groupLinkRequested: boolean; source?: string | null;
   sources: string[]; firstName?: string | null; lastName?: string | null; referralUrl?: string | null; referralCreatedAt?: string | null; registeredAt?: string | null;
+  firstCouponAt?: string | null; coupons: number;
 }
 
 /** Personal links (affiliate). Money is per currency and never added across currencies. */
@@ -111,7 +112,7 @@ export interface EmailSetup {
 }
 
 export interface MailingList {
-  totals: { resultsAddresses: number; resultsSent: number; activeSubscribers: number; revokedSubscribers: number; groupLinkRequests: number; referralCreators: number };
+  totals: { customers: number; challengeCustomers: number; tasteCustomers: number; resultsAddresses: number; resultsSent: number; activeSubscribers: number; revokedSubscribers: number; groupLinkRequests: number; referralCreators: number };
   rows: MailingRow[];
 }
 
@@ -120,6 +121,17 @@ function mailingQuery(f: MailingFilters) {
   for (const [k, v] of Object.entries(f)) if (v) q.set(k, String(v));
   const s = q.toString();
   return s ? '?' + s : '';
+}
+
+/** One customer (one normalized address): every way it came in and the whole history of its marketing consent. */
+export interface CustomerDetails {
+  email: string; consent: "active" | "revoked" | "pending" | "none"; consentedAt?: string | null; revokedAt?: string | null;
+  consentSource?: string | null; consentVersion?: string | null; mailable: boolean;
+  history: { action: string; source: string; consentVersion?: string | null; at: string }[];
+  referral?: { firstName: string; lastName: string; createdAt: string; status: string } | null;
+  results: { scenarioId?: string | null; requestedAt: string; status: string; sentAt?: string | null }[];
+  groupLinkRequests: number;
+  coupons: { code: string; source: string; issuedAt: string; expiresAt?: string | null; status: string }[];
 }
 
 export interface FaqRow { id: string; question: string; answer: string; sortOrder: number; published: boolean; createdBy: string; createdAt: string; updatedAt: string }
@@ -245,6 +257,9 @@ export class AdminApiService {
   testEmail() { return this.request<{ ok: boolean; message: string }>('POST', '/api/admin/email/test'); }
   mailing(f: MailingFilters) { return this.request<MailingList>('GET', '/api/admin/mailing' + mailingQuery(f)); }
   mailingCsvUrl(f: MailingFilters) { return '/api/admin/mailing.csv' + mailingQuery(f); }
+  /** Active marketing consents only — the server decides who is in it. */
+  audienceCsvUrl() { return '/api/admin/mailing/audience.csv'; }
+  customer(email: string) { return this.request<CustomerDetails>('GET', '/api/admin/mailing/customer?' + new URLSearchParams({ email }).toString()); }
   referrals(f: ReferralFilters) { return this.request<ReferralList>('GET', '/api/admin/referrals' + mailingQuery(f)); }
   referralsCsvUrl(f: ReferralFilters) { return '/api/admin/referrals.csv' + mailingQuery(f); }
   statistics(from: string, to: string, bucket: string) {

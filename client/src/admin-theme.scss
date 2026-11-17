@@ -1,0 +1,326 @@
+/*
+ * The admin area's look (/admin). Everything is scoped under .pxa, the admin page's root, so the rest of the site is
+ * untouched. The page itself owns the layout (fixed 100dvh shell, side menu, inner scroll); this file holds what every
+ * tab shares: page heads, stat cards, toolbars, tables with sticky headers, sub-tabs and the loading / empty / error states.
+ */
+.pxa {
+  --pxa-surface: #0f1834;
+  --pxa-surface-2: #142047;
+  --pxa-surface-3: #1a2752;
+  --pxa-border: rgba(201, 162, 77, 0.2);
+  --pxa-border-strong: rgba(201, 162, 77, 0.45);
+  --pxa-row-line: rgba(201, 162, 77, 0.12);
+  --pxa-radius: 14px;
+
+  /* ------------------------------------------------------------ the head of every tab */
+  .page-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 0.6rem 1rem;
+    margin: 0 0 1rem;
+    h1 {
+      margin: 0;
+      font-size: 1.55rem;
+      color: var(--gold-2);
+    }
+    p {
+      margin: 0.25rem 0 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+      max-width: 70ch;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+  }
+
+  h2 {
+    font-family: var(--font-title);
+    font-size: 1.15rem;
+    margin: 1.4rem 0 0.6rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    &::before {
+      content: '';
+      width: 4px;
+      height: 1.05em;
+      border-radius: 2px;
+      background: linear-gradient(180deg, var(--gold-2), var(--gold-dark));
+    }
+  }
+  .bar h2,
+  .page-head h2 {
+    margin: 0;
+  }
+
+  /* ------------------------------------------------------------ cards */
+  .card {
+    background: var(--pxa-surface);
+    border: 1px solid var(--pxa-border);
+    border-radius: var(--pxa-radius);
+    box-shadow: none;
+    backdrop-filter: none;
+    padding: 1rem 1.1rem;
+  }
+  .section {
+    background: var(--pxa-surface);
+    border: 1px solid var(--pxa-border);
+    border-radius: var(--pxa-radius);
+    padding: 1rem 1.1rem;
+    margin-bottom: 1rem;
+    > h2:first-child,
+    > .bar:first-child h2 {
+      margin-top: 0;
+    }
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.75rem;
+  }
+  .stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.9rem 1rem;
+    background: linear-gradient(180deg, var(--pxa-surface-2), var(--pxa-surface));
+    border: 1px solid var(--pxa-border);
+    border-radius: 12px;
+    span {
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+    b {
+      font-size: 1.55rem;
+      color: var(--gold-2);
+      line-height: 1.15;
+      font-variant-numeric: tabular-nums;
+    }
+    b.date {
+      font-size: 1.1rem;
+    }
+    small {
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.45;
+    }
+    &.accent {
+      border-color: var(--pxa-border-strong);
+    }
+  }
+
+  /* ------------------------------------------------------------ toolbars: search and filters, always in the same place */
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 0.9rem;
+    align-items: flex-end;
+    padding: 0.75rem 0.9rem;
+    margin-bottom: 1rem;
+    background: var(--pxa-surface-2);
+    border: 1px solid var(--pxa-border);
+    border-radius: 12px;
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+    label.check {
+      flex-direction: row;
+      align-items: center;
+      gap: 0.4rem;
+      color: var(--text);
+    }
+  }
+
+  input[type='date'],
+  input[type='number'],
+  input[type='datetime-local'],
+  input[type='time'],
+  input[type='text'],
+  input:not([type]),
+  select,
+  textarea {
+    font-family: inherit;
+    font-size: 0.95rem;
+    background: rgba(4, 8, 22, 0.55);
+    color: var(--text);
+    border: 1px solid var(--pxa-border-strong);
+    border-radius: 10px;
+    padding: 0.45rem 0.65rem;
+    min-height: 40px;
+    color-scheme: dark;
+    &:focus {
+      outline: 2px solid var(--gold);
+      outline-offset: 1px;
+      border-color: transparent;
+    }
+  }
+  input[type='checkbox'] {
+    accent-color: var(--gold);
+    width: 1.05rem;
+    height: 1.05rem;
+  }
+
+  .bar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    margin-bottom: 0.6rem;
+  }
+
+  /* ------------------------------------------------------------ sub-tabs inside a tab */
+  .subtabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    padding: 0.3rem;
+    margin: 0 0 1rem;
+    background: var(--pxa-surface);
+    border: 1px solid var(--pxa-border);
+    border-radius: 12px;
+    width: fit-content;
+    max-width: 100%;
+    button {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-weight: 700;
+      font-size: 0.92rem;
+      padding: 0.45rem 0.95rem;
+      border-radius: 9px;
+      cursor: pointer;
+      min-height: 38px;
+      &:hover {
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.05);
+      }
+      &:focus-visible {
+        outline: 2px solid var(--gold-2);
+      }
+      &.on {
+        background: linear-gradient(180deg, #2a3a72, #1d2a58);
+        color: var(--gold-2);
+        box-shadow: inset 0 0 0 1px var(--pxa-border-strong);
+      }
+    }
+  }
+
+  /* ------------------------------------------------------------ tables: scroll inside, headers stay */
+  .table-wrap {
+    overflow: auto;
+    max-height: min(62dvh, 680px);
+    border: 1px solid var(--pxa-border);
+    border-radius: 12px;
+    background: var(--pxa-surface);
+    padding: 0;
+    overscroll-behavior: contain;
+  }
+  table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.88rem;
+  }
+  th,
+  td {
+    padding: 0.55rem 0.7rem;
+    text-align: start;
+    border-bottom: 1px solid var(--pxa-row-line);
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+  th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--pxa-surface-3);
+    color: var(--gold-2);
+    font-weight: 700;
+    font-size: 0.82rem;
+  }
+  tbody tr:nth-child(even) td {
+    background: rgba(255, 255, 255, 0.015);
+  }
+  tbody tr:hover td {
+    background: rgba(255, 255, 255, 0.04);
+  }
+  tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  /* an empty table: one centred message */
+  tbody td[colspan].muted {
+    text-align: center;
+    padding: 2rem 1rem;
+    white-space: normal;
+  }
+
+  /* ------------------------------------------------------------ states */
+  .msg-box {
+    padding: 0.65rem 0.95rem;
+    border-radius: 10px;
+    background: rgba(255, 120, 100, 0.12);
+    border: 1px solid rgba(226, 113, 91, 0.35);
+    color: #ffd2c8;
+    &.ok {
+      background: rgba(120, 220, 160, 0.1);
+      border-color: rgba(63, 191, 106, 0.35);
+      color: #bff0cf;
+    }
+  }
+  .loading {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    color: var(--muted);
+    padding: 1.2rem 0.2rem;
+    &::before {
+      content: '';
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2px solid rgba(246, 215, 141, 0.25);
+      border-top-color: var(--gold-2);
+      animation: pxa-spin 0.8s linear infinite;
+    }
+  }
+  .empty {
+    text-align: center;
+    color: var(--muted);
+    padding: 2rem 1rem;
+    border: 1px dashed var(--pxa-border-strong);
+    border-radius: 12px;
+  }
+
+  .st {
+    display: inline-block;
+    padding: 0.1em 0.6em;
+    border-radius: 999px;
+    border: 1px solid var(--pxa-border-strong);
+    font-size: 0.78rem;
+    white-space: nowrap;
+  }
+  .note {
+    color: var(--muted);
+    font-size: 0.8rem;
+    line-height: 1.6;
+    margin: 0.8rem 0 0;
+  }
+}
+
+@keyframes pxa-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

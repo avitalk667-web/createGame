@@ -563,6 +563,67 @@ public class ReferralTests
         Assert.Equal(3, await DbAsync(f, db => db.MarketingConsentEvents.CountAsync(e => e.Email == email.ToLowerInvariant())));
     }
 
+    [Fact]
+    public async Task Customers_are_one_row_per_address_across_links_and_coupons_and_only_active_consents_reach_the_marketing_audience()
+    {
+        var (f, _, _) = Site_();
+        using var __ = f;
+        var admin = await AdminAsync(f);
+        (await admin.GetAsync("/api/admin/challenge")).EnsureSuccessStatusCode(); // the "Challenge 240" campaign exists from here
+        var withLink = Unique("cust");
+        var couponOnly = Unique("coupon");
+        await NewLinkAsync(f.CreateClient(), withLink);
+        using (var scope = f.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PortalDbContext>();
+            var campaign = await db.CouponCampaigns.FirstAsync(c => c.Kind == CampaignKinds.Challenge);
+            foreach (var email in new[] { withLink, couponOnly })
+                db.Coupons.Add(new Coupon
+                {
+                    Id = Guid.NewGuid(), Code = "PX-T" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant(), Name = "בדיקה", Kind = CouponKind.Percent, Value = 10,
+                    Active = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow, CampaignId = campaign.Id, Email = email.ToLowerInvariant(),
+                });
+            await db.SaveChangesAsync();
+        }
+        async Task<JsonElement> Row(string email, string extra = "") =>
+            Assert.Single((await Body(await admin.GetAsync($"/api/admin/mailing?search={Uri.EscapeDataString(email.ToLowerInvariant())}{extra}"))).GetProperty("rows").EnumerateArray());
+        async Task<string> Audience() => await (await admin.GetAsync("/api/admin/mailing/audience.csv")).Content.ReadAsStringAsync();
+
+        // the link maker who also got a coupon: one customer with both sources
+        var row = await Row(withLink);
+        Assert.Equal(["referral", "challenge"], row.GetProperty("sources").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal(1, row.GetProperty("coupons").GetInt32());
+        // a coupon without a consent: a customer, never part of the marketing audience
+        row = await Row(couponOnly, "&source=challenge");
+        Assert.Equal("none", row.GetProperty("consent").GetString());
+        Assert.Contains(withLink.ToLowerInvariant(), await Audience());
+        Assert.DoesNotContain(couponOnly.ToLowerInvariant(), await Audience());
+
+        var customer = await Body(await admin.GetAsync($"/api/admin/mailing/customer?email={Uri.EscapeDataString(" " + withLink.ToUpperInvariant() + " ")}"));
+        Assert.True(customer.GetProperty("mailable").GetBoolean());
+        Assert.Single(customer.GetProperty("coupons").EnumerateArray());
+        Assert.Equal(["granted"], customer.GetProperty("history").EnumerateArray().Select(x => x.GetProperty("action").GetString()));
+        Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync("/api/admin/mailing/customer?email=nobody%40example.org")).StatusCode);
+
+        // unsubscribing: kept (the block list), out of the audience, and the history shows when
+        string unsubToken;
+        using (var scope = f.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PortalDbContext>();
+            var c = await db.MarketingConsents.FirstAsync(x => x.Email == withLink.ToLowerInvariant());
+            unsubToken = await scope.ServiceProvider.GetRequiredService<UnsubscribeLinks>().TokenAsync(c);
+        }
+        (await f.CreateClient().PostAsJsonAsync("/api/unsubscribe", new { token = unsubToken })).EnsureSuccessStatusCode();
+        Assert.DoesNotContain(withLink.ToLowerInvariant(), await Audience());
+        customer = await Body(await admin.GetAsync($"/api/admin/mailing/customer?email={Uri.EscapeDataString(withLink)}"));
+        Assert.False(customer.GetProperty("mailable").GetBoolean());
+        Assert.Equal(["granted", "revoked"], customer.GetProperty("history").EnumerateArray().Select(x => x.GetProperty("action").GetString()));
+        Assert.Equal("revoked", (await Row(withLink)).GetProperty("consent").GetString());
+
+        // the admin area only
+        Assert.Equal(HttpStatusCode.Unauthorized, (await f.CreateClient().GetAsync("/api/admin/mailing/audience.csv")).StatusCode);
+    }
+
     // ------------------------------------------------------------------ entries, free games and draw tickets per link
 
     private static async Task<Guid> LinkIdAsync(WebApplicationFactory<Program> f, string email) =>
