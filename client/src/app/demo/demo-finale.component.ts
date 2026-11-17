@@ -25,21 +25,28 @@ import { DemoWorld } from './demo-world';
         <span>הטעימה הושלמה</span>
       </div>
       <div class="bar-actions">
-        <button class="btn small primary gift" (click)="gift.emit()">🎁 @if (discount(); as d) { <bdi>{{ d }}%</bdi> הנחה — } ההטבה שלכם</button>
         <a class="btn small ghost" routerLink="/">יציאה</a>
       </div>
     </header>
 
     @if (ready()) {
-      @if (focused() === null && !explored()) {
-        <section class="message" aria-labelledby="finale-title">
-          <h2 id="finale-title" class="gold-title">ההרפתקאות מחכות לכם מעבר לדלת...</h2>
-          <p class="sub">פתחתם את הפורטל. עכשיו הגיע הזמן לגלות עולמות חדשים!</p>
-          <p>בחרו את ההרפתקה הבאה שלכם, אספו את החברים וצאו למשחק שלא תשכחו.</p>
-          <div class="row">
-            @if (cards().length) { <button class="btn primary" (click)="explore()">גלו את המשחק הבא שלכם</button> }
-            <a class="btn ghost" routerLink="/" fragment="games">לכל המשחקים</a>
+      @if (focused() === null) {
+        <section class="message" [class.slim]="explored()" aria-labelledby="gift-title">
+          <!-- the taste's gift: the same coupon screen (email, consent, the existing send) the page always opened -->
+          <div class="gift-cta">
+            <p id="gift-title" class="gift-head">סיימתם את הטעימה? מחכה לכם מתנה!</p>
+            <button type="button" class="gift-btn" (click)="gift.emit()">קבלו את ההטבה שלכם 🎁</button>
+            <p class="gift-sub">קבלו קופון אישי של 10% הנחה למייל שלכם</p>
           </div>
+          @if (!explored()) {
+            <h2 id="finale-title" class="gold-title">ההרפתקאות מחכות לכם מעבר לדלת...</h2>
+            <p class="sub">פתחתם את הפורטל. עכשיו הגיע הזמן לגלות עולמות חדשים!</p>
+            <p class="more">בחרו את ההרפתקה הבאה שלכם, אספו את החברים וצאו למשחק שלא תשכחו.</p>
+            <div class="row">
+              @if (cards().length) { <button class="btn primary" (click)="explore()">גלו את המשחק הבא שלכם</button> }
+              <a class="btn ghost" routerLink="/" fragment="games">לכל המשחקים</a>
+            </div>
+          }
         </section>
       }
 
@@ -97,6 +104,18 @@ import { DemoWorld } from './demo-world';
       padding: .75rem 1.1rem .85rem; box-shadow: 0 0 40px rgba(80,160,255,.25), var(--shadow); animation: rise .8s cubic-bezier(.2,.9,.3,1) both; }
     .message h2 { margin: 0 0 .2rem; font-size: clamp(1.3rem, 3.2vw, 1.9rem); }
     .message p { margin: .1rem 0; line-height: 1.45; } .message .sub { color: #bfe3ff; font-weight: 700; }
+    .gift-cta { display: grid; justify-items: center; gap: .35rem; margin-bottom: .6rem; padding-bottom: .65rem; border-bottom: 1px solid rgba(246,215,141,.25); }
+    .message.slim .gift-cta { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
+    .gift-head { margin: 0; font-weight: 800; font-size: 1.12rem; color: var(--gold-2); }
+    .gift-btn { width: min(320px, 100%); min-height: 70px; padding: .5rem 1.2rem; border: 0; border-radius: 16px; cursor: pointer; font: inherit; font-weight: 900; font-size: 1.35rem; color: #2a1a02;
+      background: linear-gradient(180deg, #ffe9a8 0%, #f6d78d 35%, #e0b95c 70%, #b8862e 100%);
+      box-shadow: 0 0 0 1px rgba(255,240,190,.7) inset, 0 6px 18px rgba(0,0,0,.45), 0 0 26px rgba(246,215,141,.45);
+      transition: transform .18s ease, box-shadow .18s ease, filter .18s ease; animation: gift-in .7s cubic-bezier(.2,.9,.3,1.2) .25s both; }
+    .gift-btn:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+    .gift-btn:active { transform: scale(.96); filter: brightness(.95); }
+    @media (hover: hover) { .gift-btn:hover { transform: translateY(-2px) scale(1.03); filter: brightness(1.06); box-shadow: 0 0 0 1px rgba(255,240,190,.8) inset, 0 10px 24px rgba(0,0,0,.5), 0 0 40px rgba(246,215,141,.7); } }
+    .gift-sub { margin: 0; font-size: .9rem; color: var(--text); opacity: .85; }
+    @keyframes gift-in { from { opacity: 0; transform: translateY(10px) scale(.92) } to { opacity: 1; transform: none } }
     .row { display: flex; gap: .5rem; justify-content: center; flex-wrap: wrap; margin-top: .55rem; }
     .nav { position: fixed; top: calc(50% - 23px); z-index: 1; width: 46px; height: 46px; border-radius: 50%; border: 1px solid rgba(246,215,141,.6); background: rgba(8,12,30,.7); color: var(--gold-2);
       font-size: 1.8rem; line-height: 1; cursor: pointer; font-family: inherit; }
@@ -135,9 +154,12 @@ import { DemoWorld } from './demo-world';
       .message { bottom: 10px; padding: .6rem .8rem .7rem; }
       .message h2 { font-size: 1.2rem; }
       .message p { font-size: .86rem; line-height: 1.35; }
+      .message .more { display: none; }
+      .gift-head { font-size: 1rem; } .gift-btn { min-height: 64px; font-size: 1.2rem; width: min(300px, 100%); } .gift-sub { font-size: .82rem; }
+      .gift-cta { margin-bottom: .4rem; padding-bottom: .45rem; }
       .message .row { flex-wrap: nowrap; } .message .btn { padding: .55em .9em; font-size: .9rem; }
     }
-    @media (prefers-reduced-motion: reduce) { .message, .details, .letterbox { animation: none; } .won { transition: none; } }
+    @media (prefers-reduced-motion: reduce) { .message, .details, .letterbox, .gift-btn { animation: none; } .gift-btn { transition: none; } .won { transition: none; } }
   `],
 })
 export class DemoFinaleComponent implements AfterViewInit, OnDestroy {
