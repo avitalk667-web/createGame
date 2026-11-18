@@ -36,6 +36,7 @@ if ($Rebuild -or -not (Test-Path $wwwIndex)) {
   Push-Location (Join-Path $root 'client')
   if (-not (Test-Path 'node_modules')) { npm ci }
   npx ng build
+  node scripts/precompress-models.mjs
   Pop-Location
 }
 

@@ -4,6 +4,12 @@
  */
 export const TUTORIAL_VIDEO = {
   src: 'video/gameplay-showcase.mp4',
+  /**
+   * The same file on an external storage (e.g. Cloudflare R2), so plays do not count toward the site's bandwidth.
+   * null = only the site's own copy. When set, the player asks the external copy first and falls back to `src` by
+   * itself if it cannot be reached (also in the middle of playing). Must be the identical MP4 (same bytes).
+   */
+  remoteSrc: null as string | null,
   poster: 'video/gameplay-showcase-poster.webp',
   /** The video's accessible name. */
   title: 'סרטון הדגמה: כך נראה משחק בחדר הבריחה הווירטואלי של PORTAL X',

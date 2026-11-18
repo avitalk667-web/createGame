@@ -20,7 +20,9 @@ import { TUTORIAL_VIDEO } from '../core/tutorial-video';
         <video #player controls preload="none" playsinline controlslist="nodownload noremoteplayback" disablepictureinpicture
           [attr.poster]="near() ? video.poster : null" [width]="video.width" [height]="video.height"
           [attr.aria-label]="video.title" [attr.title]="video.title" aria-describedby="tutorial-poster-alt"
-          (play)="onPlay()" (pause)="onStop()" (ended)="onStop()">
+          (play)="onPlay()" (pause)="onStop()" (ended)="onStop()" (error)="onError()">
+          <!-- the external copy first (if configured); the browser moves on to the site's own copy when it fails -->
+          @if (video.remoteSrc) { <source [src]="video.remoteSrc" type="video/mp4" /> }
           <source [src]="video.src" type="video/mp4" />
           הדפדפן שלכם אינו תומך בהצגת סרטונים. <a [href]="video.src">לצפייה בסרטון ההדרכה</a>
         </video>
@@ -69,4 +71,24 @@ export class TutorialVideoComponent implements AfterViewInit {
   /** The site's background music steps aside while the video speaks, and comes back when it stops. */
   onPlay() { this.audio.setMusic('none'); }
   onStop() { this.audio.setMusic('home'); }
+
+  /**
+   * The external copy stopped answering in the middle of playing (a failing <source> before playback is skipped by
+   * the browser itself): continue from the same second with the site's own copy.
+   */
+  onError() {
+    const el = this.player().nativeElement;
+    const remote = this.video.remoteSrc;
+    if (!remote || this.switchedToLocal || !el.currentSrc || !el.currentSrc.startsWith(new URL(remote, location.href).href)) return;
+    this.switchedToLocal = true;
+    const at = el.currentTime;
+    const wasPlaying = !el.paused;
+    el.src = this.video.src;
+    el.addEventListener('loadedmetadata', () => {
+      el.currentTime = at;
+      if (wasPlaying) el.play().catch(() => undefined);
+    }, { once: true });
+    el.load();
+  }
+  private switchedToLocal = false;
 }

@@ -188,6 +188,8 @@ app.Use(async (ctx, next) =>
 var browserIds = app.Services.GetRequiredService<PortalX.Server.Security.BrowserIdentity>();
 app.Use((ctx, next) => browserIds.HandleAsync(ctx, () => next()));
 app.UseDefaultFiles();
+// content ETags (no re-download after a deploy) and the Brotli copies of the 3D models (StaticAssets.cs)
+app.UseStaticAssetValidation();
 app.UseStaticFiles(StaticCaching.Options);
 app.UseRateLimiter();
 app.UseAuthentication();

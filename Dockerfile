@@ -7,8 +7,9 @@ WORKDIR /src/client
 COPY client/package.json client/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY client/ ./
-# angular.json writes the build to ../server/PortalX.Server/wwwroot
-RUN mkdir -p /src/server/PortalX.Server && npx ng build --configuration production
+# angular.json writes the build to ../server/PortalX.Server/wwwroot; then a lossless Brotli copy of each 3D model
+RUN mkdir -p /src/server/PortalX.Server && npx ng build --configuration production \
+    && node scripts/precompress-models.mjs /src/server/PortalX.Server/wwwroot
 
 # 2) ASP.NET Core server
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS server
