@@ -109,6 +109,60 @@ public class StaticAssetsTests(HubIntegrationTests.Factory factory)
         finally { Directory.Delete(dir, true); }
     }
 
+    [Theory]
+    // no copy at all, a copy of another model, a file that is not Brotli at all, an empty file: the original
+    [InlineData("missing", false)]
+    [InlineData("mismatched", false)]
+    [InlineData("corrupt", false)]
+    [InlineData("empty", false)]
+    // a correct copy: sent packed
+    [InlineData("valid", true)]
+    public async Task Only_a_valid_brotli_copy_is_sent_and_anything_else_falls_back_to_the_original(string copy, bool packed)
+    {
+        var dir = Path.Combine(WebRoot, "models", "zz-test-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var model = new byte[20000];
+            new Random(11).NextBytes(model);
+            Array.Fill(model, (byte)1, 0, 15000);
+            await File.WriteAllBytesAsync(Path.Combine(dir, "m.glb"), model);
+            var br = Path.Combine(dir, "m.glb.br");
+            var junk = new byte[5000];
+            new Random(3).NextBytes(junk);
+            switch (copy)
+            {
+                case "mismatched": await File.WriteAllBytesAsync(br, Pack(new byte[20000])); break;
+                case "corrupt": await File.WriteAllBytesAsync(br, junk); break;
+                case "empty": await File.WriteAllBytesAsync(br, []); break;
+                case "valid": await File.WriteAllBytesAsync(br, Pack(model)); break;
+            }
+            var http = factory.CreateClient();
+            // twice: the verdict is remembered, and the second answer must be the same
+            for (var i = 0; i < 2; i++)
+            {
+                var res = await http.SendAsync(Get($"/models/{Path.GetFileName(dir)}/m.glb", "gzip, br"));
+                Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+                Assert.Equal("model/gltf-binary", res.Content.Headers.ContentType?.MediaType);
+                var body = await res.Content.ReadAsByteArrayAsync();
+                if (packed)
+                {
+                    Assert.Equal(["br"], res.Content.Headers.ContentEncoding);
+                    using var unpack = new BrotliStream(new MemoryStream(body), CompressionMode.Decompress);
+                    var bytes = new MemoryStream();
+                    await unpack.CopyToAsync(bytes);
+                    Assert.Equal(model, bytes.ToArray());
+                }
+                else
+                {
+                    Assert.Empty(res.Content.Headers.ContentEncoding);
+                    Assert.Equal(model, body);
+                }
+            }
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
     [Fact]
     public async Task The_etag_follows_the_content_not_the_date_so_a_deploy_does_not_force_a_download()
     {

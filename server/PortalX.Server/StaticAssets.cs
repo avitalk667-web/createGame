@@ -166,7 +166,8 @@ public static class StaticAssets
                 using var unpack = new BrotliStream(input, CompressionMode.Decompress);
                 return Convert.ToHexString(SHA256.HashData(unpack)).ToLowerInvariant() == HashOf(original);
             }
-            catch (InvalidDataException) { return false; }
+            // not valid Brotli (.NET reports it as InvalidOperationException) or unreadable: send the original
+            catch (Exception e) when (e is InvalidDataException or InvalidOperationException or IOException) { return false; }
         });
     }
 
