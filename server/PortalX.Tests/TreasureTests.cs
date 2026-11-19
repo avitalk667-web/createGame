@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PortalX.Server.Admin;
@@ -421,6 +422,34 @@ public class TreasureTests : IAsyncLifetime
         var again = await OrderWithCouponAsync(http, code, email);
         Assert.Equal(HttpStatusCode.Conflict, again.StatusCode);
         Assert.Contains("used-up", await again.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Emailed_coupon_is_confirmed_once_and_its_code_lives_in_the_email_only()
+    {
+        await OnlyAsync("off-10");
+        var mail = new FakeEmailSender();
+        using var f = _factory.WithWebHostBuilder(b => b.ConfigureTestServices(s => s.AddSingleton<PortalX.Server.Mail.IEmailSender>(mail)));
+        var http = f.CreateClient();
+        var p = await PaidAsync(http, NewEmail());
+
+        // the first try fails: no confirmation, so the page starts no timer and still shows the code
+        mail.FailNext = 1;
+        var failed = await JsonOf(await RevealAsync(http, p));
+        Assert.False(failed.GetProperty("emailSent").GetBoolean());
+        Assert.False(Missing(failed.GetProperty("prize").GetProperty("coupon"), "code"));
+
+        // asking again sends it; the confirmed view has no code (the buyer types it from the email at checkout)
+        var sent = await JsonOf(await RevealAsync(http, p));
+        Assert.True(sent.GetProperty("emailSent").GetBoolean());
+        Assert.True(Missing(sent.GetProperty("prize").GetProperty("coupon"), "code"));
+        var code = (await DbAsync(db => db.Coupons.AsNoTracking().FirstAsync(c => c.Id == db.TreasureWins.First(w => w.OrderId == p.OrderId).CouponId))).Code;
+        Assert.Contains(code, Assert.Single(mail.Sent).Html);
+
+        // more clicks and visits never send it twice
+        await Task.WhenAll(RevealAsync(http, p), RevealAsync(http, p));
+        Assert.True((await JsonOf(await ChestAsync(http, p))).GetProperty("emailSent").GetBoolean());
+        Assert.Single(mail.Sent);
     }
 
     [Fact]

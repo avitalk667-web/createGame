@@ -1,9 +1,14 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, ElementRef, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, HostListener, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { ApiService, sessionStore } from '../core/api.service';
 import { AudioService } from '../core/audio.service';
 import { TreasureView } from '../core/models';
+
+/** The window closes by itself this long after the prize's email was confirmed (or at once when there is nothing to win). */
+const AUTO_CLOSE_MS = 20_000;
+/** "Later" is remembered per order in this browser, so the window never jumps up again on every visit. */
+const LATER_KEY = 'px-treasure-later:';
 
 /** Sparks flying out of the chest: fixed directions (no randomness on the page), spread around the opening. */
 const SPARKS = Array.from({ length: 22 }, (_, i) => {
@@ -51,7 +56,7 @@ const SPARKS = Array.from({ length: 22 }, (_, i) => {
     }
 
     <!-- a native dialog: it opens in the top layer (above every card and stacking context), keeps the focus inside and closes with Esc -->
-    <dialog #dlg class="overlay" aria-labelledby="tc-title" [class.simple]="simple()" (cancel)="onCancel($event)">
+    <dialog #dlg class="overlay" aria-labelledby="tc-title" [class.simple]="simple()" (cancel)="onCancel($event)" (click)="onBackdrop($event)">
     @if (stage(); as s) {
         <div class="glow" [class.on]="s !== 'closed'" aria-hidden="true"></div>
         @if (view()?.animation === 'glow' && !simple()) { <div class="rays" [class.on]="s !== 'closed'" aria-hidden="true"></div> }
@@ -84,6 +89,12 @@ const SPARKS = Array.from({ length: 22 }, (_, i) => {
             <button class="btn ghost small" (click)="later()">אחר כך</button>
           } @else if (s === 'revealed' && view()?.prize; as p) {
             <ng-container *ngTemplateOutlet="card; context: { $implicit: p, dialog: true }" />
+            @if (view()?.emailSent) {
+              <p class="note" role="status">החלון ייסגר מעצמו בעוד 20 שניות.</p>
+            } @else if (p.coupon && !p.revoked) {
+              <p class="note" role="alert">לא הצלחנו לשלוח את הקופון לדוא״ל כרגע. הקוד מוצג כאן וגם נשמר בדף ההזמנה.</p>
+              <button class="btn small" (click)="resend()" [disabled]="busy()">{{ busy() ? 'שולחים...' : 'שליחה חוזרת לדוא״ל' }}</button>
+            }
             <button class="btn ghost" (click)="close()">סגירה</button>
           } @else {
             <p class="opening-text" role="status">התיבה נפתחת...</p>
@@ -117,9 +128,14 @@ const SPARKS = Array.from({ length: 22 }, (_, i) => {
           <p>{{ p.message }}</p>
           <div class="coupon">
             <span class="pct"><bdi>{{ c.percent }}%</bdi> הנחה</span>
-            <code dir="ltr">{{ c.code }}</code>
-            <button class="btn small" (click)="copy(c.code)">{{ copied() ? 'הועתק ✓' : 'העתקת הקוד' }}</button>
+            @if (c.code) {
+              <code dir="ltr">{{ c.code }}</code>
+              <button class="btn small" (click)="copy(c.code)">{{ copied() ? 'הועתק ✓' : 'העתקת הקוד' }}</button>
+            }
           </div>
+          @if (!c.code) {
+            <p class="sent" role="status">קוד הקופון נשלח לדוא״ל @if (c.email) {<bdi dir="ltr">{{ c.email }}</bdi>}. כדי לממש אותו, הזינו בהזמנה את הקוד שקיבלתם במייל.</p>
+          }
           <p class="muted">בתוקף עד {{ c.expiresAtText }} · {{ statusText(c.status) }}</p>
           <p class="how">איך משתמשים? בוחרים משחק באתר, מזינים את הקוד בשדה הקופון וממלאים את כתובת הדוא״ל @if (c.email) {<bdi dir="ltr">{{ c.email }}</bdi>} שאליה הקופון שויך. הקופון טוב לרכישה אחת, ולא לרכישה הנוכחית.</p>
         } @else if (p.gift; as g) {
@@ -161,7 +177,13 @@ const SPARKS = Array.from({ length: 22 }, (_, i) => {
 
     .overlay { position:fixed; inset:0; width:100vw; height:100dvh; max-width:none; max-height:none; margin:0; border:0; padding:16px; box-sizing:border-box;
       color:inherit; background:radial-gradient(40rem 30rem at 50% 40%, rgba(88,52,150,.55), rgba(5,7,20,.94)); overflow:auto; }
+    /* never on screen unless opened, also where the browser has no native dialog (it would cover the page with nothing in it) */
+    .overlay:not([open]) { display:none !important; }
+    /* a plain (non-modal) dialog: the page behind stays usable, and a click outside the panel closes it */
+    /* the same darkness the modal's backdrop gave, under the existing gradient */
+    .overlay { z-index:2000; background-color:rgba(5,7,20,.5); }
     .overlay[open] { display:grid; place-items:center; animation:fade .35s ease-out both; }
+    .sent { color:var(--gold-2); }
     .overlay::backdrop { background:rgba(5,7,20,.5); }
     .panel { position:relative; width:min(460px, 100%); text-align:center; display:flex; flex-direction:column; align-items:center; gap:.6rem; }
     .panel .gold-title { font-size:clamp(1.3rem, 5vw, 1.8rem); margin:0; }
@@ -232,6 +254,7 @@ export class TreasureChestComponent {
   private openBtn = viewChild<ElementRef<HTMLButtonElement>>('openBtn');
   private dlg = viewChild<ElementRef<HTMLDialogElement>>('dlg');
   private lastFocus: HTMLElement | null = null;
+  private closeTimer?: ReturnType<typeof setTimeout>;
 
   /** No opening animation for reduced motion, a weak device, or a prize configured as "simple". */
   simple = signal(false);
@@ -241,14 +264,20 @@ export class TreasureChestComponent {
       const id = this.orderId(), key = this.orderKey();
       untracked(() => this.load(id, key));
     });
+    inject(DestroyRef).onDestroy(() => {
+      clearTimeout(this.closeTimer);
+      // the window was moved to <body>: it leaves with the page
+      this.dlg()?.nativeElement.remove();
+    });
   }
 
   private async load(id: string, key: string, attempt = 0) {
     try {
       const v = await this.api.treasure(id, key);
       this.view.set(v);
-      // a closed chest opens its surprise screen by itself, the first time the order page shows it
-      if (v.state === 'drawn' && v.hasPrize && !v.revealed && !this.stage()) this.show();
+      // a closed chest opens its surprise screen by itself, the first time the order page shows it — never again once
+      // the buyer chose "later" (the chest still waits on the page)
+      if (v.state === 'drawn' && v.hasPrize && !v.revealed && !this.stage() && !this.dismissed(id)) this.show();
     } catch {
       // a slow or lost answer: try again a little later (the draw is stored on the server, so nothing is lost)
       if (attempt < 3) setTimeout(() => this.load(id, key, attempt + 1), 1500 * (attempt + 1));
@@ -263,32 +292,82 @@ export class TreasureChestComponent {
     this.lastFocus = document.activeElement as HTMLElement | null;
     this.error.set(null);
     this.stage.set('closed');
+    // a plain dialog, not a modal one: the page behind is never made unusable
     const d = this.dlg()?.nativeElement;
-    if (d && !d.open) d.showModal?.();
+    // the order card blurs what is behind it, which would trap a fixed element inside the card: the window lives on <body>
+    if (d && d.parentElement !== document.body) document.body.appendChild(d);
+    if (d && !d.open) {
+      if (typeof d.show === 'function') d.show();
+      else d.setAttribute('open', '');
+    }
     setTimeout(() => this.openBtn()?.nativeElement.focus(), 50);
+    // nothing to win: the window goes away by itself
+    if (!v?.hasPrize) this.closeLater();
   }
 
   /** Esc: closes the dialog only before opening (the chest stays on the page) or after the prize is shown. */
   onCancel(e: Event) {
     e.preventDefault();
+    this.onEscape();
+  }
+
+  /** A plain dialog gets no cancel event from Esc, so the page's Esc closes it the same way. */
+  @HostListener('document:keydown.escape')
+  onEscape() {
     if (this.stage() === 'closed') this.later();
     else if (this.stage() === 'revealed') this.close();
   }
 
+  /** A click on the dark area around the panel closes it like Esc. */
+  onBackdrop(e: MouseEvent) {
+    if (e.target === e.currentTarget) this.onEscape();
+  }
+
   later() {
     if (this.stage() !== 'closed') return;
+    try { localStorage.setItem(LATER_KEY + this.orderId(), '1'); } catch { /* private mode: it may open once more */ }
     this.close();
   }
 
   close() {
+    clearTimeout(this.closeTimer);
     this.stage.set(null);
-    this.dlg()?.nativeElement.close?.();
+    const d = this.dlg()?.nativeElement;
+    if (typeof d?.close === 'function') d.close();
+    else d?.removeAttribute('open');
     this.lastFocus?.focus();
+  }
+
+  /** The 20-second close: started only once the server confirmed the prize's email (or when there is no prize). Once. */
+  private closeLater() {
+    clearTimeout(this.closeTimer);
+    this.closeTimer = setTimeout(() => { if (this.stage()) this.close(); }, AUTO_CLOSE_MS);
+  }
+
+  private dismissed(orderId: string) {
+    try { return localStorage.getItem(LATER_KEY + orderId) === '1'; } catch { return false; }
+  }
+
+  /** The email failed: ask again. The server sends at most once (claimed atomically), so a double click sends nothing twice. */
+  async resend() {
+    if (this.busy() || this.stage() !== 'revealed') return;
+    this.busy.set(true);
+    this.error.set(null);
+    try {
+      const v = await this.api.revealTreasure(this.orderId(), this.orderKey(), null);
+      this.view.set(v);
+      if (v.emailSent) this.closeLater();
+      else this.error.set('השליחה עדיין לא הצליחה. הקוד שמור בדף ההזמנה.');
+    } catch (e: any) {
+      this.error.set(e?.message ?? 'השליחה לא הצליחה. נסו שוב בעוד רגע.');
+    } finally {
+      this.busy.set(false);
+    }
   }
 
   async open() {
     const v = this.view();
-    if (!v || this.busy()) return;
+    if (!v || this.busy() || this.stage() !== 'closed') return;
     const email = this.emailValue().trim();
     if (v.needsEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       this.error.set('הזינו כתובת דוא״ל תקינה כדי לשייך אליה את הפרס.');
@@ -308,6 +387,8 @@ export class TreasureChestComponent {
         this.view.set(opened);
         this.stage.set('revealed');
         this.audio.sfx('success');
+        // the server answers only after the email was sent; then the window closes by itself in 20 seconds
+        if (opened.emailSent || !opened.hasPrize) this.closeLater();
         setTimeout(() => (this.host.nativeElement.querySelector('#tc-prize') as HTMLElement | null)?.focus(), 60);
       }, wait);
     } catch (e: any) {

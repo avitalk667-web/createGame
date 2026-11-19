@@ -376,6 +376,8 @@ export interface TreasureView {
   animation?: 'chest' | 'glow' | 'simple';
   /** A coupon is bound to an email address before its code is shown. */
   needsEmail?: boolean;
+  /** The server confirmed the prize's email was sent. */
+  emailSent?: boolean;
   prize?: TreasurePrizeView | null;
 }
 
@@ -386,7 +388,8 @@ export interface TreasurePrizeView {
   title: string;
   message: string;
   revoked: boolean;
-  coupon?: { code: string; percent: number; expiresAt: string; expiresAtText: string; status: 'active' | 'redeemed' | 'expired' | 'cancelled'; email?: string | null } | null;
+  /** code is null once the coupon was emailed: the buyer types it from that email at checkout. */
+  coupon?: { code: string | null; percent: number; expiresAt: string; expiresAtText: string; status: 'active' | 'redeemed' | 'expired' | 'cancelled'; email?: string | null } | null;
   gift?: {
     productId: string; name: string; tagline: string; description: string; coverImage: string; minPlayers: number; maxPlayers: number;
     status: 'ready' | 'opened' | 'played' | 'revoked'; canOpen: boolean; gameCode?: string | null;

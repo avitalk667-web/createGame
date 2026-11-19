@@ -374,6 +374,8 @@ public sealed class TreasureService(
             animation = prize.Animation,
             // a coupon is bound to an address before its code is shown
             needsEmail = win.PrizeKind == TreasureKinds.Percent && win.Email == null,
+            // the server confirms the prize's email went out; only then does the page start its 20-second close
+            emailSent = win.EmailSentAt != null,
             prize = win.RevealedAt == null && hasPrize ? null : await PrizeViewAsync(win, prize),
         };
     }
@@ -388,7 +390,8 @@ public sealed class TreasureService(
             var redeemed = await db.CouponRedemptions.AnyAsync(r => r.CouponId == cid && r.Status == RedemptionStatus.Redeemed);
             coupon = new
             {
-                k.Code, percent = k.Value, expiresAt = k.EndsAt, expiresAtText = ChallengeRules.FormatIsrael(k.EndsAt!.Value),
+                // once the coupon was emailed its code lives in that email only: the buyer types it from there at checkout
+                Code = win.EmailSentAt == null ? k.Code : null, percent = k.Value, expiresAt = k.EndsAt, expiresAtText = ChallengeRules.FormatIsrael(k.EndsAt!.Value),
                 status = ChallengeRules.Status(k, redeemed, now), email = win.Email == null ? null : ChallengeRules.MaskEmail(win.Email),
             };
         }
