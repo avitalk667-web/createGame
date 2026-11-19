@@ -139,6 +139,11 @@ export class ApiService {
     return this.request<SiteInfo>('GET', '/api/site');
   }
 
+  /** The contact window: the server sends it to the site's address, with the visitor's address as Reply-To. */
+  contact(body: { name: string; email: string; message: string; website?: string }) {
+    return this.request<{ ok: boolean; message: string }>('POST', '/api/contact', body);
+  }
+
   /** End-of-game choices; the seat token goes in the body (or the game's seat cookie), never in the URL. */
   resultsEmail(code: string, body: { token: string | null; sendResults: boolean; email: string | null; marketingConsent: boolean; communityLink: boolean }) {
     return this.request<EndOfGameReply>('POST', `/api/rooms/${encodeURIComponent(code)}/results-email`, body);

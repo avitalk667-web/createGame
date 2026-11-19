@@ -491,11 +491,12 @@ public static class Mime
     public static string Text(EmailMessage m, string fromName, string fromEmail)
     {
         if (m.To.IndexOfAny(['\r', '\n', '<', '>', ',', ';']) >= 0) throw new EmailSendException("bad-recipient", false);
+        if (m.ReplyTo != null && m.ReplyTo.IndexOfAny(['\r', '\n', '<', '>', ',', ';', '"']) >= 0) throw new EmailSendException("bad-reply-to", false);
         var boundary = "px_" + Guid.NewGuid().ToString("N");
         var h = new StringBuilder();
         h.Append($"From: {Word(fromName)} <{fromEmail}>\r\n");
         h.Append($"To: <{m.To}>\r\n");
-        h.Append($"Reply-To: {Word(fromName)} <{fromEmail}>\r\n");
+        h.Append(m.ReplyTo != null ? $"Reply-To: <{m.ReplyTo}>\r\n" : $"Reply-To: {Word(fromName)} <{fromEmail}>\r\n");
         h.Append($"Subject: {Word(m.Subject)}\r\n");
         h.Append($"Date: {DateTime.UtcNow:r}\r\n");
         h.Append($"Message-ID: <{Guid.NewGuid():N}@portalx>\r\n");

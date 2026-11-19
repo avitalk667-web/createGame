@@ -157,6 +157,9 @@ builder.Services.AddRateLimiter(o =>
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:DemoPerMinute", 120), Window = TimeSpan.FromMinutes(1) }));
     o.AddPolicy("demo-code", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:DemoCodePerMinute", 30), Window = TimeSpan.FromMinutes(1) }));
+    // the contact form: a few messages per address, so it cannot be used to flood the site's inbox
+    o.AddPolicy("contact", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:ContactPer10Minutes", 3), Window = TimeSpan.FromMinutes(10) }));
     o.AddPolicy("admin-login", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:AdminLoginPerMinute", 10), Window = TimeSpan.FromMinutes(1) }));
 });
@@ -238,6 +241,7 @@ api.MapGet("/products/{id}", async (string id, PortalDbContext db, ScenarioCatal
 api.MapPurchaseEndpoints(app.Services.GetRequiredService<PaymentGateway>());
 api.MapSiteEndpoints();
 PortalX.Server.Mail.MailEndpoints.MapMailEndpoints(api);
+PortalX.Server.Mail.ContactEndpoints.MapContactEndpoints(api);
 PortalX.Server.Referrals.ReferralEndpoints.MapReferralEndpoints(api);
 PortalX.Server.Challenge.ChallengeEndpoints.MapChallengeEndpoints(api);
 PortalX.Server.Demo.DemoEndpoints.MapDemoEndpoints(api);

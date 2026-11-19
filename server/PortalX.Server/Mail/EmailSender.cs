@@ -1,6 +1,7 @@
 namespace PortalX.Server.Mail;
 
-public sealed record EmailMessage(string To, string Subject, string Html, string Text, string? UnsubscribeUrl = null);
+/// <param name="ReplyTo">Set by the contact form only: replies go to the visitor instead of the site's own address.</param>
+public sealed record EmailMessage(string To, string Subject, string Html, string Text, string? UnsubscribeUrl = null, string? ReplyTo = null);
 
 /// <summary>
 /// Why a message could not be sent. <see cref="Transient"/> failures may succeed on a later try;

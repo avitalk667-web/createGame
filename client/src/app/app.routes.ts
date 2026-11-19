@@ -3,6 +3,7 @@ import { Routes } from '@angular/router';
 
 export const routes: Routes = [
   { path: '', loadComponent: () => import('./pages/home.page').then((m) => m.HomePage), title: 'PORTAL X — בחרו את ההרפתקה שלכם' },
+  { path: 'guide', loadComponent: () => import('./guide/guide.page').then((m) => m.GuidePage), title: 'המדריך למשתמש — PORTAL X' },
   { path: 'games/:id', loadComponent: () => import('./pages/game.page').then((m) => m.GamePage), title: 'פרטי המשחק — PORTAL X' },
   { path: 'checkout/:orderId', loadComponent: () => import('./pages/checkout.page').then((m) => m.CheckoutPage), title: 'הרכישה שלכם — PORTAL X' },
   // SUMIT returns the buyer here after pressing cancel on its payment page

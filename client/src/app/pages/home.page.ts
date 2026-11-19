@@ -11,12 +11,13 @@ import { HowItWorksComponent } from '../ui/how-it-works.component';
 import { SettingsPanelComponent } from '../ui/settings-panel.component';
 import { TutorialVideoComponent } from '../ui/tutorial-video.component';
 import { TreasurePromoComponent } from '../ui/treasure-promo.component';
+import { HelpMenuComponent } from '../ui/help-menu.component';
 import { demoTrack } from '../demo/demo.api';
 
 /** Shared entry gate: a catalog of both games, each with its own server-side price (spec §2). */
 @Component({
   selector: 'px-home',
-  imports: [RouterLink, SettingsPanelComponent, DrawCountdownComponent, PrizeGiftComponent, HowItWorksComponent, TutorialVideoComponent, TreasurePromoComponent],
+  imports: [RouterLink, SettingsPanelComponent, DrawCountdownComponent, PrizeGiftComponent, HowItWorksComponent, TutorialVideoComponent, TreasurePromoComponent, HelpMenuComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="bg" aria-hidden="true"></div>
@@ -27,6 +28,7 @@ import { demoTrack } from '../demo/demo.api';
           <a class="anchor" href="#games" (click)="scrollTo($event, 'games')">המשחקים</a>
           <a class="anchor" href="#how" (click)="scrollTo($event, 'how')">איך משחקים?</a>
           <a class="anchor" href="#faq" (click)="scrollTo($event, 'faq')">שאלות ותשובות</a>
+          <px-help-menu />
         </nav>
         <div class="actions">
           <a routerLink="/join" class="btn small code-btn"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M7 7h10a5 5 0 0 1 4.9 6l-.8 4a2.6 2.6 0 0 1-4.5 1.2L14.3 16H9.7l-2.3 2.2A2.6 2.6 0 0 1 2.9 17l-.8-4A5 5 0 0 1 7 7Zm0 3v1.5H5.5v1.5H7v1.5h1.5V13H10v-1.5H8.5V10H7Zm9 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2Zm-2 2a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z"/></svg><span>יש לי קוד משחק</span></a>
@@ -44,6 +46,7 @@ import { demoTrack } from '../demo/demo.api';
           <a href="#games" (click)="scrollTo($event, 'games')">המשחקים</a>
           <a href="#how" (click)="scrollTo($event, 'how')">איך משחקים?</a>
           <a href="#faq" (click)="scrollTo($event, 'faq')">שאלות ותשובות</a>
+          <px-help-menu variant="list" (picked)="menuOpen.set(false)" />
           <a routerLink="/join"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M7 7h10a5 5 0 0 1 4.9 6l-.8 4a2.6 2.6 0 0 1-4.5 1.2L14.3 16H9.7l-2.3 2.2A2.6 2.6 0 0 1 2.9 17l-.8-4A5 5 0 0 1 7 7Zm0 3v1.5H5.5v1.5H7v1.5h1.5V13H10v-1.5H8.5V10H7Zm9 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2Zm-2 2a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z"/></svg> יש לי קוד משחק</a>
           @if (isAdmin()) { <a routerLink="/admin">כניסת מנהל</a> }
           <button type="button" (click)="menuOpen.set(false); showSettings.set(true)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M10.3 2h3.4l.5 2.6c.6.2 1.2.5 1.7.9l2.5-.9 1.7 2.9-2 1.8c.1.6.1 1.2 0 1.8l2 1.8-1.7 2.9-2.5-.9c-.5.4-1.1.7-1.7.9l-.5 2.6h-3.4l-.5-2.6c-.6-.2-1.2-.5-1.7-.9l-2.5.9-1.7-2.9 2-1.8a6 6 0 0 1 0-1.8l-2-1.8 1.7-2.9 2.5.9c.5-.4 1.1-.7 1.7-.9L10.3 2ZM12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" transform="translate(0 1.5) scale(.95)"/></svg> הגדרות</button>

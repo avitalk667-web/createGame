@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { SiteService } from '../core/site.service';
+import { HelpService } from '../core/help.service';
 
 const PAGES: Record<string, { title: string; body: string[] }> = {
   privacy: {
@@ -225,6 +226,9 @@ const PAGES: Record<string, { title: string; body: string[] }> = {
       @if (withContact()) {
         <p class="contact">יצירת קשר: <a [href]="'mailto:' + site.info().contactEmail" dir="ltr">{{ site.info().contactEmail }}</a></p>
       }
+      @if (topic() === 'contact') {
+        <button type="button" class="btn primary" (click)="help.openContact()">שליחת הודעה</button>
+      }
     </main>
   `,
   styles: [`main { max-width: 760px; margin: 2rem auto; line-height: 1.8; } h1 { margin-top: 1rem; } .contact { font-weight:700; } .contact a { color: var(--gold-2); }`],
@@ -233,6 +237,7 @@ export class InfoPage {
   topic = input.required<string>();
   page = computed(() => PAGES[this.topic()] ?? PAGES['about']);
   site = inject(SiteService);
+  help = inject(HelpService);
   withContact = computed(() => ['contact', 'privacy', 'terms', 'refunds', 'about'].includes(this.topic()));
 
   constructor() {
