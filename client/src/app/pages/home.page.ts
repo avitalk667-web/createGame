@@ -170,8 +170,6 @@ import { demoTrack } from '../demo/demo.api';
         }
       </section>
 
-      @if (!loading()) { <px-treasure-promo variant="section" /> }
-
       <px-how-it-works (tryClicked)="tasteClick()" />
 
       <px-tutorial-video />
