@@ -210,7 +210,8 @@ export class AdminStatsComponent {
   freeTotals = computed(() => this.totals(true));
 
   constructor() {
-    this.load();
+    // entering the tab may show what was read in the last minute; the filters and presets always ask the server
+    this.load(true);
   }
 
   choose(p: Preset) {
@@ -228,11 +229,11 @@ export class AdminStatsComponent {
     this.load();
   }
 
-  async load() {
+  async load(cached = false) {
     this.loading.set(true);
     this.error.set(null);
     try {
-      this.data.set(await this.api.statistics(this.from(), this.to(), this.bucket()));
+      this.data.set(await (cached ? this.api.cached() : this.api).statistics(this.from(), this.to(), this.bucket()));
     } catch (e: any) {
       this.error.set(e.message);
     } finally {

@@ -95,11 +95,12 @@ export class AdminTasteCouponsComponent implements OnInit {
   paidProducts = computed(() => this.catalog().products.filter((p) => !p.isFree));
   dirty = computed(() => { const v = this.view(); return !!v && JSON.stringify(this.form()) !== JSON.stringify(this.fromView(v)); });
 
-  ngOnInit() { void this.reload(); }
+  // entering the tab may show what was read in the last minute; a reload always asks the server
+  ngOnInit() { void this.reload(true); }
 
-  async reload() {
+  async reload(cached = false) {
     try {
-      this.apply(await this.api.tasteView());
+      this.apply(await (cached ? this.api.cached() : this.api).tasteView());
       this.error.set(null);
     } catch (e) {
       this.error.set(e instanceof ApiError ? e.message : 'טעינת קופוני הטעימה נכשלה.');

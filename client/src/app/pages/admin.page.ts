@@ -11,6 +11,7 @@ import { orderStore, sessionStore } from '../core/api.service';
 import {
   AdminApiService, AdminFilters, AdminGame, AdminOrder, AdminProduct, CouponRow, CouponUse, CustomerDetails, Dashboard, FaqRow, EmailSetup, MailingFilters, MailingList,
   MailingRow, MoneyTotals, ReferralDetails, ReferralFilters, ReferralList } from '../core/admin-api.service';
+import { adminCache, adminDataAt } from '../core/admin-cache';
 
 /** The twelve tabs of the side menu, in their order. */
 type Tab = 'dashboard' | 'statistics' | 'taste' | 'games' | 'products' | 'orders' | 'coupons' | 'treasure' | 'customers' | 'referrals' | 'faq' | 'draw' | 'settings';
@@ -192,6 +193,9 @@ const STATUS: Record<string, string> = {
                 }
                 @case ('referrals') { <a class="btn small" [href]="referralsCsvUrl()" download>ייצוא CSV</a> }
               }
+              <!-- a tab entered again within a minute shows what was read then; the time says when, the button reads again -->
+              @if (dataAt(); as at) { <small class="muted updated" aria-live="polite">עודכן {{ at }}</small> }
+              <button class="btn small ghost" type="button" (click)="refresh()" title="קריאה מחדש של הנתונים מהשרת">רענון</button>
             </div>
           </div>
 
@@ -229,6 +233,8 @@ const STATUS: Record<string, string> = {
           @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
           @if (loadingTab()) { <p class="loading">טוענים…</p> }
 
+          <!-- "רענון" builds the tab's parts again, so each of them reads its data from the server once more -->
+          @for (k of [refreshKey()]; track k) {
           @switch (tab()) {
             @case ('statistics') { <px-admin-stats (openTaste)="go('taste')" /> }
             @case ('taste') { <px-admin-taste /> }
@@ -835,6 +841,7 @@ const STATUS: Record<string, string> = {
               }
             }
           }
+          }
         </main>
       </div>
     }
@@ -898,6 +905,7 @@ const STATUS: Record<string, string> = {
     .status-list { margin:.6rem 0; padding-inline-start:1.2rem; line-height:1.9; } .status-list code { background:rgba(255,255,255,.06); padding:.1rem .4rem; border-radius:6px; word-break:break-all; }
     .good { color:#9be3b4; } .bad { color:#ffb4a6; }
     .actions-row { display:flex; gap:.6rem; flex-wrap:wrap; margin:.6rem 0; }
+    .updated { align-self:center; color:var(--muted); font-size:.82rem; white-space:nowrap; }
     .free-report { margin-top:1rem; border-color:rgba(224,185,92,.5); }
     .free-report .bar, .details .bar { margin-bottom:.8rem; }
     td.muted-cell { color:var(--muted); }
@@ -1131,8 +1139,23 @@ export class AdminPage {
   couponUses = signal<{ code: string; rows: CouponUse[] } | null>(null);
   paidProducts = computed(() => this.products().filter((p) => !p.isFree));
 
+  /** When the data on the screen was read from the server (shown next to the refresh button). */
+  dataAt = computed(() => {
+    const at = adminDataAt();
+    return at == null ? null : new Date(at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  });
+  /** Changed by "רענון": the tab's parts are built again and read their data from the server. */
+  refreshKey = signal(0);
+
   constructor() {
     this.init();
+  }
+
+  /** Reads the open tab again from the server, its own parts included (nothing from the last minute is used). */
+  refresh() {
+    adminCache.clear();
+    this.refreshKey.update((k) => k + 1);
+    void this.reload();
   }
 
   private async init() {
@@ -1181,7 +1204,8 @@ export class AdminPage {
       this.syncUrl();
       this.toTop(false);
     }
-    this.reload();
+    // entering another tab may show what was read in the last minute; pressing the open tab again reads it anew
+    this.reload(changed);
   }
 
   /** Keeps the open tab in the address, so a reload or a shared link opens the same place. */
@@ -1206,32 +1230,34 @@ export class AdminPage {
     this.reload();
   }
 
-  async reload() {
+  /** Loads the open tab. Only entering a tab passes `cached` (see core/admin-cache.ts); filters, saves and refresh never do. */
+  async reload(cached = false) {
     this.error.set(null);
+    const api = cached ? this.api.cached() : this.api;
     const tab = this.tab();
     // a loading line only where the tab has nothing to show yet (the child tabs show their own)
     this.loadingTab.set((tab === 'dashboard' && !this.dash()) || (tab === 'settings' && !this.emailSetup()) || (tab === 'games' && !this.games().length)
       || (tab === 'orders' && !this.orders().length) || (tab === 'referrals' && !this.referrals()));
     try {
       switch (this.tab()) {
-        case 'dashboard': this.dash.set(await this.api.dashboard(this.f())); break;
-        case 'orders': this.orders.set(await this.api.orders(this.f())); break;
-        case 'games': this.games.set(await this.api.games(this.f())); break;
-        case 'products': this.products.set(await this.api.products()); break;
+        case 'dashboard': this.dash.set(await api.dashboard(this.f())); break;
+        case 'orders': this.orders.set(await api.orders(this.f())); break;
+        case 'games': this.games.set(await api.games(this.f())); break;
+        case 'products': this.products.set(await api.products()); break;
         case 'faq': {
-          const f = await this.api.faq();
+          const f = await api.faq();
           this.faqRows.set(f.custom);
           break;
         }
-        case 'coupons': this.coupons.set(await this.api.coupons()); break;
-        case 'settings': this.emailSetup.set(await this.api.emailSetup()); break;
+        case 'coupons': this.coupons.set(await api.coupons()); break;
+        case 'settings': this.emailSetup.set(await api.emailSetup()); break;
         case 'referrals':
-          if (!this.products().length) this.products.set(await this.api.products());
-          this.referrals.set(await this.api.referrals(this.rf()));
+          if (!this.products().length) this.products.set(await api.products());
+          this.referrals.set(await api.referrals(this.rf()));
           break;
         case 'customers':
-          if (!this.products().length) this.products.set(await this.api.products());
-          this.mailing.set(await this.api.mailing(this.mf()));
+          if (!this.products().length) this.products.set(await api.products());
+          this.mailing.set(await api.mailing(this.mf()));
 
           break;
       }

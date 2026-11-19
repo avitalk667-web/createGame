@@ -35,11 +35,12 @@ export class AdminChallengeComponent implements OnInit {
   view = signal<ChallengeAdminView | null>(null);
   error = signal<string | null>(null);
 
-  ngOnInit() { void this.reload(); }
+  // entering the tab may show what was read in the last minute; a reload after a change always asks the server
+  ngOnInit() { void this.reload(true); }
 
-  async reload() {
+  async reload(cached = false) {
     try {
-      this.view.set(await this.api.view());
+      this.view.set(await (cached ? this.api.cached() : this.api).view());
       this.error.set(null);
     } catch (e) {
       this.error.set(e instanceof ApiError ? e.message : 'טעינת האתגר נכשלה.');

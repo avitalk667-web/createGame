@@ -142,18 +142,19 @@ export class AdminCouponListComponent implements OnInit {
   actionError = signal<string | null>(null);
   csvUrl = computed(() => this.api.csvUrl(this.f()));
 
-  ngOnInit() { void this.load(); }
+  // entering the tab may show what was read in the last minute; the filters always ask the server
+  ngOnInit() { void this.load(true); }
 
   setF(k: keyof ChallengeCouponFilters, v: string) {
     this.f.update((f) => ({ ...f, [k]: v.trim() || undefined }));
     if (k === 'status' || k === 'source') void this.load();
   }
 
-  async load() {
+  async load(cached = false) {
     this.loading.set(true);
     this.error.set(null);
     try {
-      this.rows.set(await this.api.coupons(this.f()));
+      this.rows.set(await (cached ? this.api.cached() : this.api).coupons(this.f()));
     } catch (e) {
       this.error.set(e instanceof ApiError ? e.message : 'טעינת הקופונים נכשלה.');
     } finally {

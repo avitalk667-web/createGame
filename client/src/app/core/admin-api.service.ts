@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { ApiError } from './api.service';
+import { adminCache, cachedView } from './admin-cache';
 
 export interface AdminFilters {
   from?: string;
@@ -216,7 +217,16 @@ export interface Statistics {
 
 @Injectable({ providedIn: 'root' })
 export class AdminApiService {
-  private async request<T>(method: string, url: string, body?: unknown): Promise<T> {
+  private preferCache = false;
+
+  /** The same calls, answered from the last minute when possible: only for entering a tab (see admin-cache.ts). */
+  cached(): this { return cachedView(this); }
+
+  private request<T>(method: string, url: string, body?: unknown): Promise<T> {
+    return adminCache.through(method, url, this.preferCache, () => this.send<T>(method, url, body));
+  }
+
+  private async send<T>(method: string, url: string, body?: unknown): Promise<T> {
     let res: Response;
     try {
       res = await fetch(url, {

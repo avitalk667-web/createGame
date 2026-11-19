@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { ApiError } from '../../core/api.service';
+import { adminCache, cachedView } from '../../core/admin-cache';
 
 export interface ChallengeCampaignSettings {
   id: string; name: string; description: string; isActive: boolean; issuingPaused: boolean;
@@ -75,7 +76,16 @@ function query(f: ChallengeCouponFilters): string {
 /** The admin's "Challenge 240" calls (admin session cookie; changes carry the admin header, as everywhere in the admin). */
 @Injectable({ providedIn: 'root' })
 export class AdminChallengeApi {
-  private async request<T>(method: string, url: string, body?: unknown): Promise<T> {
+  private preferCache = false;
+
+  /** The same calls, answered from the last minute when possible: only for entering a tab (see core/admin-cache.ts). */
+  cached(): this { return cachedView(this); }
+
+  private request<T>(method: string, url: string, body?: unknown): Promise<T> {
+    return adminCache.through(method, url, this.preferCache, () => this.send<T>(method, url, body));
+  }
+
+  private async send<T>(method: string, url: string, body?: unknown): Promise<T> {
     let res: Response;
     try {
       res = await fetch(url, {

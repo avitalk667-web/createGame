@@ -71,8 +71,16 @@ export class AdminTasteSummaryComponent {
   money = (v: number) => '₪' + (v ?? 0).toLocaleString('he-IL', { maximumFractionDigits: 2 });
   day = (iso: string) => new Date(iso).toLocaleDateString('he-IL');
 
+  /** The first load comes with entering the dashboard (may be from the last minute); a changed period asks the server. */
+  private entering = true;
+
   constructor() {
-    effect(() => void this.load(this.from(), this.to()));
+    effect(() => {
+      const [from, to] = [this.from(), this.to()];
+      const cached = this.entering;
+      this.entering = false;
+      void this.load(from, to, cached);
+    });
   }
 
   rangeNote() {
@@ -86,14 +94,16 @@ export class AdminTasteSummaryComponent {
     return this.coupons()?.byGame.find((g) => g.productId === productId)?.count ?? 0;
   }
 
-  private async load(from: string, to: string) {
+  private async load(from: string, to: string, cached = false) {
     this.error.set(null);
     this.data.set(null);
+    const api = cached ? this.api.cached() : this.api;
+    const challenge = cached ? this.challenge.cached() : this.challenge;
     try {
       const [d, c] = await Promise.all([
-        this.api.taste(from, to, 'day'),
+        api.taste(from, to, 'day'),
         // the coupon figures are optional: the summary still shows if that report cannot be read
-        this.challenge.tasteView().then((v) => v.statistics).catch(() => null),
+        challenge.tasteView().then((v) => v.statistics).catch(() => null),
       ]);
       this.data.set(d);
       this.coupons.set(c);

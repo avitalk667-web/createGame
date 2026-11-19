@@ -59,13 +59,14 @@ export class AdminDrawComponent {
   error = signal<string | null>(null);
 
   constructor() {
-    this.load();
+    // entering the tab may show what was read in the last minute; the refresh button always asks the server
+    this.load(true);
   }
 
-  async load() {
+  async load(cached = false) {
     this.error.set(null);
     try {
-      this.draw.set(await this.api.draw());
+      this.draw.set(await (cached ? this.api.cached() : this.api).draw());
     } catch (e: any) {
       this.error.set(e.message);
     }

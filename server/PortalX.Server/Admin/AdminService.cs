@@ -74,108 +74,139 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
 
     private sealed record RoomRow(GameRoom Room, Entitlement? Ent, Order? Order, int Players, GameResult? Result);
 
-    /// <summary>
-    /// Rooms opened through purchases or admin free games (plus legacy rooms only when no product filter is set), newest
-    /// first. The games table shows at most <paramref name="limit"/> rows; the dashboard passes null so its totals count every
-    /// room in the chosen range, not only the newest ones.
-    /// </summary>
-    private async Task<List<RoomRow>> RoomsAsync(AdminFilter f, int? limit = 1000)
+    // A game counts as started once it left the lobby or has a result, and as completed when it reached the end or its
+    // latest result is a success. The same rules serve the purchases table (below) and the SQL of the dashboard and games.
+    private static bool Started(RoomPhase phase, bool hasResult) => phase != RoomPhase.Lobby || hasResult;
+    private static bool Completed(RoomPhase phase, string? latestCompletion) => phase == RoomPhase.Completed || latestCompletion == "success";
+    private static string GameStatus(RoomPhase phase, bool hasResult, string? latestCompletion) =>
+        Completed(phase, latestCompletion) ? "completed" : Started(phase, hasResult) ? "in-progress" : "not-started";
+    private static string GameStatus(RoomRow r) => GameStatus(r.Room.Phase, r.Result != null, r.Result?.CompletionType);
+
+    /// <summary>The rooms of the dashboard and the games table: the period and game filters (when the room was opened).</summary>
+    private IQueryable<GameRoom> RoomsIn(AdminFilter f)
     {
         var q = db.Rooms.AsNoTracking();
         if (f.From is { } from) q = q.Where(r => r.CreatedAt >= from);
         if (f.To is { } to) q = q.Where(r => r.CreatedAt < to);
         if (f.ProductId != null) q = q.Where(r => r.ProductId == f.ProductId);
-        if (f.Access != null) q = q.Where(r => r.AccessSource == f.Access);
-        if (f.Search != null) q = q.Where(r => r.Code == RoomService.NormalizeCode(f.Search));
-        var ordered = q.OrderByDescending(r => r.CreatedAt);
-        var list = await (limit is { } n ? ordered.Take(n) : ordered).ToListAsync();
-        var ids = list.Select(r => r.Id).ToList();
-        var entIds = list.Where(r => r.EntitlementId != null).Select(r => r.EntitlementId!.Value).ToList();
-        var ents = await db.Entitlements.AsNoTracking().Where(e => entIds.Contains(e.Id)).ToDictionaryAsync(e => e.Id);
-        var orderIds = ents.Values.Where(e => e.OrderId != null).Select(e => e.OrderId!.Value).ToList();
-        var orders = await db.Orders.AsNoTracking().Where(o => orderIds.Contains(o.Id)).ToDictionaryAsync(o => o.Id);
-        var players = await db.Players.AsNoTracking().Where(p => ids.Contains(p.RoomId) && !p.IsRemoved)
-            .GroupBy(p => p.RoomId).Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count);
-        var results = (await db.Results.AsNoTracking().Where(r => ids.Contains(r.RoomId)).ToListAsync())
-            .GroupBy(r => r.RoomId).ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.CreatedAt).First());
-        var rows = list.Select(r =>
-        {
-            var ent = r.EntitlementId is { } eid && ents.TryGetValue(eid, out var e) ? e : null;
-            var order = ent?.OrderId is { } oid && orders.TryGetValue(oid, out var o) ? o : null;
-            return new RoomRow(r, ent, order, players.GetValueOrDefault(r.Id), results.GetValueOrDefault(r.Id));
-        });
-        if (!f.IncludeTest) rows = rows.Where(x => x.Ent?.IsTest != true);
-        return rows.ToList();
+        return q;
     }
 
-    private static bool Started(RoomRow r) => r.Room.Phase != RoomPhase.Lobby || r.Result != null;
-    private static bool Completed(RoomRow r) => r.Room.Phase == RoomPhase.Completed || r.Result is { CompletionType: "success" };
-    private static string GameStatus(RoomRow r) => Completed(r) ? "completed" : Started(r) ? "in-progress" : "not-started";
+    /// <summary>One group of rooms with the same kind and state, counted by the database (no room rows or game state are read).</summary>
+    private sealed record RoomGroup(string AccessSource, string? ProductId, string ScenarioId, bool IsTest, bool Started, bool Completed,
+        int Count, int Players, int Seats);
 
+    private async Task<List<RoomGroup>> RoomGroupsAsync(AdminFilter f) =>
+        (await RoomsIn(f)
+            .Select(r => new
+            {
+                r.AccessSource, r.ProductId, r.ScenarioId,
+                // a room whose entitlement is a test purchase is left out unless test purchases are included
+                IsTest = db.Entitlements.Any(e => e.Id == r.EntitlementId && e.IsTest),
+                Started = r.Phase != RoomPhase.Lobby || db.Results.Any(x => x.RoomId == r.Id),
+                Completed = r.Phase == RoomPhase.Completed
+                    || db.Results.Where(x => x.RoomId == r.Id).OrderByDescending(x => x.CreatedAt).Select(x => x.CompletionType).FirstOrDefault() == "success",
+                Players = db.Players.Count(p => p.RoomId == r.Id && !p.IsRemoved),
+                // every seat ever taken, also by players who later left (the free trial report)
+                Seats = db.Players.Count(p => p.RoomId == r.Id),
+            })
+            .GroupBy(x => new { x.AccessSource, x.ProductId, x.ScenarioId, x.IsTest, x.Started, x.Completed })
+            .Select(g => new { g.Key, Count = g.Count(), Players = g.Sum(x => x.Players), Seats = g.Sum(x => x.Seats) })
+            .ToListAsync())
+        .Select(g => new RoomGroup(g.Key.AccessSource, g.Key.ProductId, g.Key.ScenarioId, g.Key.IsTest, g.Key.Started, g.Key.Completed, g.Count, g.Players, g.Seats))
+        .ToList();
+
+    /// <summary>
+    /// Totals of the dashboard. Every figure is counted and summed by the database (grouped queries), so no order or room
+    /// rows and no game state are read; the figures and their rules are exactly those of the earlier in-memory version.
+    /// </summary>
     public async Task<object> DashboardAsync(AdminFilter f)
     {
-        var orders = await Orders(f with { Status = null, Search = null }).ToListAsync();
-        var confirmed = orders.Where(o => o.Status is OrderStatus.Paid or OrderStatus.Refunded).ToList();
-        var refunded = orders.Where(o => o.Status == OrderStatus.Refunded).ToList();
-        var roomRows = await RoomsAsync(f with { Status = null, Search = null, Access = null }, limit: null);
-        var managed = roomRows.Where(r => r.Room.AccessSource is "purchase" or "admin-free").ToList();
-        var paidRooms = managed.Where(r => r.Room.AccessSource == "purchase").ToList();
-        var freeRooms = managed.Where(r => r.Room.AccessSource == "admin-free").ToList();
+        var orderFilter = f with { Status = null, Search = null };
+        var orderGroups = await Orders(orderFilter)
+            .GroupBy(o => new { o.ProductId, o.Status })
+            .Select(g => new
+            {
+                g.Key.ProductId, g.Key.Status, Count = g.Count(),
+                Price = g.Sum(o => o.PriceSnapshot),
+                Refund = g.Sum(o => o.RefundedAmount ?? o.PriceSnapshot),
+            })
+            .ToListAsync();
+        var buyersWithEmail = await Orders(orderFilter)
+            .Where(o => (o.Status == OrderStatus.Paid || o.Status == OrderStatus.Refunded) && o.Email != null)
+            .Select(o => o.Email!.ToLower()).Distinct().CountAsync();
+
+        var roomFilter = f with { Status = null, Search = null, Access = null };
+        var all = await RoomGroupsAsync(roomFilter);
+        var rooms = all.Where(g => f.IncludeTest || !g.IsTest).ToList();
+        var managed = rooms.Where(g => g.AccessSource is "purchase" or "admin-free").ToList();
+        var paidRooms = managed.Where(g => g.AccessSource == "purchase").ToList();
+        var freeRooms = managed.Where(g => g.AccessSource == "admin-free").ToList();
         // free trial games: shown separately, never part of the revenue or of the paid games
-        var sampleRooms = roomRows.Where(r => r.Room.AccessSource == "free-sample").ToList();
-        var paidWithRoom = paidRooms.Where(r => r.Order != null).Select(r => r.Order!.Id).ToHashSet();
-        // games from the demo mode that no longer exists: history only, never sales, revenue or paid games
-        var demoRooms = await RoomsAsync(f with { Status = null, Search = null, Access = RoomService.LegacyDemoAccess, IncludeTest = true }, limit: null);
+        var sampleRooms = rooms.Where(g => g.AccessSource == "free-sample").ToList();
+        // games from the demo mode that no longer exists: history only, never sales, revenue or paid games (test ones too)
+        var demoRooms = all.Where(g => g.AccessSource == RoomService.LegacyDemoAccess).ToList();
         var products = await db.Products.AsNoTracking().OrderBy(p => p.SortOrder).ToListAsync();
 
-        object Money(IEnumerable<Order> conf, IEnumerable<Order> refs)
+        // paid orders whose game was never opened (in the rooms of this period, with the same test rule as above)
+        var purchaseRooms = RoomsIn(roomFilter).Where(r => r.AccessSource == "purchase");
+        if (!f.IncludeTest) purchaseRooms = purchaseRooms.Where(r => !db.Entitlements.Any(e => e.Id == r.EntitlementId && e.IsTest));
+        var paidNotOpened = await Orders(orderFilter).CountAsync(o => o.Status == OrderStatus.Paid
+            && !purchaseRooms.Any(r => db.Entitlements.Any(e => e.Id == r.EntitlementId && e.OrderId == o.Id)));
+
+        object Money(string? productId)
         {
-            var gross = conf.Sum(o => o.PriceSnapshot);
-            var refunds = refs.Sum(o => o.RefundedAmount ?? o.PriceSnapshot);
-            return new { gross, refunds, afterRefunds = gross - refunds, paidCount = conf.Count(), refundCount = refs.Count() };
+            var mine = orderGroups.Where(g => productId == null || g.ProductId == productId).ToList();
+            var conf = mine.Where(g => g.Status is OrderStatus.Paid or OrderStatus.Refunded).ToList();
+            var refs = mine.Where(g => g.Status == OrderStatus.Refunded).ToList();
+            var gross = conf.Sum(g => g.Price);
+            var refunds = refs.Sum(g => g.Refund);
+            return new { gross, refunds, afterRefunds = gross - refunds, paidCount = conf.Sum(g => g.Count), refundCount = refs.Sum(g => g.Count) };
         }
+        object NoMoney() => new { gross = 0m, refunds = 0m, afterRefunds = 0m, paidCount = 0, refundCount = 0 };
+        int Count(IEnumerable<RoomGroup> g) => g.Sum(x => x.Count);
+        int CountOrders(OrderStatus s) => orderGroups.Where(g => g.Status == s).Sum(g => g.Count);
 
         return new
         {
             currency = "ILS",
             includesTest = f.IncludeTest,
-            revenue = Money(confirmed, refunded),
+            revenue = Money(null),
             byProduct = products.Where(p => f.ProductId == null || p.Id == f.ProductId).Select(p => new
             {
                 productId = p.Id, name = p.Name, p.IsFree,
                 // a free game has no sales: its money is always zero and its games are the free trial runs
-                money = p.IsFree ? Money([], []) : Money(confirmed.Where(o => o.ProductId == p.Id), refunded.Where(o => o.ProductId == p.Id)),
-                games = p.IsFree ? sampleRooms.Count(r => r.Room.ProductId == p.Id) : managed.Count(r => r.Room.ProductId == p.Id),
+                money = p.IsFree ? NoMoney() : Money(p.Id),
+                games = p.IsFree ? Count(sampleRooms.Where(g => g.ProductId == p.Id)) : Count(managed.Where(g => g.ProductId == p.Id)),
             }),
             freeGame = await FreeGameReportAsync(sampleRooms, products.FirstOrDefault(p => p.IsFree)),
-            buyersWithEmail = confirmed.Where(o => o.Email != null).Select(o => o.Email!.ToLowerInvariant()).Distinct().Count(),
+            buyersWithEmail,
             orders = new
             {
-                pending = orders.Count(o => o.Status == OrderStatus.Pending),
-                failed = orders.Count(o => o.Status == OrderStatus.Failed),
-                cancelled = orders.Count(o => o.Status == OrderStatus.Cancelled),
+                pending = CountOrders(OrderStatus.Pending),
+                failed = CountOrders(OrderStatus.Failed),
+                cancelled = CountOrders(OrderStatus.Cancelled),
             },
             games = new
             {
-                opened = managed.Count,
-                started = managed.Count(Started),
-                completed = managed.Count(Completed),
-                paidStarted = paidRooms.Count(Started),
-                adminFree = freeRooms.Count,
-                adminFreeStarted = freeRooms.Count(Started),
-                freeSample = sampleRooms.Count,
-                freeSampleStarted = sampleRooms.Count(Started),
-                freeSampleCompleted = sampleRooms.Count(Completed),
-                freeSamplePlayers = sampleRooms.Sum(r => r.Players),
-                demo = demoRooms.Count,
-                demoStarted = demoRooms.Count(Started),
-                demoCompleted = demoRooms.Count(Completed),
+                opened = Count(managed),
+                started = Count(managed.Where(g => g.Started)),
+                completed = Count(managed.Where(g => g.Completed)),
+                paidStarted = Count(paidRooms.Where(g => g.Started)),
+                adminFree = Count(freeRooms),
+                adminFreeStarted = Count(freeRooms.Where(g => g.Started)),
+                freeSample = Count(sampleRooms),
+                freeSampleStarted = Count(sampleRooms.Where(g => g.Started)),
+                freeSampleCompleted = Count(sampleRooms.Where(g => g.Completed)),
+                freeSamplePlayers = sampleRooms.Sum(g => g.Players),
+                demo = Count(demoRooms),
+                demoStarted = Count(demoRooms.Where(g => g.Started)),
+                demoCompleted = Count(demoRooms.Where(g => g.Completed)),
                 // paid but not started: a room still in the lobby, or a paid order whose game was never opened
-                purchasedNotStarted = paidRooms.Count(r => !Started(r))
-                    + confirmed.Count(o => o.Status == OrderStatus.Paid && !paidWithRoom.Contains(o.Id)),
+                purchasedNotStarted = Count(paidRooms.Where(g => !g.Started)) + paidNotOpened,
             },
             // without customer accounts a person is counted once per game they joined (a reconnect keeps the same seat)
-            participants = managed.Sum(r => r.Players),
+            participants = managed.Sum(g => g.Players),
             testPaidOrders = f.IncludeTest ? (int?)null : await db.Orders.CountAsync(o => o.IsTest && (o.Status == OrderStatus.Paid || o.Status == OrderStatus.Refunded)),
         };
     }
@@ -196,14 +227,13 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
     /// returns to the same seat. Without customer accounts the same person in two different games counts twice.
     /// The period filter applies to when a game was opened; the "today" figures always cover today in Israel.
     /// </summary>
-    private async Task<object?> FreeGameReportAsync(List<RoomRow> sampleRooms, Product? product)
+    private async Task<object?> FreeGameReportAsync(List<RoomGroup> sampleRooms, Product? product)
     {
         if (product == null) return null;
-        var rows = sampleRooms.Where(r => r.Room.ProductId == product.Id || r.Room.ScenarioId == product.ScenarioId).ToList();
-        var ids = rows.Select(r => r.Room.Id).ToList();
-        var startedIds = rows.Where(Started).Select(r => r.Room.Id).ToHashSet();
-        // everyone who took a seat, also players who later left the game
-        var seats = await db.Players.AsNoTracking().Where(p => ids.Contains(p.RoomId)).Select(p => new { p.Id, p.RoomId }).ToListAsync();
+        var rows = sampleRooms.Where(g => g.ProductId == product.Id || g.ScenarioId == product.ScenarioId).ToList();
+        var started = rows.Where(g => g.Started).ToList();
+        var created = rows.Sum(g => g.Count);
+        var startedCount = started.Sum(g => g.Count);
 
         var today = IsraelTodayStartUtc(DateTime.UtcNow);
         var all = db.Rooms.AsNoTracking().Where(r => r.AccessSource == "free-sample");
@@ -217,12 +247,13 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
         return new
         {
             productId = product.Id, name = product.Name, kind = "free",
-            created = rows.Count,
-            started = startedIds.Count,
-            notStarted = rows.Count - startedIds.Count,
-            completed = rows.Count(Completed),
-            participants = seats.Select(s => s.Id).Distinct().Count(),
-            participantsInStarted = seats.Where(s => startedIds.Contains(s.RoomId)).Select(s => s.Id).Distinct().Count(),
+            created,
+            started = startedCount,
+            notStarted = created - startedCount,
+            completed = rows.Where(g => g.Completed).Sum(g => g.Count),
+            // everyone who took a seat, also players who later left the game (a seat belongs to one room)
+            participants = rows.Sum(g => g.Seats),
+            participantsInStarted = started.Sum(g => g.Seats),
             lastStartedAt = lastStarted,
             today = new { started = startedToday, completed = completedToday, joined = joinedToday },
             revenue = 0,
@@ -300,30 +331,65 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
         return [.. Encoding.UTF8.GetPreamble(), .. Encoding.UTF8.GetBytes(sb.ToString())];
     }
 
+    /// <summary>The group score of each room, read inside the database from the saved game state (never the whole state).</summary>
+    private sealed record RoomScore(Guid Id, int? Group);
+
+    /// <summary>
+    /// The games table: the newest 1000 rooms of the filter, then test purchases left out unless included (as before).
+    /// Only the shown columns are read: the latest result of each room, its player count, its order number and the group
+    /// score (taken from the game state by the database, the same value GameEngine.World(room).Score?.Group gives).
+    /// </summary>
     public async Task<object> GamesAsync(AdminFilter f)
     {
-        var rows = await RoomsAsync(f);
+        var q = RoomsIn(f);
+        if (f.Access != null) q = q.Where(r => r.AccessSource == f.Access);
+        if (f.Search != null) q = q.Where(r => r.Code == RoomService.NormalizeCode(f.Search));
+        var rows = await q.OrderByDescending(r => r.CreatedAt).Take(1000)
+            .Select(r => new
+            {
+                r.Id, r.Code, r.ProductId, r.ScenarioId, r.AccessSource, r.CreatedAt, r.IntroStartedAt, r.StartedAt, r.EndedAt, r.Phase,
+                Ent = db.Entitlements.Where(e => e.Id == r.EntitlementId).Select(e => new { e.IsTest, e.OrderId }).FirstOrDefault(),
+                OrderNumber = db.Entitlements.Where(e => e.Id == r.EntitlementId)
+                    .SelectMany(e => db.Orders.Where(o => o.Id == e.OrderId)).Select(o => (long?)o.Number).FirstOrDefault(),
+                Players = db.Players.Count(p => p.RoomId == r.Id && !p.IsRemoved),
+                Result = db.Results.Where(x => x.RoomId == r.Id).OrderByDescending(x => x.CreatedAt)
+                    .Select(x => new { x.DurationSeconds, x.HintsUsed, x.PuzzlesSolved, x.PuzzlesTotal, x.CompletionType }).FirstOrDefault(),
+            })
+            .ToListAsync();
+        if (!f.IncludeTest) rows = rows.Where(r => r.Ent?.IsTest != true).ToList();
+
+        var ids = rows.Select(r => r.Id).ToArray();
+        // System.Text.Json reads "score" and "group" without regard to case; the server always writes them in camelCase.
+        // A missing or null score gives null; a score without "group" gives 0 (the default of ScoreBoard.Group).
+        var scores = ids.Length == 0 ? [] : await db.Database.SqlQuery<RoomScore>($"""
+            SELECT r."Id",
+                   CASE WHEN jsonb_typeof(r."WorldJson" -> 'score') = 'object'
+                        THEN COALESCE((r."WorldJson" -> 'score' ->> 'group')::int, 0) END AS "Group"
+            FROM "Rooms" AS r WHERE r."Id" = ANY({ids})
+            """).ToListAsync();
+        var groupScore = scores.ToDictionary(s => s.Id, s => s.Group);
+
         var names = await db.Products.AsNoTracking().ToDictionaryAsync(p => p.Id, p => p.Name);
         return rows.Select(r => new
         {
-            r.Room.Code,
-            productId = r.Room.ProductId,
-            productName = r.Room.ProductId != null && names.TryGetValue(r.Room.ProductId, out var n) ? n : scenarios.Find(r.Room.ScenarioId)?.Name,
-            access = r.Room.AccessSource,
+            r.Code,
+            productId = r.ProductId,
+            productName = r.ProductId != null && names.TryGetValue(r.ProductId, out var n) ? n : scenarios.Find(r.ScenarioId)?.Name,
+            access = r.AccessSource,
             isTest = r.Ent?.IsTest ?? false,
-            orderNumber = r.Order?.Number,
-            owner = r.Room.AccessSource switch { "admin-free" => "מנהל", "treasure" => "מתנה מתיבת האוצר", "free-sample" => "משחק התנסות חינמי", RoomService.LegacyDemoAccess => "הדגמה ישנה (סגור)", _ => r.Order != null ? $"הזמנה {r.Order.Number}" : null },
-            r.Room.CreatedAt,
-            startedAt = r.Room.IntroStartedAt ?? r.Room.StartedAt,
-            r.Room.EndedAt,
+            orderNumber = r.OrderNumber,
+            owner = r.AccessSource switch { "admin-free" => "מנהל", "treasure" => "מתנה מתיבת האוצר", "free-sample" => "משחק התנסות חינמי", RoomService.LegacyDemoAccess => "הדגמה ישנה (סגור)", _ => r.OrderNumber != null ? $"הזמנה {r.OrderNumber}" : null },
+            r.CreatedAt,
+            startedAt = r.IntroStartedAt ?? r.StartedAt,
+            r.EndedAt,
             players = r.Players,
-            phase = r.Room.Phase.ToString().ToLowerInvariant(),
-            status = GameStatus(r),
+            phase = r.Phase.ToString().ToLowerInvariant(),
+            status = GameStatus(r.Phase, r.Result != null, r.Result?.CompletionType),
             result = r.Result == null ? null : new
             {
                 r.Result.DurationSeconds, r.Result.HintsUsed, r.Result.PuzzlesSolved, r.Result.PuzzlesTotal, r.Result.CompletionType,
             },
-            groupScore = GameEngine.World(r.Room).Score?.Group,
+            groupScore = groupScore.GetValueOrDefault(r.Id),
         });
     }
 

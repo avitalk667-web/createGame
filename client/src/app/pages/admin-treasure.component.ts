@@ -1,6 +1,7 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, Injectable, signal } from '@angular/core';
 import { ApiError } from '../core/api.service';
+import { adminCache, cachedView } from '../core/admin-cache';
 
 export interface TreasurePrizeConfig {
   key: string; kind: 'none' | 'percent' | 'gift'; name: string; weight: number; active: boolean;
@@ -46,7 +47,16 @@ function query(f: TreasureFilters) {
 /** The "תיבת האוצר" admin API (/api/admin/treasure/*), with the same session, CSRF header and errors as the rest of the admin area. */
 @Injectable({ providedIn: 'root' })
 export class AdminTreasureApi {
-  private async request<T>(method: string, url: string, body?: unknown): Promise<T> {
+  private preferCache = false;
+
+  /** The same calls, answered from the last minute when possible: only for entering the tab (see core/admin-cache.ts). */
+  cached(): this { return cachedView(this); }
+
+  private request<T>(method: string, url: string, body?: unknown): Promise<T> {
+    return adminCache.through(method, url, this.preferCache, () => this.send<T>(method, url, body));
+  }
+
+  private async send<T>(method: string, url: string, body?: unknown): Promise<T> {
     let res: Response;
     try {
       res = await fetch(url, {
@@ -263,8 +273,9 @@ export class AdminTreasureComponent {
   csvUrl = computed(() => this.api.csvUrl(this.f()));
 
   constructor() {
-    this.loadConfig();
-    this.loadData();
+    // entering the tab: what was read in the last minute may be shown again; later loads always ask the server
+    this.loadConfig(true);
+    this.loadData(true);
   }
 
   private async run(fn: () => Promise<void>) {
@@ -272,18 +283,20 @@ export class AdminTreasureComponent {
     try { await fn(); } catch (e: any) { this.error.set(e?.message ?? 'אירעה שגיאה. נסו שוב.'); }
   }
 
-  loadConfig() {
+  loadConfig(cached = false) {
+    const api = cached ? this.api.cached() : this.api;
     return this.run(async () => {
-      const [c, g] = await Promise.all([this.api.config(), this.api.gifts()]);
+      const [c, g] = await Promise.all([api.config(), api.gifts()]);
       this.config.set(c);
       this.gifts.set(g);
       this.reset();
     });
   }
 
-  loadData() {
+  loadData(cached = false) {
+    const api = cached ? this.api.cached() : this.api;
     return this.run(async () => {
-      const [s, w] = await Promise.all([this.api.stats(this.f()), this.api.wins(this.f())]);
+      const [s, w] = await Promise.all([api.stats(this.f()), api.wins(this.f())]);
       this.stats.set(s);
       this.wins.set(w);
     });
