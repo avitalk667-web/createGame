@@ -213,6 +213,37 @@ public sealed class PurchaseService(
         return (result == "applied:refunded", result);
     }
 
+    /// <summary>
+    /// Opens the game of a paid order that has none yet, so its code shows in the admin area right away and the buyer
+    /// (or the admin) can hand it on. An order that already has a game is left untouched, so a host claim the buyer
+    /// already holds stays valid. Never throws: it can never undo or fail the payment.
+    /// </summary>
+    public async Task<string?> OpenGameAfterPaidAsync(Guid orderId)
+    {
+        try
+        {
+            db.ChangeTracker.Clear();
+            var existing = await db.Rooms.AsNoTracking()
+                .Where(r => db.Entitlements.Any(e => e.OrderId == orderId && e.Id == r.EntitlementId))
+                .Select(r => r.Code).FirstOrDefaultAsync();
+            if (existing != null) return existing;
+            var (game, error) = await OpenGameAsync(orderId);
+            if (error != null)
+            {
+                logger.LogInformation("Order {Order}: game not opened automatically ({Code})", orderId, error.Code);
+                return null;
+            }
+            logger.LogInformation("Order {Order}: game {Code} opened automatically after the payment", orderId, game!.Code);
+            return game.Code;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Order {Order}: opening the game after the payment failed; the buyer can still open it from the order page", orderId);
+            db.ChangeTracker.Clear();
+            return null;
+        }
+    }
+
     /// <summary>The game of this order, if it has one that has not finished.</summary>
     public async Task<Guid?> OpenRoomOfOrderAsync(Guid orderId) =>
         await db.Rooms.AsNoTracking().Where(r => r.Phase != RoomPhase.Completed && db.Entitlements.Any(e => e.OrderId == orderId && e.Id == r.EntitlementId))
@@ -268,6 +299,8 @@ public sealed class PurchaseService(
             .ExecuteUpdateAsync(s => s.SetProperty(e => e.Result, firstResult));
         if (result.StartsWith("rejected")) logger.LogWarning("Payment event {Event} for order {Order}: {Result}", n.EventId, n.OrderId, result);
         else logger.LogInformation("Payment event {Event} for order {Order}: {Result}", n.EventId, n.OrderId, result);
+        // the game is opened as soon as the payment is confirmed, so its code exists even if the buyer never presses the button
+        if (result == "applied:paid") await OpenGameAfterPaidAsync(n.OrderId);
         // the treasure chest follows the payment once it is saved; it never throws, so it can never undo or fail the payment
         if (result == "applied:paid") await treasure.AfterPaidAsync(n.OrderId);
         else if (result == "applied:refunded") await treasure.AfterRefundAsync(n.OrderId);

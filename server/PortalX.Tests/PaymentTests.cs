@@ -68,7 +68,9 @@ public class PaymentTests
 
         var first = await (await OpenGameAsync(http, p)).Content.ReadFromJsonAsync<JsonElement>(Json);
         var code = first.GetProperty("code").GetString()!;
-        Assert.False(first.GetProperty("existing").GetBoolean());
+        // the game was already opened when the payment was confirmed; the buyer's click takes the host seat of that game
+        Assert.True(first.GetProperty("existing").GetBoolean());
+        Assert.Equal(code, after.GetProperty("game").GetProperty("code").GetString());
 
         // opening again returns the same game with a fresh host claim (buyer on another device) — never a second game
         var again = await (await OpenGameAsync(http, p)).Content.ReadFromJsonAsync<JsonElement>(Json);
@@ -103,6 +105,51 @@ public class PaymentTests
             if (r.IsSuccessStatusCode) codes.Add((await r.Content.ReadFromJsonAsync<JsonElement>(Json)).GetProperty("code").GetString()!);
         Assert.Single(codes);
         Assert.Equal(1, await DbAsync(db => db.Rooms.CountAsync(r => r.Code == codes.First())));
+    }
+
+    [Fact]
+    public async Task A_paid_order_from_before_automatic_games_gets_exactly_one_game_from_the_admin_check()
+    {
+        var http = _factory.CreateClient();
+        var p = await CreateOrderAsync(http, _factory.Services);
+        (await PayAsync(http, p)).EnsureSuccessStatusCode();
+        // as an order paid before games opened automatically: paid, an entitlement, no game
+        await DbAsync(async db =>
+        {
+            var ent = await db.Entitlements.SingleAsync(e => e.OrderId == p.OrderId);
+            await db.Rooms.Where(r => r.EntitlementId == ent.Id).ExecuteDeleteAsync();
+            return await db.Entitlements.Where(e => e.Id == ent.Id).ExecuteUpdateAsync(u => u.SetProperty(e => e.SessionsUsed, 0));
+        });
+        Assert.False((await OrderAsync(http, p)).TryGetProperty("game", out var none) && none.ValueKind != JsonValueKind.Null);
+
+        var admin = _factory.CreateClient();
+        (await admin.PostAsJsonAsync("/api/admin/login", new { username = AdminTests.Username, password = AdminTests.Password })).EnsureSuccessStatusCode();
+        admin.DefaultRequestHeaders.Add(PortalX.Server.Admin.AdminAuth.CsrfHeader, "1");
+
+        // several checks at once (double clicks, two admins): one game, one code
+        var checks = await Task.WhenAll(Enumerable.Range(0, 3).Select(_ => admin.PostAsync($"/api/admin/orders/{p.OrderId}/check-payment", null)));
+        var codes = new HashSet<string>();
+        foreach (var r in checks)
+        {
+            r.EnsureSuccessStatusCode();
+            codes.Add((await r.Content.ReadFromJsonAsync<JsonElement>(Json)).GetProperty("gameCode").GetString()!);
+        }
+        var code = Assert.Single(codes);
+        var ent = await DbAsync(db => db.Entitlements.AsNoTracking().SingleAsync(e => e.OrderId == p.OrderId));
+        Assert.Equal(1, await DbAsync(db => db.Rooms.CountAsync(r => r.EntitlementId == ent.Id)));
+        Assert.Equal(1, ent.SessionsUsed);
+
+        // the buyer sees the code and takes the host seat of that same game
+        Assert.Equal(code, (await OrderAsync(http, p)).GetProperty("game").GetProperty("code").GetString());
+        var opened = await (await OpenGameAsync(http, p)).Content.ReadFromJsonAsync<JsonElement>(Json);
+        Assert.Equal(code, opened.GetProperty("code").GetString());
+        Assert.True(opened.GetProperty("existing").GetBoolean());
+        Assert.False(string.IsNullOrEmpty(opened.GetProperty("hostClaim").GetString()));
+
+        // a later check changes nothing
+        var later = await (await admin.PostAsync($"/api/admin/orders/{p.OrderId}/check-payment", null)).Content.ReadFromJsonAsync<JsonElement>(Json);
+        Assert.Equal(code, later.GetProperty("gameCode").GetString());
+        Assert.Equal(1, await DbAsync(db => db.Rooms.CountAsync(r => r.EntitlementId == ent.Id)));
     }
 
     [Theory]

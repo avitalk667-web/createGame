@@ -117,11 +117,14 @@ public static class AdminEndpoints
         });
 
         // asks SUMIT about one order, for example when a buyer says they paid
-        secured.MapPost("/orders/{id:guid}/check-payment", async (Guid id, HttpContext ctx, AdminService s, Payments.SumitReconciler sumit) =>
+        secured.MapPost("/orders/{id:guid}/check-payment", async (Guid id, HttpContext ctx, AdminService s, Payments.SumitReconciler sumit,
+            Payments.PurchaseService purchases) =>
         {
             var result = await sumit.LookupAsync(id, "admin", spaced: false);
-            await s.AuditAsync(AdminAuth.Name(ctx.User), "order-payment-checked", "order", id.ToString(), new { result });
-            return Results.Ok(new { result });
+            // a paid order without a game (paid before games opened automatically) gets its game now
+            var gameCode = await purchases.OpenGameAfterPaidAsync(id);
+            await s.AuditAsync(AdminAuth.Name(ctx.User), "order-payment-checked", "order", id.ToString(), new { result, gameCode });
+            return Results.Ok(new { result, gameCode });
         });
 
         // records a refund already made at the provider: the game can no longer be opened, the history stays
