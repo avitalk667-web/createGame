@@ -1,5 +1,6 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { AdminDrawComponent } from './admin-draw.component';
+import { AdminTreasureComponent } from './admin-treasure.component';
 import { AdminStatsComponent, addDays, israelToday } from './admin-stats.component';
 import { AdminTasteComponent } from './admin-taste.component';
 import { AdminTasteSummaryComponent } from './admin-taste-summary.component';
@@ -12,7 +13,7 @@ import {
   MailingRow, MoneyTotals, ReferralDetails, ReferralFilters, ReferralList } from '../core/admin-api.service';
 
 /** The twelve tabs of the side menu, in their order. */
-type Tab = 'dashboard' | 'statistics' | 'taste' | 'games' | 'products' | 'orders' | 'coupons' | 'customers' | 'referrals' | 'faq' | 'draw' | 'settings';
+type Tab = 'dashboard' | 'statistics' | 'taste' | 'games' | 'products' | 'orders' | 'coupons' | 'treasure' | 'customers' | 'referrals' | 'faq' | 'draw' | 'settings';
 type CouponSub = 'general' | 'challenge' | 'taste' | 'issued';
 type ProductSub = 'edit' | 'taste';
 
@@ -25,6 +26,7 @@ const ICON: Record<Tab, string> = {
   products: 'M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8zM7.5 7.5h.01',
   orders: 'M3 6h18M3 6l1.6 13.2A2 2 0 0 0 6.6 21h10.8a2 2 0 0 0 2-1.8L21 6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2',
   coupons: 'M3 9a3 3 0 0 0 0 6v3a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-3a3 3 0 0 0 0-6V6a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1zM9 9h.01M15 15h.01M15 9l-6 6',
+  treasure: 'M3 10a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v10H3zM3 13h18M11 11h2v4h-2zM8 6V5M16 6V5',
   customers: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
   referrals: 'M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7',
   faq: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01',
@@ -35,7 +37,7 @@ const ICON: Record<Tab, string> = {
 /** The side menu: four groups, the tabs in the order of the spec. */
 const NAV: { group: string; items: { id: Tab; label: string }[] }[] = [
   { group: 'סקירה', items: [{ id: 'dashboard', label: 'לוח בקרה' }, { id: 'statistics', label: 'סטטיסטיקות' }, { id: 'taste', label: 'טעימת הפורטל' }] },
-  { group: 'משחקים ומכירות', items: [{ id: 'games', label: 'משחקים' }, { id: 'products', label: 'מוצרים ומחירים' }, { id: 'orders', label: 'רכישות' }, { id: 'coupons', label: 'קופונים והנחות' }] },
+  { group: 'משחקים ומכירות', items: [{ id: 'games', label: 'משחקים' }, { id: 'products', label: 'מוצרים ומחירים' }, { id: 'orders', label: 'רכישות' }, { id: 'coupons', label: 'קופונים והנחות' }, { id: 'treasure', label: 'תיבת האוצר' }] },
   { group: 'לקוחות ותוכן', items: [{ id: 'customers', label: 'לקוחות ודיוור' }, { id: 'referrals', label: 'קישורים שיווקיים' }, { id: 'faq', label: 'שאלות ותשובות' }, { id: 'draw', label: 'הגרלה' }] },
   { group: 'מערכת', items: [{ id: 'settings', label: 'הגדרות מערכת' }] },
 ];
@@ -49,6 +51,7 @@ const HEAD: Record<Tab, { title: string; text: string }> = {
   products: { title: 'מוצרים ומחירים', text: 'פרטי המשחקים, מחירים וזמינות לרכישה, ורכישות שמקורן בטעימת הפורטל.' },
   orders: { title: 'רכישות', text: 'כל ההזמנות והתשלומים, בדיקה מול SUMIT וסימון החזרים.' },
   coupons: { title: 'קופונים והנחות', text: 'קופונים כלליים, אתגר 240, קופוני סיום הטעימה וכל הקופונים האישיים שהונפקו.' },
+  treasure: { title: 'תיבת האוצר', text: 'ההפתעה אחרי רכישה בתשלום: מדדים, פרסים וסיכויים, משחקי מתנה והיסטוריית זכיות.' },
   customers: { title: 'לקוחות ודיוור', text: 'מאגר אחד לכל כתובות המייל: תוצאות משחק, קישורים אישיים, אתגר 240 וטעימת הפורטל — עם הסכמה לדיוור והיסטוריה מלאה.' },
   referrals: { title: 'קישורים שיווקיים', text: 'הקישורים האישיים: כניסות, רכישות מיוחסות, הכנסות ומשחקים חינמיים.' },
   faq: { title: 'שאלות ותשובות', text: 'השאלות שמוצגות בדף הבית: הוספה, עריכה, סדר והסתרה.' },
@@ -94,7 +97,7 @@ const STATUS: Record<string, string> = {
  */
 @Component({
   selector: 'px-admin',
-  imports: [RouterLink, DatePipe, DecimalPipe, AdminStatsComponent, AdminTasteComponent, AdminTasteSummaryComponent, AdminDrawComponent, AdminChallengeComponent],
+  imports: [RouterLink, DatePipe, DecimalPipe, AdminStatsComponent, AdminTasteComponent, AdminTasteSummaryComponent, AdminDrawComponent, AdminChallengeComponent, AdminTreasureComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '[class.shell]': "state() === 'ok'" },
   template: `
@@ -230,6 +233,7 @@ const STATUS: Record<string, string> = {
             @case ('statistics') { <px-admin-stats (openTaste)="go('taste')" /> }
             @case ('taste') { <px-admin-taste /> }
             @case ('draw') { <px-admin-draw /> }
+            @case ('treasure') { <px-admin-treasure /> }
 
             @case ('dashboard') {
               @if (dash(); as d) {

@@ -26,7 +26,7 @@ public sealed record WebhookOutcome(WebhookStatus Status, string Result);
 /// </summary>
 public sealed class PurchaseService(
     PortalDbContext db, PaymentGateway gateway, ScenarioCatalog scenarios, RoomService rooms, CouponService coupons,
-    IHostEnvironment env, ILogger<PurchaseService> logger, SumitSweepSignal sweepSignal)
+    IHostEnvironment env, ILogger<PurchaseService> logger, SumitSweepSignal sweepSignal, PortalX.Server.Treasure.TreasureService treasure)
 {
     public static bool IsPlayable(Product p, ScenarioCatalog scenarios) => p.ScenarioId != null && scenarios.Find(p.ScenarioId) != null;
 
@@ -66,6 +66,8 @@ public sealed class PurchaseService(
         {
             var (q, qErr) = await coupons.QuoteAsync(couponCode, product, now);
             if (qErr != null) return (null, qErr);
+            // a treasure prize coupon is personal: only with the address it was given to
+            if (await PortalX.Server.Treasure.TreasureService.CouponRefusalAsync(db, q!.CouponId, email) is { } personal) return (null, personal);
             quote = q;
         }
         var order = new Order
@@ -266,6 +268,9 @@ public sealed class PurchaseService(
             .ExecuteUpdateAsync(s => s.SetProperty(e => e.Result, firstResult));
         if (result.StartsWith("rejected")) logger.LogWarning("Payment event {Event} for order {Order}: {Result}", n.EventId, n.OrderId, result);
         else logger.LogInformation("Payment event {Event} for order {Order}: {Result}", n.EventId, n.OrderId, result);
+        // the treasure chest follows the payment once it is saved; it never throws, so it can never undo or fail the payment
+        if (result == "applied:paid") await treasure.AfterPaidAsync(n.OrderId);
+        else if (result == "applied:refunded") await treasure.AfterRefundAsync(n.OrderId);
         return result;
     }
 
@@ -375,7 +380,8 @@ public sealed class PurchaseService(
     /// Opens the group game paid for by this order, or returns the one already opened. While that game is still
     /// in the lobby a fresh host claim is issued, so the buyer can always take the host seat again from any device.
     /// </summary>
-    public async Task<(OpenedGame? Game, ServiceError? Error)> OpenGameAsync(Guid orderId)
+    /// <param name="giftEntitlementId">The treasure gift game won by this order, instead of the game the order paid for.</param>
+    public async Task<(OpenedGame? Game, ServiceError? Error)> OpenGameAsync(Guid orderId, Guid? giftEntitlementId = null)
     {
         for (var attempt = 0; attempt < 3; attempt++)
         {
@@ -385,7 +391,9 @@ public sealed class PurchaseService(
                 return (null, new ServiceError(409, "not-paid", order.Status == OrderStatus.Pending
                     ? "התשלום עדיין לא אושר. המשחק ייפתח רק אחרי שספק התשלום יאשר אותו לשרת."
                     : "ההזמנה לא שולמה, ולכן אי אפשר לפתוח משחק."));
-            var ent = await db.Entitlements.FirstOrDefaultAsync(e => e.OrderId == order.Id);
+            var ent = giftEntitlementId is { } gift
+                ? await db.Entitlements.FirstOrDefaultAsync(e => e.Id == gift && e.Source == EntitlementSource.TreasureReward)
+                : await db.Entitlements.FirstOrDefaultAsync(e => e.OrderId == order.Id);
             if (ent == null) return (null, new ServiceError(409, "no-entitlement", "לא נמצאה זכאות לרכישה הזאת."));
             var product = await db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == ent.ProductId);
             if (GameBlock(ent, product) is { } block) return (null, block);
@@ -412,7 +420,7 @@ public sealed class PurchaseService(
                     r.ProductId = product.Id;
                     r.MaxPlayers = rooms.Engine.MaxPlayersFor(product.MaxPlayers);
                     r.EntitlementId = ent.Id;
-                    r.AccessSource = "purchase";
+                    r.AccessSource = giftEntitlementId == null ? "purchase" : "treasure";
                 });
                 logger.LogInformation("Order {Number}: game {Code} opened", order.Number, room.Code);
                 return (new OpenedGame(room.Code, hostClaim, false), null);

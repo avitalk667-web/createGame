@@ -4,6 +4,7 @@ import { Router, RouterLink } from '@angular/router';
 import { ApiService, orderStore, sessionStore } from '../core/api.service';
 import { AudioService } from '../core/audio.service';
 import { OrderView } from '../core/models';
+import { TreasureChestComponent } from '../ui/treasure-chest.component';
 
 const POLL_MS = 2000;
 const POLL_LIMIT_MS = 90_000;
@@ -14,7 +15,7 @@ const POLL_LIMIT_MS = 90_000;
  */
 @Component({
   selector: 'px-checkout',
-  imports: [RouterLink, DatePipe],
+  imports: [RouterLink, DatePipe, TreasureChestComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <main>
@@ -67,6 +68,8 @@ const POLL_LIMIT_MS = 90_000;
             }
             @case ('paid') {
               <div class="state ok" role="status"><b>התשלום אושר</b> {{ o.paidAt ? '· ' + (o.paidAt | date: 'd.M.yyyy HH:mm') : '' }}</div>
+              <!-- the treasure chest: drawn by the server when the payment was confirmed; it waits here until opened -->
+              <px-treasure-chest [orderId]="o.id" [orderKey]="key()!" />
               @if (o.game) {
                 <p>המשחק שלכם נפתח. קוד המשחק: <b class="code" dir="ltr">{{ o.game.code }}</b> · {{ o.game.playerCount }} משתתפים הצטרפו.</p>
                 @if (o.canOpenGame) {

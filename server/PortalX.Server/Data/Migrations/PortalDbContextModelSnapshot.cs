@@ -303,7 +303,7 @@ namespace PortalX.Server.Data.Migrations
 
                     b.HasIndex("Kind")
                         .IsUnique()
-                        .HasFilter("\"Kind\" = 'taste'");
+                        .HasFilter("\"Kind\" IN ('taste', 'treasure')");
 
                     b.HasIndex("SourceProductId");
 
@@ -1989,6 +1989,178 @@ namespace PortalX.Server.Data.Migrations
                     b.ToTable("ResultEmailRequests");
                 });
 
+            modelBuilder.Entity("PortalX.Server.Domain.TreasureConfig", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("FallbackKey")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("PrizesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("IsActive")
+                        .IsUnique()
+                        .HasFilter("\"IsActive\"");
+
+                    b.ToTable("TreasureConfigs");
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.TreasureGiftProduct", b =>
+                {
+                    b.Property<string>("ProductId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("AddedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("AddedBy")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("ProductId");
+
+                    b.ToTable("TreasureGiftProducts");
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.TreasureWin", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("ConfigId")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("CostIls")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
+                    b.Property<Guid?>("CouponId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DrawnKey")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)");
+
+                    b.Property<DateTime?>("EmailSentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("EntitlementId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("FallbackReason")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("GiftProductId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<bool>("IsFallback")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsTest")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PrizeKey")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("PrizeKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("PrizeSnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime?>("RevealedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Roll")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConfigId");
+
+                    b.HasIndex("CouponId")
+                        .IsUnique()
+                        .HasFilter("\"CouponId\" IS NOT NULL");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("Email");
+
+                    b.HasIndex("EntitlementId")
+                        .IsUnique()
+                        .HasFilter("\"EntitlementId\" IS NOT NULL");
+
+                    b.HasIndex("GiftProductId");
+
+                    b.HasIndex("OrderId")
+                        .IsUnique();
+
+                    b.HasIndex("PrizeKey", "Status");
+
+                    b.ToTable("TreasureWins", t =>
+                        {
+                            t.HasCheckConstraint("CK_TreasureWins_Roll", "\"Roll\" BETWEEN 0 AND 9999");
+                        });
+                });
+
             modelBuilder.Entity("PortalX.Server.Domain.Coupon", b =>
                 {
                     b.HasOne("PortalX.Server.Domain.CouponCampaign", null)
@@ -2125,6 +2297,45 @@ namespace PortalX.Server.Data.Migrations
                         .WithMany()
                         .HasForeignKey("ReferralLinkId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.TreasureGiftProduct", b =>
+                {
+                    b.HasOne("PortalX.Server.Domain.Product", null)
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.TreasureWin", b =>
+                {
+                    b.HasOne("PortalX.Server.Domain.TreasureConfig", null)
+                        .WithMany()
+                        .HasForeignKey("ConfigId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PortalX.Server.Domain.Coupon", null)
+                        .WithMany()
+                        .HasForeignKey("CouponId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PortalX.Server.Domain.Entitlement", null)
+                        .WithMany()
+                        .HasForeignKey("EntitlementId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PortalX.Server.Domain.Product", null)
+                        .WithMany()
+                        .HasForeignKey("GiftProductId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PortalX.Server.Domain.Order", null)
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 

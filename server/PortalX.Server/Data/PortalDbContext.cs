@@ -42,6 +42,9 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
     public DbSet<CouponEvent> CouponEvents => Set<CouponEvent>();
     public DbSet<DemoSession> DemoSessions => Set<DemoSession>();
     public DbSet<DemoEvent> DemoEvents => Set<DemoEvent>();
+    public DbSet<TreasureConfig> TreasureConfigs => Set<TreasureConfig>();
+    public DbSet<TreasureWin> TreasureWins => Set<TreasureWin>();
+    public DbSet<TreasureGiftProduct> TreasureGiftProducts => Set<TreasureGiftProduct>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -55,8 +58,8 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.Property(x => x.DiscountPercentage).HasPrecision(5, 2);
             e.Property(x => x.SourceProductId).HasMaxLength(64);
             e.Property(x => x.Kind).HasMaxLength(32).HasDefaultValue(CampaignKinds.Challenge);
-            // one settings row for the taste coupons, however many admins open the tab at once
-            e.HasIndex(x => x.Kind).IsUnique().HasFilter("\"Kind\" = 'taste'");
+            // one settings row for the taste coupons (and one for the treasure chest), however many admins open the tab at once
+            e.HasIndex(x => x.Kind).IsUnique().HasFilter("\"Kind\" IN ('taste', 'treasure')");
             e.HasOne<Product>().WithMany().HasForeignKey(x => x.SourceProductId).OnDelete(DeleteBehavior.Restrict);
             e.HasMany(x => x.Products).WithOne().HasForeignKey(p => p.CampaignId).OnDelete(DeleteBehavior.Cascade);
             e.ToTable(t =>
@@ -450,6 +453,52 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.CreatedAt);
             e.Property(x => x.DetailsJson).HasColumnType("jsonb");
+        });
+
+        // ---- the treasure chest ----
+        b.Entity<TreasureConfig>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.IsActive).IsUnique().HasFilter("\"IsActive\"");
+            e.HasIndex(x => x.CreatedAt);
+            e.Property(x => x.FallbackKey).HasMaxLength(32);
+            e.Property(x => x.PrizesJson).HasColumnType("jsonb");
+            e.Property(x => x.CreatedBy).HasMaxLength(64);
+        });
+
+        b.Entity<TreasureWin>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            // one draw per order, whatever retries, refreshes or parallel calls arrive
+            e.HasIndex(x => x.OrderId).IsUnique();
+            e.HasIndex(x => x.CouponId).IsUnique().HasFilter("\"CouponId\" IS NOT NULL");
+            e.HasIndex(x => x.EntitlementId).IsUnique().HasFilter("\"EntitlementId\" IS NOT NULL");
+            e.HasIndex(x => new { x.PrizeKey, x.Status });
+            e.HasIndex(x => x.Email);
+            e.HasIndex(x => x.CreatedAt);
+            e.Property(x => x.DrawnKey).HasMaxLength(32);
+            e.Property(x => x.PrizeKey).HasMaxLength(32);
+            e.Property(x => x.PrizeKind).HasMaxLength(16);
+            e.Property(x => x.FallbackReason).HasMaxLength(32);
+            e.Property(x => x.PrizeSnapshotJson).HasColumnType("jsonb");
+            e.Property(x => x.GiftProductId).HasMaxLength(64);
+            e.Property(x => x.Email).HasMaxLength(254);
+            e.Property(x => x.CostIls).HasPrecision(10, 2);
+            e.ToTable(t => t.HasCheckConstraint("CK_TreasureWins_Roll", "\"Roll\" BETWEEN 0 AND 9999"));
+            e.HasOne<Order>().WithMany().HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<TreasureConfig>().WithMany().HasForeignKey(x => x.ConfigId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Coupon>().WithMany().HasForeignKey(x => x.CouponId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Entitlement>().WithMany().HasForeignKey(x => x.EntitlementId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Product>().WithMany().HasForeignKey(x => x.GiftProductId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<TreasureGiftProduct>(e =>
+        {
+            e.HasKey(x => x.ProductId);
+            e.Property(x => x.ProductId).HasMaxLength(64);
+            e.Property(x => x.AddedBy).HasMaxLength(64);
+            e.HasOne<Product>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 

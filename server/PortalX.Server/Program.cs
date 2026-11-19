@@ -79,6 +79,8 @@ builder.Services.AddScoped<PortalX.Server.Challenge.ChallengeService>();
 builder.Services.AddScoped<PortalX.Server.Demo.DemoService>();
 builder.Services.AddScoped<PortalX.Server.Demo.DemoAdmin>();
 builder.Services.AddScoped<PortalX.Server.Demo.DemoCouponService>();
+builder.Services.AddScoped<PortalX.Server.Treasure.TreasureService>();
+builder.Services.AddScoped<PortalX.Server.Treasure.TreasureAdmin>();
 builder.Services.AddHostedService<PortalX.Server.Mail.MailRetentionService>();
 builder.Services.AddAdminAuth();
 
@@ -239,6 +241,7 @@ PortalX.Server.Mail.MailEndpoints.MapMailEndpoints(api);
 PortalX.Server.Referrals.ReferralEndpoints.MapReferralEndpoints(api);
 PortalX.Server.Challenge.ChallengeEndpoints.MapChallengeEndpoints(api);
 PortalX.Server.Demo.DemoEndpoints.MapDemoEndpoints(api);
+PortalX.Server.Treasure.TreasureEndpoints.MapTreasureEndpoints(api);
 api.MapAdminEndpoints();
 
 api.MapGet("/rooms/{code}", async (string code, RoomService rooms, ScenarioCatalog catalog) =>

@@ -172,6 +172,7 @@ public static class AdminEndpoints
         PortalX.Server.Mail.MailEndpoints.MapAdminMailing(secured);
         PortalX.Server.Referrals.ReferralEndpoints.MapAdminReferrals(secured);
         PortalX.Server.Challenge.ChallengeEndpoints.MapAdminChallenge(secured);
+        PortalX.Server.Treasure.TreasureEndpoints.MapAdminTreasure(secured);
         PortalX.Server.Mail.GmailAdminEndpoints.MapGmailAdmin(secured);
         // Google's return: outside the secured group, verified by state + binding + PKCE
         PortalX.Server.Mail.GmailAdminEndpoints.MapGmailCallback(admin);

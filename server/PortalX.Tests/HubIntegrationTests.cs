@@ -38,6 +38,7 @@ public class HubIntegrationTests
                 ["RateLimits:FreeGamesNewBrowserPerHour"] = "100000",
                 ["RateLimits:JoinPerBrowserPerMinute"] = "100000",
                 ["RateLimits:CouponPerMinute"] = "100000",
+                ["RateLimits:PaymentCheckPerMinute"] = "100000",
                 ["RateLimits:ChallengeStatusPerMinute"] = "100000",
                 ["RateLimits:ChallengeIssuePer10Minutes"] = "100000",
                 ["RateLimits:DemoPerMinute"] = "100000",

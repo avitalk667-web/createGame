@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { CouponQuote, FaqEntryView, OrderView, Product, ScenarioContent, ScenarioSummary } from './models';
+import { CouponQuote, FaqEntryView, OrderView, Product, ScenarioContent, ScenarioSummary, TreasureView } from './models';
 
 export class ApiError extends Error {
   constructor(public code: string, message: string) {
@@ -164,6 +164,21 @@ export class ApiService {
   /** After the provider's page: the server asks the provider itself. The payment number from the address is only a hint. */
   paymentCheck(id: string, key: string, paymentId: string | null) {
     return this.request<OrderView>('POST', `/api/orders/${encodeURIComponent(id)}/payment-check`, { paymentId }, { 'X-Order-Key': key });
+  }
+
+  /** The order's treasure chest (drawn once by the server, after the payment was confirmed). */
+  treasure(id: string, key: string) {
+    return this.request<TreasureView>('GET', `/api/orders/${encodeURIComponent(id)}/treasure`, undefined, { 'X-Order-Key': key });
+  }
+
+  /** Opens the chest; a coupon prize needs an address to be bound to when the order has none. Opening again only shows it again. */
+  revealTreasure(id: string, key: string, email: string | null) {
+    return this.request<TreasureView>('POST', `/api/orders/${encodeURIComponent(id)}/treasure/reveal`, { email }, { 'X-Order-Key': key });
+  }
+
+  openTreasureGame(id: string, key: string) {
+    return this.request<{ code: string; hostClaim?: string | null; existing: boolean }>(
+      'POST', `/api/orders/${encodeURIComponent(id)}/treasure/game`, undefined, { 'X-Order-Key': key });
   }
 
   paymentCancelled(id: string, key: string) {

@@ -402,7 +402,7 @@ public class PaymentEvent
 }
 
 /// <summary>Where a right to play came from. AdminFree is a room the admin opened without payment. TestCheckout is kept only to read old rows: nothing creates it.</summary>
-public enum EntitlementSource { Purchase = 0, AdminFree = 1, TestCheckout = 2 }
+public enum EntitlementSource { Purchase = 0, AdminFree = 1, TestCheckout = 2, TreasureReward = 3 }
 
 /// <summary>The right to open group games of one product, created only after a verified payment (or by the admin).</summary>
 public class Entitlement
@@ -553,6 +553,8 @@ public static class CampaignKinds
     public const string Challenge = "challenge-240";
     /// <summary>Finishing the free taste of the portal (/demo).</summary>
     public const string Taste = "taste";
+    /// <summary>A prize of the treasure chest after a paid purchase ("תיבת האוצר").</summary>
+    public const string Treasure = "treasure";
 }
 
 public class CouponCampaign
@@ -917,4 +919,71 @@ public class DemoEvent
     public string? Device { get; set; }
     public string? Variant { get; set; }
     public Guid? ReferralLinkId { get; set; }
+}
+
+// ---- the treasure chest ("תיבת האוצר"): one draw per paid order ----
+
+/// <summary>
+/// One version of the treasure settings. A version is never changed after it is saved: every admin save adds a new one
+/// and makes it the active one, so each draw points at exactly the settings it was drawn with.
+/// </summary>
+public class TreasureConfig
+{
+    public int Id { get; set; }
+    /// <summary>Exactly one version is active (a unique partial index).</summary>
+    public bool IsActive { get; set; }
+    /// <summary>Whether paid orders take part at all.</summary>
+    public bool Enabled { get; set; }
+    /// <summary>The prize given when the drawn one cannot be given (its limit, its budget, or no gift game left for the buyer).</summary>
+    public string FallbackKey { get; set; } = "none";
+    /// <summary>The prizes (a JSON list of TreasurePrize), so a new kind of prize needs no new column.</summary>
+    public string PrizesJson { get; set; } = "[]";
+    public string CreatedBy { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public enum TreasureWinStatus { NoPrize = 0, Coupon = 1, Gift = 2, Revoked = 3 }
+
+/// <summary>The one draw of a paid order (unique per order): what was drawn, what was given, and the settings it used.</summary>
+public class TreasureWin
+{
+    public Guid Id { get; set; }
+    public Guid OrderId { get; set; }
+    public int ConfigId { get; set; }
+    /// <summary>The prize the weights picked.</summary>
+    public string DrawnKey { get; set; } = "";
+    /// <summary>The prize actually given (the fallback's key when the drawn one could not be given).</summary>
+    public string PrizeKey { get; set; } = "";
+    public string PrizeKind { get; set; } = "none";
+    public bool IsFallback { get; set; }
+    /// <summary>Why the fallback was used: "limit", "budget", "inactive" or "no-gift-game".</summary>
+    public string? FallbackReason { get; set; }
+    /// <summary>The given prize exactly as it was configured at the draw.</summary>
+    public string PrizeSnapshotJson { get; set; } = "{}";
+    /// <summary>The random number (0-9999) behind the draw, for audit.</summary>
+    public int Roll { get; set; }
+    public TreasureWinStatus Status { get; set; }
+    public Guid? CouponId { get; set; }
+    public Guid? EntitlementId { get; set; }
+    public string? GiftProductId { get; set; }
+    /// <summary>The address the prize belongs to (lower-cased): the order's, or the one given when the chest was opened.</summary>
+    public string? Email { get; set; }
+    /// <summary>What the prize may cost: the gift's catalog price, or the coupon's largest possible discount.</summary>
+    public decimal CostIls { get; set; }
+    public bool IsTest { get; set; }
+    /// <summary>When the buyer opened the chest; until then the prize waits on the order page.</summary>
+    public DateTime? RevealedAt { get; set; }
+    public DateTime? EmailSentAt { get; set; }
+    public DateTime? RevokedAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+/// <summary>A game the admin made available as a treasure gift.</summary>
+public class TreasureGiftProduct
+{
+    public string ProductId { get; set; } = "";
+    public string AddedBy { get; set; } = "";
+    public DateTime AddedAt { get; set; }
 }

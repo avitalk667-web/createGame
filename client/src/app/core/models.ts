@@ -366,6 +366,33 @@ export interface OrderView {
   paymentNeedsRefund?: boolean;
 }
 
+/** The treasure chest of a paid order ("תיבת האוצר"). The draw is the server's; the prize is sent only once the chest is opened. */
+export interface TreasureView {
+  /** "none": this order has no chest. "drawn": its one draw is stored on the server. */
+  state: 'none' | 'drawn';
+  hasPrize?: boolean;
+  revealed?: boolean;
+  surprise?: string;
+  animation?: 'chest' | 'glow' | 'simple';
+  /** A coupon is bound to an email address before its code is shown. */
+  needsEmail?: boolean;
+  prize?: TreasurePrizeView | null;
+}
+
+export interface TreasurePrizeView {
+  key: string;
+  kind: 'none' | 'percent' | 'gift';
+  name: string;
+  title: string;
+  message: string;
+  revoked: boolean;
+  coupon?: { code: string; percent: number; expiresAt: string; expiresAtText: string; status: 'active' | 'redeemed' | 'expired' | 'cancelled'; email?: string | null } | null;
+  gift?: {
+    productId: string; name: string; tagline: string; description: string; coverImage: string; minPlayers: number; maxPlayers: number;
+    status: 'ready' | 'opened' | 'played' | 'revoked'; canOpen: boolean; gameCode?: string | null;
+  } | null;
+}
+
 function formatAmount(amount: number, currency: string): string {
   const n = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
   return currency === 'ILS' ? `${n} ₪` : `${n} ${currency}`;
