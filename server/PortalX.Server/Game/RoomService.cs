@@ -77,11 +77,16 @@ public sealed class RoomService(PortalDbContext db, GameEngine engine, ILogger<R
     public const string LegacyClosedCode = "legacy-closed";
     public const string LegacyClosedMessage = "המשחק הישן הזה נסגר. התוצאות וההיסטוריה נשמרות.";
 
-    /// <summary>Why no one may act in this game, or null when it is open. Nothing is deleted: the game only stops accepting anyone.</summary>
-    public Task<(string Code, string Message)?> ClosureAsync(GameRoom room) => ClosureAsync(room.AccessSource, room.EntitlementId);
+    /// <summary>A code switched off by an admin (any game). Only this message is shown; no email is sent to anyone.</summary>
+    public const string DisabledCode = "disabled";
+    public const string DisabledMessage = "קוד המשחק הזה אינו פעיל.";
 
-    public async Task<(string Code, string Message)?> ClosureAsync(string? accessSource, Guid? entitlementId)
+    /// <summary>Why no one may act in this game, or null when it is open. Nothing is deleted: the game only stops accepting anyone.</summary>
+    public Task<(string Code, string Message)?> ClosureAsync(GameRoom room) => ClosureAsync(room.AccessSource, room.EntitlementId, room.DisabledAt);
+
+    public async Task<(string Code, string Message)?> ClosureAsync(string? accessSource, Guid? entitlementId, DateTime? disabledAt = null)
     {
+        if (disabledAt != null) return (DisabledCode, DisabledMessage);
         if (accessSource == LegacyDemoAccess) return (DemoClosedCode, DemoClosedMessage);
         if (accessSource == LegacyAccess) return (LegacyClosedCode, LegacyClosedMessage);
         return entitlementId is { } id && await db.Entitlements.AnyAsync(e => e.Id == id && e.Revoked) ? (RefundedCode, RefundedMessage) : null;
@@ -121,7 +126,8 @@ public sealed class RoomService(PortalDbContext db, GameEngine engine, ILogger<R
             var room = await LoadAsync(roomId, tracking: true);
             if (room == null) return new ExecResult(ActionOutcome.Fail("no-room", "החדר לא נמצא."), null, false, roomId);
             // in a closed game no one acts; a player can still leave, and still see the results of a finished game
-            var stillAllowed = type == "disconnect" || (type == "connect" && room.Phase == RoomPhase.Completed);
+            // (not of a code an admin switched off: that one lets no one in)
+            var stillAllowed = type == "disconnect" || (type == "connect" && room.Phase == RoomPhase.Completed && room.DisabledAt == null);
             if (!stillAllowed && await ClosureAsync(room) is { } closure)
                 return new ExecResult(ActionOutcome.Fail(closure.Code, closure.Message), await SnapshotAsync(roomId), false, roomId);
             var wasCompleted = room.Phase == RoomPhase.Completed;

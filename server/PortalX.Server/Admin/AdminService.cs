@@ -347,7 +347,7 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
         var rows = await q.OrderByDescending(r => r.CreatedAt).Take(1000)
             .Select(r => new
             {
-                r.Id, r.Code, r.ProductId, r.ScenarioId, r.AccessSource, r.CreatedAt, r.IntroStartedAt, r.StartedAt, r.EndedAt, r.Phase,
+                r.Id, r.Code, r.ProductId, r.ScenarioId, r.AccessSource, r.CreatedAt, r.IntroStartedAt, r.StartedAt, r.EndedAt, r.Phase, r.DisabledAt,
                 Ent = db.Entitlements.Where(e => e.Id == r.EntitlementId).Select(e => new { e.IsTest, e.OrderId }).FirstOrDefault(),
                 OrderNumber = db.Entitlements.Where(e => e.Id == r.EntitlementId)
                     .SelectMany(e => db.Orders.Where(o => o.Id == e.OrderId)).Select(o => (long?)o.Number).FirstOrDefault(),
@@ -390,7 +390,27 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
                 r.Result.DurationSeconds, r.Result.HintsUsed, r.Result.PuzzlesSolved, r.Result.PuzzlesTotal, r.Result.CompletionType,
             },
             groupScore = groupScore.GetValueOrDefault(r.Id),
+            disabled = r.DisabledAt != null,
         });
+    }
+
+    /// <summary>
+    /// Switches a game code off (or on again). Any game: bought, free, a gift or a sample. Only the room is marked — the order,
+    /// the payment, the results and the reports stay exactly as they were, and no one is emailed. Returns the room, or null.
+    /// </summary>
+    public async Task<(Guid RoomId, bool Changed)?> SetGameDisabledAsync(string code, bool disabled, string admin)
+    {
+        var normalized = RoomService.NormalizeCode(code);
+        var roomId = await db.Rooms.Where(r => r.Code == normalized).Select(r => (Guid?)r.Id).FirstOrDefaultAsync();
+        if (roomId == null) return null;
+        var now = DateTime.UtcNow;
+        // conditional, so a second click (or two admins at once) changes nothing and is not audited twice
+        var changed = disabled
+            ? await db.Rooms.Where(r => r.Id == roomId && r.DisabledAt == null).ExecuteUpdateAsync(u => u
+                .SetProperty(r => r.DisabledAt, now).SetProperty(r => r.DisabledBy, admin).SetProperty(r => r.UpdatedAt, now))
+            : await db.Rooms.Where(r => r.Id == roomId && r.DisabledAt != null).ExecuteUpdateAsync(u => u
+                .SetProperty(r => r.DisabledAt, (DateTime?)null).SetProperty(r => r.DisabledBy, (string?)null).SetProperty(r => r.UpdatedAt, now));
+        return (roomId.Value, changed > 0);
     }
 
     /// <summary>Support view of one game: players, progress and results (spec §14).</summary>
@@ -406,6 +426,7 @@ public sealed class AdminService(PortalDbContext db, ScenarioCatalog scenarios, 
         {
             room.Code, room.ScenarioId, room.ProductId, access = room.AccessSource,
             phase = room.Phase.ToString().ToLowerInvariant(), room.CreatedAt, startedAt = room.IntroStartedAt ?? room.StartedAt, room.EndedAt, room.Round,
+            room.DisabledAt, room.DisabledBy,
             players = room.Players.Where(p => !p.IsRemoved).OrderBy(p => p.Seat).Select(p => new
             {
                 p.Nickname, p.CharacterId, p.IsConnected, p.JoinedAt, p.LastSeenAt, isHost = p.Id == room.HostPlayerId,

@@ -187,6 +187,8 @@ public sealed class LegacyAdminReports(PortalDbContext db, ScenarioCatalog scena
                 r.Result.DurationSeconds, r.Result.HintsUsed, r.Result.PuzzlesSolved, r.Result.PuzzlesTotal, r.Result.CompletionType,
             },
             groupScore = GameEngine.World(r.Room).Score?.Group,
+            // added with the game-code switch (2026-11-20); every other field is the reference as it was
+            disabled = r.Room.DisabledAt != null,
         });
     }
 }

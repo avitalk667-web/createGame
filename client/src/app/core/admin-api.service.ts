@@ -53,6 +53,8 @@ export interface AdminGame {
   owner?: string | null; createdAt: string; startedAt?: string | null; endedAt?: string | null; players: number; phase: string; status: string;
   result?: { durationSeconds: number; hintsUsed: number; puzzlesSolved: number; puzzlesTotal: number; completionType: string } | null;
   groupScore?: number | null;
+  /** The admin switched this game code off: whoever enters sees that it is not active. */
+  disabled?: boolean;
 }
 
 export interface AdminProduct {
@@ -253,6 +255,8 @@ export class AdminApiService {
   sumitCheck() { return this.request<{ configured: boolean; providerActive: boolean; connected: boolean; billing: boolean; vatExempt: boolean; organization?: string | null; organizationType?: string | null; paymentsLastDay?: number | null; problem?: string | null }>('POST', '/api/admin/sumit/check'); }
   trialOrder(productId: string) { return this.request<{ orderId: string; accessKey: string; checkoutUrl: string; price: number; productName: string }>('POST', `/api/admin/products/${encodeURIComponent(productId)}/trial-order`); }
   freeGame(productId: string) { return this.request<{ code: string; hostClaim: string; productName: string }>('POST', '/api/admin/free-game', { productId }); }
+  disableGame(code: string) { return this.request<{ disabled: boolean; changed: boolean }>('POST', `/api/admin/games/${encodeURIComponent(code)}/disable`); }
+  enableGame(code: string) { return this.request<{ disabled: boolean; changed: boolean }>('POST', `/api/admin/games/${encodeURIComponent(code)}/enable`); }
   reclaim(code: string) { return this.request<{ code: string; hostClaim?: string | null }>('POST', `/api/admin/games/${encodeURIComponent(code)}/host-claim`); }
   checkOrderPayment(id: string) { return this.request<{ result: string }>('POST', `/api/admin/orders/${id}/check-payment`); }
   markOrderRefunded(id: string) { return this.request<{ result: string }>('POST', `/api/admin/orders/${id}/mark-refunded`); }

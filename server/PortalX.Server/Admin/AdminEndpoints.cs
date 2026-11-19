@@ -169,6 +169,12 @@ public static class AdminEndpoints
             return error != null ? Results.NotFound(new ApiError("no-game", error)) : Results.Ok(new { code = game!.Code, hostClaim = game.HostClaim });
         });
 
+        // switches any game code off (or on again): only a message at the door, no email; orders and results are untouched
+        secured.MapPost("/games/{code}/disable", (string code, HttpContext ctx, AdminService s,
+            Microsoft.AspNetCore.SignalR.IHubContext<PortalX.Server.Hubs.GameHub> hub) => SetDisabledAsync(code, true, ctx, s, hub));
+        secured.MapPost("/games/{code}/enable", (string code, HttpContext ctx, AdminService s,
+            Microsoft.AspNetCore.SignalR.IHubContext<PortalX.Server.Hubs.GameHub> hub) => SetDisabledAsync(code, false, ctx, s, hub));
+
         secured.MapGet("/audit", async (AdminService s) => Results.Ok(await s.AuditListAsync()));
 
         secured.MapAdminContentEndpoints();
@@ -179,5 +185,22 @@ public static class AdminEndpoints
         PortalX.Server.Mail.GmailAdminEndpoints.MapGmailAdmin(secured);
         // Google's return: outside the secured group, verified by state + binding + PKCE
         PortalX.Server.Mail.GmailAdminEndpoints.MapGmailCallback(admin);
+    }
+
+    private static async Task<IResult> SetDisabledAsync(string code, bool disabled, HttpContext ctx, AdminService s,
+        Microsoft.AspNetCore.SignalR.IHubContext<PortalX.Server.Hubs.GameHub> hub)
+    {
+        var admin = AdminAuth.Name(ctx.User);
+        if (await s.SetGameDisabledAsync(code, disabled, admin) is not { } r)
+            return Results.NotFound(new ApiError("no-game", "המשחק לא נמצא."));
+        if (r.Changed)
+        {
+            await s.AuditAsync(admin, disabled ? "game-disabled" : "game-enabled", "room", PortalX.Server.Game.RoomService.NormalizeCode(code));
+            // whoever is in the game right now sees why it stopped answering (the same notice as a refund; no email)
+            if (disabled)
+                await hub.Clients.Group("room:" + r.RoomId).SendAsync("notice",
+                    new PortalX.Server.Game.GameNotice(PortalX.Server.Game.RoomService.DisabledCode, PortalX.Server.Game.RoomService.DisabledMessage));
+        }
+        return Results.Ok(new { disabled, changed = r.Changed });
     }
 }

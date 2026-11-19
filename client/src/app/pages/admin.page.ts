@@ -332,7 +332,7 @@ const STATUS: Record<string, string> = {
                       <tr class="click" (click)="showGame(g.code)" [class.test]="g.isTest" [class.sel]="game()?.code === g.code">
                         <td dir="ltr">{{ g.code }}</td><td>{{ g.productName ?? '—' }}</td><td>{{ label(g.access) }}{{ g.isTest ? ' · בדיקה' : '' }}</td><td>{{ g.owner ?? '—' }}</td>
                         <td>{{ g.createdAt | date: 'd.M.yy HH:mm' }}</td><td>{{ g.startedAt ? (g.startedAt | date: 'd.M HH:mm') : '—' }}</td><td>{{ g.endedAt ? (g.endedAt | date: 'd.M HH:mm') : '—' }}</td>
-                        <td>{{ g.players }}</td><td>{{ label(g.status) }}</td>
+                        <td>{{ g.players }}</td><td>{{ label(g.status) }}@if (g.disabled) { · <b class="bad">קוד מושבת</b> }</td>
                         <td>{{ g.result ? g.result.puzzlesSolved + '/' + g.result.puzzlesTotal + ' חידות · ' + minutes(g.result.durationSeconds) : '—' }}</td>
                         <td>{{ g.groupScore ?? '—' }}</td>
                       </tr>
@@ -343,7 +343,13 @@ const STATUS: Record<string, string> = {
               @if (game(); as g) {
                 <section class="section details" aria-label="פרטי משחק">
                   <div class="bar"><h2>משחק {{ g.code }} · {{ label(g.phase) }}</h2><button class="btn small ghost" (click)="game.set(null)">סגירה</button></div>
-                  @if (g.access === 'admin-free' && g.phase === 'lobby') { <button class="btn small" (click)="enter(g.code)">כניסה כמארח</button> }
+                  @if (g.disabledAt) {
+                    <p class="bad">הקוד מושבת מאז {{ g.disabledAt | date: 'd.M.yy HH:mm' }}{{ g.disabledBy ? ' · ' + g.disabledBy : '' }}. מי שנכנס רואה שהקוד אינו פעיל.</p>
+                    <button class="btn small" (click)="toggleGameDisabled(g.code, false)">הפעלה מחדש של הקוד</button>
+                  } @else {
+                    @if (g.access === 'admin-free' && g.phase === 'lobby') { <button class="btn small" (click)="enter(g.code)">כניסה כמארח</button> }
+                    <button class="btn small ghost" (click)="toggleGameDisabled(g.code, true)">השבתת קוד המשחק</button>
+                  }
                   <div class="detail-grid">
                     <div>
                       <h3>משתתפים</h3>
@@ -1554,6 +1560,19 @@ export class AdminPage {
       const r = await this.api.checkOrderPayment(o.id);
       this.sumitStatus.set(`הזמנה ${o.number}: ${this.checkLabel(r.result)}`);
       this.orders.set(await this.api.orders(this.f()));
+    } catch (e: any) { this.fail(e); }
+  }
+
+  /** Switches a game code off or on. Nothing else changes and no one is emailed: whoever enters sees that the code is not active. */
+  async toggleGameDisabled(code: string, disable: boolean) {
+    const msg = disable
+      ? `להשבית את קוד המשחק ${code}? מי שינסה להיכנס יראה שהקוד אינו פעיל, ומי שנמצא בו עכשיו לא יוכל להמשיך. לא נשלח מייל, ואפשר להפעיל אותו שוב בכל רגע.`
+      : `להפעיל מחדש את קוד המשחק ${code}?`;
+    if (!confirm(msg)) return;
+    try {
+      if (disable) await this.api.disableGame(code); else await this.api.enableGame(code);
+      this.game.set(await this.api.game(code));
+      this.games.set(await this.api.games(this.f()));
     } catch (e: any) { this.fail(e); }
   }
 

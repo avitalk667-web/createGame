@@ -276,7 +276,7 @@ api.MapGet("/rooms/{code}/seat", async (string code, HttpRequest http, RoomServi
     var state = rooms.Engine.Seat(player, now);
     var max = rooms.Engine.MaxPlayers(room);
     var canReturn = (state != GameEngine.SeatState.Released || rooms.Engine.SeatsTaken(room, now, player.Id) < max)
-        && (room.Phase == PortalX.Server.Domain.RoomPhase.Completed || await rooms.ClosureAsync(room) == null);
+        && ((room.Phase == PortalX.Server.Domain.RoomPhase.Completed && room.DisabledAt == null) || await rooms.ClosureAsync(room) == null);
     return Results.Ok(new
     {
         seat = new

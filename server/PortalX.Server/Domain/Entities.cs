@@ -63,6 +63,13 @@ public class GameRoom
     /// replay, so a game counts as started exactly once.
     /// </summary>
     public DateTime? FirstStartedAt { get; set; }
+    /// <summary>
+    /// Set by an admin to switch this game code off: no one can enter or act in it ("קוד המשחק הזה אינו פעיל"). Nothing is
+    /// deleted, and clearing it switches the code on again.
+    /// </summary>
+    public DateTime? DisabledAt { get; set; }
+    /// <summary>The admin who switched the code off (also in the audit log).</summary>
+    public string? DisabledBy { get; set; }
 
     public List<PlayerSession> Players { get; set; } = new();
     public List<PuzzleState> Puzzles { get; set; } = new();

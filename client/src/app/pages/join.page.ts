@@ -23,6 +23,14 @@ import { SKIN_TONES, HAIR_COLORS, BAG_COLORS } from '../world/avatar';
           <p class="error">{{ error() }}</p>
           <a class="btn primary" routerLink="/">חזרה לדף הבית</a>
         </section>
+      } @else if (room()!.closedMessage) {
+        <!-- the code is switched off (by the admin, or with a refund): only the message, no way in -->
+        <section class="card center resume">
+          <span class="chip">חדר {{ room()!.code }}</span>
+          <h1>אי אפשר להיכנס לחדר</h1>
+          <p class="error" role="alert">{{ room()!.closedMessage }}</p>
+          <a class="btn primary" routerLink="/">חזרה לדף הבית</a>
+        </section>
       } @else if (seat() && !asNew()) {
         <!-- this browser already has a seat in this game: come back as the same participant (spec 4) -->
         <section class="card center resume">

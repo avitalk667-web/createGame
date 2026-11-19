@@ -192,8 +192,8 @@ public sealed class GameHub(RoomService rooms, RoomRuntime runtime, PortalDbCont
     {
         if (PlayerId is not { } pid || RoomId is not { } rid) return NotConnected();
         if (!Allow("chat", 5, 8)) return new HubResult(false, "too-fast", "רגע, רגע... שלחתם הרבה הודעות ברצף.");
-        var chatRoom = await db.Rooms.AsNoTracking().Where(r => r.Id == rid).Select(r => new { r.AccessSource, r.EntitlementId }).FirstOrDefaultAsync();
-        if (chatRoom != null && await rooms.ClosureAsync(chatRoom.AccessSource, chatRoom.EntitlementId) is { } closure)
+        var chatRoom = await db.Rooms.AsNoTracking().Where(r => r.Id == rid).Select(r => new { r.AccessSource, r.EntitlementId, r.DisabledAt }).FirstOrDefaultAsync();
+        if (chatRoom != null && await rooms.ClosureAsync(chatRoom.AccessSource, chatRoom.EntitlementId, chatRoom.DisabledAt) is { } closure)
             return new HubResult(false, closure.Code, closure.Message);
         string? cleanText = null, cleanEmote = null;
         if (!string.IsNullOrEmpty(emote))

@@ -39,6 +39,48 @@ public class AdminTests
         return await f(scope.ServiceProvider.GetRequiredService<PortalDbContext>());
     }
 
+    [Fact]
+    public async Task The_admin_switches_a_game_code_off_and_on_without_touching_the_order()
+    {
+        var buyer = _factory.CreateClient();
+        var p = await CreateOrderAsync(buyer, _factory.Services);
+        (await PayAsync(buyer, p)).EnsureSuccessStatusCode();
+        var code = (await OrderAsync(buyer, p)).GetProperty("game").GetProperty("code").GetString()!;
+        Assert.True((await buyer.GetFromJsonAsync<JsonElement>($"/api/rooms/{code}", Json)).GetProperty("canJoin").GetBoolean());
+
+        // only the admin can do it
+        Assert.False((await _factory.CreateClient().PostAsync($"/api/admin/games/{code}/disable", null)).IsSuccessStatusCode);
+
+        var admin = await AdminClientAsync();
+        var off = await (await admin.PostAsync($"/api/admin/games/{code}/disable", null)).Content.ReadFromJsonAsync<JsonElement>(Json);
+        Assert.True(off.GetProperty("changed").GetBoolean());
+        // a second click changes nothing
+        Assert.False((await (await admin.PostAsync($"/api/admin/games/{code}/disable", null)).Content.ReadFromJsonAsync<JsonElement>(Json)).GetProperty("changed").GetBoolean());
+
+        // whoever enters the code sees that it is not active, and cannot join
+        var room = await buyer.GetFromJsonAsync<JsonElement>($"/api/rooms/{code}", Json);
+        Assert.False(room.GetProperty("canJoin").GetBoolean());
+        Assert.Equal(PortalX.Server.Game.RoomService.DisabledMessage, room.GetProperty("closedMessage").GetString());
+        var listed = await admin.GetFromJsonAsync<JsonElement>($"/api/admin/games?includeTest=true&search={code}", Json);
+        Assert.True(Assert.Single(listed.EnumerateArray()).GetProperty("disabled").GetBoolean());
+        Assert.Equal(AdminTests.Username, (await admin.GetFromJsonAsync<JsonElement>($"/api/admin/games/{code}", Json)).GetProperty("disabledBy").GetString());
+
+        // the order, its payment and its entitlement are untouched
+        var order = await DbAsync(db => db.Orders.AsNoTracking().SingleAsync(o => o.Id == p.OrderId));
+        Assert.Equal(OrderStatus.Paid, order.Status);
+        Assert.False(await DbAsync(db => db.Entitlements.AnyAsync(e => e.OrderId == p.OrderId && e.Revoked)));
+        // audited once, although it was clicked twice
+        Assert.Equal(1, await DbAsync(db => db.AdminAuditLog.CountAsync(a => a.TargetId == code && a.Action == "game-disabled")));
+
+        // switched on again: open as before
+        Assert.True((await (await admin.PostAsync($"/api/admin/games/{code}/enable", null)).Content.ReadFromJsonAsync<JsonElement>(Json)).GetProperty("changed").GetBoolean());
+        room = await buyer.GetFromJsonAsync<JsonElement>($"/api/rooms/{code}", Json);
+        Assert.True(room.GetProperty("canJoin").GetBoolean());
+        Assert.False(room.TryGetProperty("closedMessage", out var msg) && msg.ValueKind == JsonValueKind.String);
+
+        Assert.Equal(404, (int)(await admin.PostAsync("/api/admin/games/NOSUCHCODE/disable", null)).StatusCode);
+    }
+
     private static async Task<JsonElement> Json200(HttpResponseMessage r)
     {
         Assert.Equal(HttpStatusCode.OK, r.StatusCode);
