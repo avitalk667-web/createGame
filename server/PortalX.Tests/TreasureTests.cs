@@ -143,6 +143,23 @@ public class TreasureTests : IAsyncLifetime
         return http;
     }
 
+    // ------------------------------------------------------------------ the site's promotion follows the admin switch
+
+    [Fact]
+    public async Task Site_details_report_the_chest_switch_set_in_the_admin_tab()
+    {
+        var visitor = _factory.CreateClient();
+        await SaveConfigAsync(false, TreasureRules.Defaults(), TreasureRules.DefaultFallback);
+        Assert.False((await JsonOf(await visitor.GetAsync("/api/site"))).GetProperty("treasureChest").GetBoolean());
+
+        var admin = await AdminClientAsync();
+        (await admin.PutAsJsonAsync("/api/admin/treasure/config", new { enabled = true })).EnsureSuccessStatusCode();
+        Assert.True((await JsonOf(await visitor.GetAsync("/api/site"))).GetProperty("treasureChest").GetBoolean());
+
+        (await admin.PutAsJsonAsync("/api/admin/treasure/config", new { enabled = false })).EnsureSuccessStatusCode();
+        Assert.False((await JsonOf(await visitor.GetAsync("/api/site"))).GetProperty("treasureChest").GetBoolean());
+    }
+
     // ------------------------------------------------------------------ 1–4: the trigger
 
     [Fact]

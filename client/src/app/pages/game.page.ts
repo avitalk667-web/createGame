@@ -6,11 +6,13 @@ import { AudioService } from '../core/audio.service';
 import { CouponQuote, Product, formatPreviousPrice, formatPrice, playersLabel } from '../core/models';
 import { CouponInputComponent } from '../challenge/coupon-input.component';
 import { pendingCoupon } from '../challenge/challenge.service';
+import { SiteService } from '../core/site.service';
+import { TreasurePromoComponent } from '../ui/treasure-promo.component';
 
 /** /games/:id — one product: large image, what's included, players, price and the next step (spec §2). */
 @Component({
   selector: 'px-game',
-  imports: [RouterLink, DatePipe, CouponInputComponent],
+  imports: [RouterLink, DatePipe, CouponInputComponent, TreasurePromoComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <main>
@@ -80,6 +82,7 @@ import { pendingCoupon } from '../challenge/challenge.service';
             } @else {
               <b class="price soon">המחיר יפורסם בקרוב</b>
             }
+            @if (!p.isFree && p.purchasable && (p.saleState ?? 'open') === 'open') { <px-treasure-promo variant="compact" /> }
             @if (p.saleState === 'scheduled') {
               <button class="btn primary big" disabled>הרכישה תיפתח ב־{{ p.saleOpensLabel }}</button>
               <p class="muted note sale-soon" role="status"><b>המכירה תיפתח בקרוב</b> — {{ p.saleOpensLabel }}.</p>
@@ -198,6 +201,7 @@ export class GamePage {
   private api = inject(ApiService);
   private router = inject(Router);
   private audio = inject(AudioService);
+  private site = inject(SiteService);
   id = input.required<string>();
   product = signal<Product | null>(null);
   loading = signal(true);
@@ -236,7 +240,8 @@ export class GamePage {
     this.loading.set(true);
     this.error.set(null);
     try {
-      const p = await this.api.product(id);
+      // the game appears together with the site details, so the treasure box is in place from the start (no jump)
+      const [p] = await Promise.all([this.api.product(id), this.site.load()]);
       this.product.set(p);
       this.watchOpening(p);
       this.myOrders.set(orderStore.all().filter((o) => o.productId === id).slice(0, 3));

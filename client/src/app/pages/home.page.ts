@@ -10,12 +10,13 @@ import { PrizeGiftComponent } from '../ui/prize-gift.component';
 import { HowItWorksComponent } from '../ui/how-it-works.component';
 import { SettingsPanelComponent } from '../ui/settings-panel.component';
 import { TutorialVideoComponent } from '../ui/tutorial-video.component';
+import { TreasurePromoComponent } from '../ui/treasure-promo.component';
 import { demoTrack } from '../demo/demo.api';
 
 /** Shared entry gate: a catalog of both games, each with its own server-side price (spec §2). */
 @Component({
   selector: 'px-home',
-  imports: [RouterLink, SettingsPanelComponent, DrawCountdownComponent, PrizeGiftComponent, HowItWorksComponent, TutorialVideoComponent],
+  imports: [RouterLink, SettingsPanelComponent, DrawCountdownComponent, PrizeGiftComponent, HowItWorksComponent, TutorialVideoComponent, TreasurePromoComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="bg" aria-hidden="true"></div>
@@ -137,6 +138,7 @@ import { demoTrack } from '../demo/demo.api';
                   <ul class="features">
                     @for (f of p.features; track f) { <li class="chip">{{ f }}</li> }
                   </ul>
+                  @if (!p.isFree && p.purchasable) { <px-treasure-promo variant="badge" /> }
                   <div class="buy">
                     <div class="price">
                       @if (p.isFree) {
@@ -167,6 +169,8 @@ import { demoTrack } from '../demo/demo.api';
           </div>
         }
       </section>
+
+      @if (!loading()) { <px-treasure-promo variant="section" /> }
 
       <px-how-it-works (tryClicked)="tasteClick()" />
 
@@ -501,7 +505,9 @@ export class HomePage implements AfterViewInit, OnDestroy {
     this.loading.set(true);
     this.error.set(null);
     try {
-      this.products.set(await this.api.products());
+      // the cards wait for the site details too, so the treasure marks appear with them (no jump in the page)
+      const [list] = await Promise.all([this.api.products(), this.site.load()]);
+      this.products.set(list);
     } catch (e: any) {
       this.error.set(e.message);
     } finally {

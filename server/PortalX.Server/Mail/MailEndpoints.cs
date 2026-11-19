@@ -18,7 +18,7 @@ public static class MailEndpoints
     public static void MapMailEndpoints(this RouteGroupBuilder api)
     {
         // public site details: the one contact address, and which end-of-game options this server can offer
-        api.MapGet("/site", async (SiteOptions site, IEmailSender sender, ResultsEmailPolicy policy) => Results.Ok(new
+        api.MapGet("/site", async (SiteOptions site, IEmailSender sender, ResultsEmailPolicy policy, PortalX.Server.Treasure.TreasureService treasure) => Results.Ok(new
         {
             contactEmail = site.ContactEmail,
             resultsEmail = await sender.IsAvailableAsync(),
@@ -27,6 +27,8 @@ public static class MailEndpoints
             consentVersion = ResultsEmailService.ConsentVersion,
             resultsRequireConsent = policy.RequireMarketingConsent,
             resultsConsentMessage = policy.RequireMarketingConsent ? ResultsEmailPolicy.ConsentRequiredMessage : null,
+            // the treasure chest's on/off switch (admin tab), so the site shows its promotion only while purchases can win
+            treasureChest = await treasure.IsEnabledAsync(),
         }));
 
         // the end-of-game choices of one player (the seat token comes in the body or the game's seat cookie, never the URL)

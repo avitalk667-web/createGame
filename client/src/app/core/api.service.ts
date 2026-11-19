@@ -225,6 +225,8 @@ export interface SiteInfo {
   /** Business rule: results are emailed only together with explicit marketing consent (and why, in Hebrew). */
   resultsRequireConsent?: boolean;
   resultsConsentMessage?: string | null;
+  /** The treasure chest is switched on (the admin's setting): the site shows its promotion only then. */
+  treasureChest?: boolean;
 }
 
 export interface EndOfGameReply {

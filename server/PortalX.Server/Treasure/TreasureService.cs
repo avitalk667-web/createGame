@@ -55,6 +55,10 @@ public sealed class TreasureService(
         return c;
     }
 
+    /// <summary>Whether the chest is switched on (the admin's setting; off while none was saved). Read only, for the public site details.</summary>
+    public Task<bool> IsEnabledAsync() =>
+        db.TreasureConfigs.AsNoTracking().Where(x => x.IsActive).Select(x => x.Enabled).FirstOrDefaultAsync();
+
     /// <summary>The settings that were in force at a moment (the latest version saved before it); null before the first one.</summary>
     private Task<TreasureConfig?> ConfigAtAsync(DateTime at) =>
         db.TreasureConfigs.AsNoTracking().Where(x => x.CreatedAt <= at).OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.Id).FirstOrDefaultAsync();
