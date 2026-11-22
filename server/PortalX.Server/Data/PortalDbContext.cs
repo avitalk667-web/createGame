@@ -20,6 +20,7 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
     public DbSet<Entitlement> Entitlements => Set<Entitlement>();
     public DbSet<AdminAuditLog> AdminAuditLog => Set<AdminAuditLog>();
     public DbSet<PlayerScoreEvent> ScoreEvents => Set<PlayerScoreEvent>();
+    public DbSet<PersonalLetter> PersonalLetters => Set<PersonalLetter>();
     public DbSet<FaqEntry> Faq => Set<FaqEntry>();
     public DbSet<GameQuestion> GameQuestions => Set<GameQuestion>();
     public DbSet<GameQuestionRevision> GameQuestionRevisions => Set<GameQuestionRevision>();
@@ -291,6 +292,19 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             // one entitlement per paid order, however many times the provider confirms it
             e.HasIndex(x => x.OrderId).IsUnique().HasFilter("\"OrderId\" IS NOT NULL");
             e.Property(x => x.Version).IsRowVersion();
+        });
+
+        b.Entity<PersonalLetter>(e =>
+        {
+            e.ToTable("PersonalLetters");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.ClientLetterId).HasMaxLength(64);
+            e.Property(x => x.BodySealed).HasMaxLength(24000);
+            e.HasOne<GameRoom>().WithMany().HasForeignKey(x => x.RoomId).OnDelete(DeleteBehavior.Cascade);
+            // one letter per participant per round (a double click finds the one already saved)
+            e.HasIndex(x => new { x.RoomId, x.Round, x.SenderPlayerId }).IsUnique();
+            e.HasIndex(x => x.RecipientPlayerId);
         });
 
         b.Entity<PlayerScoreEvent>(e =>

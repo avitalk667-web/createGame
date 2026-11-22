@@ -994,3 +994,25 @@ public class TreasureGiftProduct
     public string AddedBy { get; set; } = "";
     public DateTime AddedAt { get; set; }
 }
+
+/// <summary>
+/// A personal letter between the two players of "הצופן הזוגי". The text is sealed (AES-256-GCM, bound to the letter, room
+/// and sender) and is read only by its recipient — or, in a one-player game, by its writer, who kept it for themself.
+/// Saved ≠ delivered ≠ opened: three separate moments.
+/// </summary>
+public class PersonalLetter
+{
+    public Guid Id { get; set; }
+    public Guid RoomId { get; set; }
+    public int Round { get; set; }
+    public Guid SenderPlayerId { get; set; }
+    /// <summary>The other player of the game, set by the server; null when the writer played alone and kept the letter.</summary>
+    public Guid? RecipientPlayerId { get; set; }
+    public string BodySealed { get; set; } = "";
+    /// <summary>The writer's tab's id for this letter: the same id sent twice (a double click) finds the saved letter.</summary>
+    public string ClientLetterId { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+    /// <summary>When the recipient's screen first received it (live, or when they came back).</summary>
+    public DateTime? DeliveredAt { get; set; }
+    public DateTime? OpenedAt { get; set; }
+}

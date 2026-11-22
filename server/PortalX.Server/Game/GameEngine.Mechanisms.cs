@@ -12,7 +12,7 @@ namespace PortalX.Server.Game;
 /// </summary>
 public sealed partial class GameEngine
 {
-    public static readonly string[] MechanismTypes = ["slots", "maze", "mosaic", "balance", "inspect", "spinner", "pendulum", "assembly", "runechain", "exitdoor", "cabinetlock", "keychest", "levers", "railway", "gravity", "compass", "pipes", "finalkey"];
+    public static readonly string[] MechanismTypes = ["slots", "maze", "mosaic", "balance", "inspect", "spinner", "pendulum", "assembly", "runechain", "exitdoor", "cabinetlock", "keychest", "levers", "railway", "gravity", "compass", "pipes", "finalkey", "bridge", "build"];
 
     // ---------------------------------------------------------------- clues
 
@@ -91,6 +91,8 @@ public sealed partial class GameEngine
                 "compass" => OperateCompass(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
                 "pipes" => OperatePipes(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
                 "finalkey" => OperateFinalKey(room, scenario!, puzzle, state!, player!, world, op, now),
+                "bridge" => OperateBridge(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
+                "build" => OperateBuild(room, scenario!, puzzle, state!, player!, world, mech, op, action, now),
                 _ =>ActionOutcome.Fail("wrong-action", "פעולה לא מוכרת."),
             };
         }
@@ -177,6 +179,14 @@ public sealed partial class GameEngine
                 // the free game's pipes: every piece's quarter turns; the main valve shut, the drain open
                 m.Rotations = PipeStart(puzzle.PublicData);
                 m.Levers = [false, true];
+                break;
+            // "הצופן הזוגי": the clock's hands, the bridge's two halves (and their latches)
+            case "compass" when puzzle.PublicData["hands"] != null:
+                m.Rotations = ClockStart(puzzle);
+                break;
+            case "bridge":
+                m.Rotations = puzzle.PublicData["start"]!.AsArray().Select(n => n!.GetValue<int>()).ToList();
+                m.Levers = [false, false];
                 break;
         }
         return m;

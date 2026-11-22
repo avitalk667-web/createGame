@@ -1,9 +1,11 @@
 // Spatial layout of the room-by-room games: "סוד פך השמן" (eight rooms) and the free trial "שער הסודות" (two rooms),
 // in a row along -Z, joined by short corridors with doors. The 3D world uses its own coordinates; RTL applies only to the UI.
 
+import { COUPLES_INTERACTABLES, COUPLES_OBSTACLES, COUPLES_ZONES, CcZone } from './couples/cc-layout';
+
 export const HANUKKAH_ZONES = ['library', 'workshop', 'maze', 'cipher', 'dreidels', 'lab', 'mosaic', 'hall'] as const;
 export const SAMPLE_ZONES = ['maproom', 'gearworks'] as const;
-export type HZone = (typeof HANUKKAH_ZONES)[number] | (typeof SAMPLE_ZONES)[number];
+export type HZone = (typeof HANUKKAH_ZONES)[number] | (typeof SAMPLE_ZONES)[number] | CcZone;
 
 /** The rooms of the game being played (set by useLayout before the world is built). */
 export let H_ZONES: readonly HZone[] = HANUKKAH_ZONES;
@@ -51,7 +53,11 @@ export type Verb = 'בדיקה' | 'הרמה' | 'פתיחה' | 'סיבוב' | 'ה
 export type HKind = 'clue' | 'panel' | 'item' | 'decor' | 'task';
 
 export type HPanel = 'riddle' | 'lamp' | 'maze' | 'box' | 'wheel' | 'stand' | 'lock' | 'jugs' | 'mosaic' | 'pedestals' | 'final'
-  | 'map' | 'symbols' | 'cabinet' | 'gears' | 'scales' | 'chest' | 'pendulum' | 'assembly' | 'runes' | 'door' | 'goldchest' | 'levers' | 'rails' | 'gravity' | 'gate' | 'evidence' | 'board' | 'book' | 'wicks' | 'lamptest' | 'blueprint' | 'sequence' | 'mirror' | 'spin' | 'memory' | 'corners' | 'shelf' | 'oilscale';
+  | 'map' | 'symbols' | 'cabinet' | 'gears' | 'scales' | 'chest' | 'pendulum' | 'assembly' | 'runes' | 'door' | 'goldchest' | 'levers' | 'rails' | 'gravity' | 'gate' | 'evidence' | 'board' | 'book' | 'wicks' | 'lamptest' | 'blueprint' | 'sequence' | 'mirror' | 'spin' | 'memory' | 'corners' | 'shelf' | 'oilscale'
+  // "הצופן הזוגי": every puzzle object opens the couples panel (ref = puzzle id); the writing desk and mailbox open the letters
+  | 'couples' | 'letters'
+  // a control in the room that acts on a couples puzzle at once (its operation in `op`)
+  | 'cc-op';
 
 export interface HInteractable {
   id: string;
@@ -65,6 +71,8 @@ export interface HInteractable {
   /** decor text, or the slot a pedestal stands for */
   text?: string;
   ref?: string;
+  /** "הצופן הזוגי": the operation a room control sends to its puzzle (panel 'cc-op'). */
+  op?: Record<string, unknown>;
   /** Shown only once this puzzle is open (not locked): the library's board, glowing book, letter and hidden drawer. */
   needs?: string;
   /** x, y, z offset from the room centre */
@@ -215,6 +223,11 @@ export let H_INTERACTABLES: HInteractable[] = HANUKKAH_INTERACTABLES;
 /** Chooses the rooms and objects of the game about to be shown. */
 export function useLayout(scenarioId: string | null | undefined) {
   const sample = scenarioId === 'stone-maze';
+  if (scenarioId === 'couples-cipher') {
+    H_ZONES = COUPLES_ZONES;
+    H_INTERACTABLES = COUPLES_INTERACTABLES;
+    return;
+  }
   H_ZONES = sample ? SAMPLE_ZONES : HANUKKAH_ZONES;
   H_INTERACTABLES = sample ? SAMPLE_INTERACTABLES : HANUKKAH_INTERACTABLES;
 }
@@ -252,7 +265,7 @@ const OBSTACLES: [HZone, number, number, number, number][] = [
 ];
 
 export function hObstacles(): HRect[] {
-  return OBSTACLES.filter(([zone]) => H_ZONES.includes(zone)).map(([zone, x0, x1, z0, z1]) => {
+  return [...OBSTACLES, ...COUPLES_OBSTACLES].filter(([zone]) => H_ZONES.includes(zone)).map(([zone, x0, x1, z0, z1]) => {
     const c = hCenter(zone);
     return { x0, x1, z0: c + z0, z1: c + z1 };
   });

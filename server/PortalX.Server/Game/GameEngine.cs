@@ -30,6 +30,8 @@ public sealed class GameOptions
     public int SeatHoldMinutes { get; set; } = 30;
     /// <summary>After a room opens, anyone may press "Continue" once this has passed (the host can at once).</summary>
     public int ContinueFallbackSeconds { get; set; } = 90;
+    /// <summary>TESTING ONLY: lets a local preview jump straight to a later room (refused in Production).</summary>
+    public bool TestJumps { get; set; }
 }
 
 /// <summary>A message the server announces to the whole group after an action.</summary>

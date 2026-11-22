@@ -33,7 +33,7 @@ import { CouponEntryPopupComponent } from '../challenge/coupon-entry-popup.compo
     @if (game.snapshot(); as s) {
       @if (s.phase === 'lobby') { <px-lobby (leave)="leave(true)" /> }
       @else if (s.scenarioId === 'hanukkah-oil' || s.scenarioId === 'gate-of-secrets') { <px-h-play (leave)="leave(false)" (leaveForGood)="leave(true)" /> }
-      @else if (s.scenarioId === 'stone-maze') { <px-sm-play (leave)="leave(false)" (leaveForGood)="leave(true)" /> }
+      @else if (s.scenarioId === 'stone-maze' || s.scenarioId === 'couples-cipher') { <px-sm-play (leave)="leave(false)" (leaveForGood)="leave(true)" /> }
       @else { <px-play (leave)="leave(false)" (leaveForGood)="leave(true)" /> }
       <!-- "Challenge 240": once when entering the free game, while the campaign is on -->
       @if (s.scenarioId === 'gate-of-secrets' && s.phase !== 'completed') { <px-coupon-entry-popup [code]="s.code" /> }

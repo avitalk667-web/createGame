@@ -105,6 +105,8 @@ public sealed partial class GameEngine
     private ActionOutcome OperateCompass(GameRoom room, ScenarioContent scenario, PuzzleContent puzzle, PuzzleState state,
         PlayerSession player, WorldState world, MechanismState mech, string op, JsonElement action, DateTime now)
     {
+        // the clock of "הצופן הזוגי" (a compass with hands) has its own rules; every other compass is unchanged
+        if (puzzle.PublicData["hands"] != null) return OperateClockHands(room, scenario, puzzle, state, player, world, mech, op, action, now);
         var marks = puzzle.PublicData["marks"]!.AsArray().Select(n => n!["id"]!.GetValue<string>()).ToList();
         var label = (int i) => puzzle.PublicData["marks"]![i]!["label"]!.GetValue<string>();
         var hold = TimeSpan.FromSeconds(puzzle.PublicData["holdSeconds"]?.GetValue<double>() ?? 2.2);

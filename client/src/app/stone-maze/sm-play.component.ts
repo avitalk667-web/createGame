@@ -1,5 +1,5 @@
 import {
-  AfterViewInit, ChangeDetectionStrategy, Component, DestroyRef, ElementRef, NgZone, OnDestroy, computed, effect, inject, output, signal, untracked, viewChild,
+  AfterViewInit, ChangeDetectionStrategy, Component, DestroyRef, ElementRef, NgZone, OnDestroy, WritableSignal, computed, effect, inject, output, signal, untracked, viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
@@ -14,6 +14,10 @@ import { LeaveDialogComponent } from '../ui/leave-dialog.component';
 import { RoomOverlaysComponent } from '../ui/room-overlays.component';
 import { H_INTERACTABLES, H_ZONES, HInteractable, HPanel, HZone, useLayout } from './sm-layout';
 import { SmPanelComponent, ITEM_EMOJI } from './sm-panel.component';
+import { CcPanelComponent } from './couples/cc-panel.component';
+import { CcArrivalComponent, CcLettersComponent } from './couples/letters/letters.component';
+import { CcTestJumpComponent } from './couples/cc-test-jump.component';
+import { LettersStore } from './couples/letters/letters.store';
 import { MazePadComponent } from '../hanukkah/maze-pad.component';
 import { SmResultComponent } from './sm-result.component';
 import { StoneMazeWorld } from './sm-world';
@@ -30,11 +34,19 @@ const PUZZLE_PANEL: Record<string, HPanel> = {
 };
 
 /** The mood of each room of the Hanukkah journey. */
+/** The mood of each room of "הצופן הזוגי". */
+const COUPLES_MUSIC: Partial<Record<HZone, ThemeId>> = {
+  'cc-sounds': 'magic', 'cc-partnership': 'mechanism', 'cc-trust': 'mystery', 'cc-letters': 'magic', 'cc-home': 'ascent',
+};
+
 const HANUKKAH_MUSIC: Partial<Record<HZone, ThemeId>> = {
   library: 'mystery', workshop: 'mechanism', maze: 'dungeon', cipher: 'riddle', dreidels: 'hanukkah', lab: 'riddle', mosaic: 'magic', hall: 'ascent',
 };
 
 /** Tables used in the room itself (drag and drop), by puzzle — the object a task's guide arrow points at. */
+/** "הצופן הזוגי": the ball track, and how long the room watches its ball run on the wall before the door. */
+const CC_TRACK = 'cc2-track';
+const CC_TRACK_WATCH_MS = 9500;
 const BENCH_PANEL: Record<string, HPanel> = {
   'h2-lamp': 'lamp', 'h5-stand': 'stand', 'h3-maze': 'maze', 'g1-map': 'assembly', 'g1-pendulum': 'pendulum', 'g1-runes': 'runes', 'g2-levers': 'levers', 'g2-rails': 'rails', 'g2-gravity': 'gravity', 'g2-gate': 'gate', 'g1-symbols': 'symbols', 'g2-gears': 'gears', 'h7-scales': 'scales', 'g2-scales': 'scales',
 };
@@ -62,7 +74,10 @@ function pickupSound(item: string): Sfx {
 
 @Component({
   selector: 'px-sm-play',
-  imports: [RouterLink, ChatComponent, JoystickComponent, SettingsPanelComponent, SmPanelComponent, SmResultComponent, RoomOverlaysComponent, LeaveDialogComponent, MazePadComponent],
+  imports: [RouterLink, ChatComponent, JoystickComponent, SettingsPanelComponent, SmPanelComponent, SmResultComponent, RoomOverlaysComponent, LeaveDialogComponent, MazePadComponent,
+    CcPanelComponent, CcLettersComponent, CcArrivalComponent, CcTestJumpComponent],
+  // "הצופן הזוגי": this screen's personal letters (fetched from the server for this player only)
+  providers: [LettersStore],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="stage">
@@ -410,7 +425,8 @@ function pickupSound(item: string): Sfx {
 
     @if (celebration(); as c) {
       <div class="celebrate" role="alert" aria-live="assertive">
-        <div class="card-c">
+        <div class="card-c" [class.drag]="isCouples()" [style.translate]="shift(cardShift())" (pointerdown)="startDrag($event, cardShift)" (dblclick)="cardShift.set(null)"
+          [attr.title]="isCouples() ? 'אפשר לגרור את ההודעה למקום אחר' : null">
           <span class="emoji" aria-hidden="true">{{ isSample() ? '✨' : '🕎' }}</span>
           <h2>{{ c.name }} {{ c.verb }}!</h2>
           <p class="what">{{ c.what }}</p>
@@ -421,7 +437,7 @@ function pickupSound(item: string): Sfx {
       </div>
     }
     @if (transfer(); as t) { <div class="transfer" role="status"><span>{{ t }}</span></div> }
-    <px-room-overlays [holdSeconds]="game.snapshot()?.pendingZone === 'maze' ? 15 : 7" />
+    <px-room-overlays [holdSeconds]="game.snapshot()?.pendingZone === 'maze' ? 15 : game.snapshot()?.pendingZone === 'cc-trust' ? 16 : 7" />
     @if (phase() === 'playing' && game.hostAway()) {
       <div class="host-away" role="status">המארח אינו מחובר כרגע.
         <button class="btn small" (click)="claimHost()">אני אהיה המארח</button></div>
@@ -440,11 +456,20 @@ function pickupSound(item: string): Sfx {
         <button class="btn primary" (click)="testimonyOpen.set(false)">הבנתי</button>
       </section>
     }
-    <div class="toasts" aria-live="polite">
-      @for (t of toasts(); track t.id) { <div class="toast" [class]="t.kind">{{ t.text }}</div> }
+    <div class="toasts" aria-live="polite" [class.drag]="isCouples()" [class.low]="watching() && !toastShift()" [style.translate]="shift(toastShift())"
+      (pointerdown)="startDrag($event, toastShift)" (dblclick)="toastShift.set(null)">
+      @for (t of toasts(); track t.id) { <div class="toast" [class]="t.kind" [attr.title]="isCouples() ? 'אפשר לגרור את ההודעות למקום אחר' : null">{{ t.text }}</div> }
     </div>
 
-    @if (panel(); as p) { <px-sm-panel [panel]="p.id" [ref]="p.ref" (close)="closePanel()" (wheelChange)="world?.setWheel($event)" (testLamp)="world?.setTestLamp($event)" /> }
+    @if (panel(); as p) {
+      @if (p.id === 'couples') { <px-cc-panel [puzzleId]="p.ref ?? ''" [from]="p.from" (close)="closePanel()" /> }
+      @else if (p.id === 'letters') {
+        <px-cc-letters [mode]="letterMode(p.ref)" [letter]="p.from" (close)="closePanel()" (go)="continueFromGate(p.from)" />
+      }
+      @else { <px-sm-panel [panel]="p.id" [ref]="p.ref" (close)="closePanel()" (wheelChange)="world?.setWheel($event)" (testLamp)="world?.setTestLamp($event)" /> }
+    }
+    @if (isCouples()) { <px-cc-test-jump /> }
+    @if (isCouples() && phase() === 'playing') { <px-cc-arrival [compact]="!!panel() || !!note() || !!focus()" (openIt)="openLetter($event)" /> }
     @if (showSettings()) { <px-settings (close)="showSettings.set(false)" /> }
 
     @if (phase() === 'completed') {
@@ -596,6 +621,14 @@ function pickupSound(item: string): Sfx {
     .toasts { position:fixed; top:66px; left:50%; transform:translateX(-50%); display:flex; flex-direction:column; gap:.4rem; align-items:center; z-index:30; pointer-events:none; width:min(520px, calc(100% - 32px)); }
     .toast { background: rgba(10,16,36,.92); border:1px solid var(--line); padding:.5rem 1rem; border-radius:12px; box-shadow: var(--shadow); animation: fadein .3s ease; text-align:center; }
     .toast.zone-unlocked, .toast.clue, .toast.mechanism { border-color: var(--gold-2); color: var(--gold-2); } .toast.wrong-answer { border-color: rgba(226,113,91,.6); }
+    /* while the ball runs, the board fills the middle of the frame (its width follows the height): on a wide screen the
+       messages wait beside it, under the score panel; on a narrow one at the bottom, only the latest two */
+    .toasts.low { top:auto; bottom:84px; } .toasts.low .toast:nth-last-child(n+3) { display:none; }
+    @media (min-aspect-ratio: 4/3) {
+      .toasts.low { top:27vh; bottom:auto; left:16px; transform:none; width:calc(50vw - 30vh - 24px); align-items:stretch; }
+      .toasts.low .toast:nth-last-child(n+3) { display:block; }
+    }
+    .toasts.drag .toast, .card-c.drag { pointer-events:auto; cursor:grab; touch-action:none; user-select:none; } .toasts.drag .toast:active, .card-c.drag:active { cursor:grabbing; }
     .toast.hint { border-color: var(--blue); } .toast.score-group { border-color: var(--ok); color:#9be3b4; }
     .joy { position:fixed; bottom:90px; left:20px; z-index:11; }
     .celebrate { position:fixed; inset:0; z-index:70; pointer-events:none; display:flex; justify-content:center; align-items:flex-start; padding-top:15vh; }
@@ -655,8 +688,14 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
   private taskZone: string | null = null;
   /** The Stone Maze's two rooms (this component plays only the Stone Maze; the name is kept from the code it was copied from). */
   isSample = computed(() => this.game.snapshot()?.scenarioId === 'stone-maze');
+  /** "הצופן הזוגי" (six rooms, personal letters) — played on the same world. */
+  isCouples = computed(() => this.game.snapshot()?.scenarioId === 'couples-cipher');
+  letters = inject(LettersStore);
+  private enteredZones = new Set<string>();
   zoneCount = computed(() => this.game.scenario()?.zones.length ?? 8);
-  texts = computed(() => this.isSample()
+  texts = computed(() => this.isCouples()
+    ? { title: 'הצופן הזוגי', mission: 'בנו יחד את הבית', rooms: 'חמישה חדרים — כל חדר נפתח אחרי החידות של הקודם', done: 'בניתם יחד את הבית.' }
+    : this.isSample()
     ? { title: 'מבוך האבן — אתגר לחדי מחשבה', mission: 'צאו ממבוך האבן', rooms: 'שני חדרים — הדלת של כל חדר נפתחת רק אחרי כל החידות שבו', done: 'יצאתם ממבוך האבן! ראו את התוצאות.' }
     : { title: 'סוד פך השמן — מסע בעקבות נס החנוכה', mission: 'גלו את סוד פך השמן', rooms: 'שמונה חדרים רציפים — כל חדר שנפתר פותח את הדלת לבא אחריו', done: 'גיליתם את סוד פך השמן והשלמתם את מסע החנוכה.' });
   readonly CHECK_LABEL: Record<string, string> = { 'h2-lamp': 'בדוק הרכבה', 'g1-map': 'חשיפת המפה', 'g2-gears': 'הפעלת הידית', 'h7-scales': 'בדיקת האיזון', 'g2-scales': 'בדיקת האיזון' };
@@ -671,7 +710,7 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
     'g2-scales': 'אין חפצים לשקילה בתיק — הרימו את הנוצה, הירח, השמש והכתר שעל שולחן המאזניים.',
   };
   hover = signal<HInteractable | null>(null);
-  panel = signal<{ id: HPanel; ref?: string } | null>(null);
+  panel = signal<{ id: HPanel; ref?: string; from?: string } | null>(null);
   note = signal<{ title: string; text: string; by?: string } | null>(null);
   toasts = signal<Toast[]>([]);
   floats = signal<{ id: number; playerId: string; text: string }[]>([]);
@@ -688,6 +727,11 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
   chatPulse = signal(false);
   unread = signal(0);
   celebration = signal<{ name: string; verb: string; what: string; points: number; next?: string; puzzleId: string } | null>(null);
+  /** "הצופן הזוגי": where the player dragged the messages and the celebration card (null: their usual place; a double click returns them). */
+  toastShift = signal<{ x: number; y: number } | null>(null);
+  cardShift = signal<{ x: number; y: number } | null>(null);
+  /** "הצופן הזוגי": the camera is watching the ball run on the wall — the messages step down so the board stays in view. */
+  watching = signal(false);
   transfer = signal<string | null>(null);
   /** The table the player is using: the lamp bench, the dreidel stand or the maze board (null in the room). */
   focus = signal<string | null>(null);
@@ -1199,6 +1243,12 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
         this.lastActiveObjective = playing ? id : undefined;
       });
     });
+    // "הצופן הזוגי": the writing desk glows until this player wrote; the mailbox flag rises for an unread letter
+    effect(() => {
+      const glow = this.isCouples() && !this.letters.decided();
+      const unread = this.letters.unread() > 0;
+      untracked(() => this.world?.setLetterState(glow, unread));
+    });
     addEventListener('resize', this.onResize);
     this.destroyRef.onDestroy(() => removeEventListener('resize', this.onResize));
     // a panel that grows back from its minimized bar stays on the screen
@@ -1216,6 +1266,7 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
         onTooFar: (d) => this.ngZone.run(() => this.toast(`התקרבו אל ${d.label} כדי ל${d.verb === 'הרמה' ? 'הרים' : 'השתמש'}`, 'info')),
         onZoneChange: (z) => this.ngZone.run(() => {
           this.zone.set(z);
+          this.enterCouplesZone(z);
           // a new room starts with the instructions panel in its usual place
           this.resetBenchPanel();
           const s = this.game.snapshot();
@@ -1270,6 +1321,7 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
   private musicFor(s: RoomSnapshot): ThemeId {
     const zone = this.zone();
     if (this.isSample()) return zone === 'gearworks' ? 'mechanism' : 'ancient';
+    if (this.isCouples()) return COUPLES_MUSIC[zone] ?? 'magic';
     return HANUKKAH_MUSIC[zone] ?? 'hanukkah';
   }
 
@@ -1300,7 +1352,7 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
       const snap = this.game.snapshot();
       if (snap) this.audio.setMusic(this.musicFor(snap));
       if (prev === 'intro') {
-        this.toast('המסע התחיל! על שולחן העץ מונח מכתב מסתורי.', 'zone-unlocked');
+        if (!this.isCouples()) this.toast('המסע התחיל! על שולחן העץ מונח מכתב מסתורי.', 'zone-unlocked');
         this.showHelp.set(true);
         setTimeout(() => this.showHelp.set(false), 18000);
       }
@@ -1450,6 +1502,8 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
       if (!p.solvedAt || now - Date.parse(p.solvedAt) >= 8000) continue;
       // the lamp first assembles and lights up on the bench; its message follows once the light reaches the wall
       if (p.id === 'h2-lamp') this.progressTimers.push(setTimeout(() => this.celebrate(this.game.snapshot() ?? s, p.id), 8000));
+      // "הצופן הזוגי": the ball first runs its route on the wall and the hatch opens; the message follows
+      else if (p.id === CC_TRACK) this.progressTimers.push(setTimeout(() => this.celebrate(this.game.snapshot() ?? s, p.id), CC_TRACK_WATCH_MS));
       else this.celebrate(s, p.id);
     }
     // a room just opened: the door opens and the camera shows it; the group moves on with "Continue"
@@ -1458,11 +1512,19 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
       this.panel.set(null);
       // after the lamp, the group first watches it light up on the bench, then the camera turns to the door
       const lamp = s.pendingZone === 'maze';
+      // "הצופן הזוגי": the ball track opens the trust room — the camera first turns to the wall and watches the ball run
+      // through the lanterns into the container and the hatch swing open, and only then to the door
+      const track = s.pendingZone === 'cc-trust';
+      if (track) {
+        this.watching.set(true);
+        setTimeout(() => this.watching.set(false), CC_TRACK_WATCH_MS + 600);
+      }
+      if (track) this.progressTimers.push(setTimeout(() => this.world?.playWatchShot('cc-partnership', [3.7, 2.3, 2.4], [7.88, 2.35, 2.4], CC_TRACK_WATCH_MS / 1000), 200));
       this.progressTimers.push(setTimeout(() => this.exitBench(), lamp ? 9000 : 1500));
       this.progressTimers.push(setTimeout(() => {
         this.audio.sfx('door');
         this.world?.playDoorCutscene(s.pendingZone!);
-      }, lamp ? 9200 : 1800));
+      }, lamp ? 9200 : track ? CC_TRACK_WATCH_MS + 600 : 1800));
     }
     if (s.phase !== 'playing' || !this.world || s.activeZone === this.activeZoneApplied) return;
     const first = this.activeZoneApplied === null;
@@ -1524,6 +1586,37 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
     this.progressTimers = [];
   }
 
+  shift(p: { x: number; y: number } | null) {
+    return p ? `${p.x}px ${p.y}px` : null;
+  }
+
+  /** "הצופן הזוגי": a message is dragged with the pointer (mouse or touch) and stays where it was left; the room behind it does not turn. */
+  startDrag(ev: PointerEvent, at: WritableSignal<{ x: number; y: number } | null>) {
+    if (!this.isCouples() || ev.button !== 0 || (ev.target as HTMLElement).closest('button')) return;
+    ev.stopPropagation();
+    ev.preventDefault();
+    const base = at() ?? { x: 0, y: 0 };
+    const sx = ev.clientX, sy = ev.clientY;
+    // the whole message stays on the screen, wherever it is dragged
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    const lim = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(Math.max(lo, hi), v));
+    const move = (e: PointerEvent) => {
+      e.stopPropagation();
+      at.set({
+        x: lim(base.x + e.clientX - sx, base.x - r.left + 4, base.x + innerWidth - r.right - 4),
+        y: lim(base.y + e.clientY - sy, base.y - r.top + 4, base.y + innerHeight - r.bottom - 4),
+      });
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move, true);
+      window.removeEventListener('pointerup', up, true);
+      window.removeEventListener('pointercancel', up, true);
+    };
+    window.addEventListener('pointermove', move, true);
+    window.addEventListener('pointerup', up, true);
+    window.addEventListener('pointercancel', up, true);
+  }
+
   toast(text: string, kind = 'info') {
     const id = ++this.toastId;
     this.toasts.update((t) => [...t.slice(-3), { id, text, kind }]);
@@ -1578,7 +1671,8 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
         else if (def.panel === 'chest') this.openBox('g2-chest', 'chest');
         else if (def.panel === 'scales') this.openScales();
         else if (def.panel === 'book') this.pullBook();
-        else this.panel.set({ id: def.panel!, ref: def.ref });
+        else if (def.panel === 'cc-op') void this.ccOperate(def);
+        else this.openPanel(def);
         return;
     }
   }
@@ -1605,6 +1699,25 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
     await this.refreshTask();
   }
 
+  /**
+   * "הצופן הזוגי": a control in the room (a lever, a bolt, a plunger) acts on its puzzle at once, with no window. The
+   * server decides; the room shows the result, and a short line says what changed.
+   */
+  async ccOperate(def: HInteractable) {
+    const r = await this.game.operate(def.ref!, def.op ?? {});
+    if (!r.ok) {
+      this.audio.sfx('wrong');
+      if (r.message) this.toast(r.message, 'info');
+      return;
+    }
+    this.audio.sfx(def.op?.['op'] === 'latch' ? 'click' : 'lever');
+    const m = this.game.snapshot()?.mechanisms?.[def.ref!];
+    if (def.ref === 'cc2-bridge' && m && def.op?.['op'] !== 'release') {
+      const side = (i: number) => `${i ? 'הימני' : 'השמאלי'}: ${m.levers?.[i] ? 'נעול 🔒' : 'שיפוע ' + (m.rotations?.[i] ?? 0)}`;
+      this.toast(`הגשר — ${side(0)} · ${side(1)}`, 'info');
+    } else if (r.message) this.toast(r.message, 'info');
+  }
+
   /** Pulling the glowing book (the server checks that the board is solved; the bookcase then swings open for everyone). */
   async pullBook() {
     const r = await this.game.operate('h1-book', { op: 'inspect', target: 'glow-book' });
@@ -1622,6 +1735,44 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
   }
 
   /** The hint button opens the active puzzle of the room the player is in. */
+  // ---- "הצופן הזוגי": its puzzle windows and the personal letters
+
+  /** A puzzle object; in the letter room the letter is offered first (once, and never as a condition to go on). */
+  private openPanel(def: HInteractable) {
+    if (def.panel === 'couples' && def.zone === 'cc-letters' && this.letters.active() && !this.letters.decided()) {
+      this.panel.set({ id: 'letters', ref: 'gate', from: def.ref });
+      return;
+    }
+    this.panel.set({ id: def.panel!, ref: def.ref, from: def.id });
+  }
+
+  letterMode(ref: string | undefined): 'write' | 'inbox' | 'gate' {
+    return ref === 'inbox' || ref === 'gate' ? ref : 'write';
+  }
+
+  /** The gate before a letter-room puzzle: on to that puzzle. */
+  continueFromGate(puzzleId: string | undefined) {
+    const def = H_INTERACTABLES.find((d) => d.panel === 'couples' && d.ref === puzzleId);
+    this.panel.set(def ? { id: 'couples', ref: puzzleId, from: def.id } : null);
+  }
+
+  /** An arrived envelope was opened: read it in the mailbox window. */
+  openLetter(id: string) {
+    this.note.set(null);
+    this.panel.set({ id: 'letters', ref: 'inbox', from: id });
+  }
+
+  /** Entering a room of "הצופן הזוגי" for the first time shows only its element; the letter room offers the letter. */
+  private enterCouplesZone(zone: HZone) {
+    if (!this.isCouples() || this.phase() !== 'playing' || this.enteredZones.has(zone)) return;
+    this.enteredZones.add(zone);
+    const story = this.game.scenario()?.zones.find((z) => z.id === zone)?.story;
+    if (story) this.toast(story, 'zone-unlocked');
+    if (zone === 'cc-letters' && !this.letters.decided() && !this.panel()) setTimeout(() => {
+      if (!this.panel() && !this.letters.decided() && this.zone() === 'cc-letters') this.panel.set({ id: 'letters', ref: 'gate' });
+    }, 1600);
+  }
+
   openHint() {
     const s = this.game.snapshot();
     const p = this.game.scenario()?.puzzles
@@ -1635,6 +1786,12 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
       const ev = s?.mechanisms?.['h1-evidence'];
       const t = (p.publicData?.targets ?? []).find((x: { id: string }) => !ev?.symbols?.includes(x.id));
       this.panel.set({ id: 'evidence', ref: t?.id ?? 'book' });
+    }
+    else if (p && this.isCouples()) {
+      const def = H_INTERACTABLES.find((d) => d.kind === 'panel' && d.panel === 'couples' && d.ref === p.id);
+      // a puzzle worked only by controls in the room (the bridge) still has its window for hints and status
+      if (def) this.openPanel(def);
+      else this.panel.set({ id: 'couples', ref: p.id });
     }
     else if (p && PUZZLE_PANEL[p.id]) this.panel.set({ id: PUZZLE_PANEL[p.id] });
     else this.toast('אין בחדר הזה חידה פתוחה.', 'info');
@@ -1704,7 +1861,7 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
   private guideFor(puzzleId: string): string | null {
     const panel = BENCH_PANEL[puzzleId] ?? PUZZLE_PANEL[puzzleId];
     const zone = this.game.scenario()?.puzzles.find((p) => p.id === puzzleId)?.zone;
-    const found = H_INTERACTABLES.filter((d) => d.zone === zone && d.kind === 'panel' && d.panel === panel);
+    const found = H_INTERACTABLES.filter((d) => d.zone === zone && d.kind === 'panel' && (d.panel === panel || (d.panel === 'couples' && d.ref === puzzleId)));
     return found.length === 1 ? found[0].id : null;
   }
 

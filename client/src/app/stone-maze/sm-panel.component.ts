@@ -13,6 +13,8 @@ const PANEL_PUZZLE: Record<HPanel, string> = {
   map: 'g1-map', symbols: 'g1-symbols', cabinet: 'g1-cabinet', gears: 'g2-gears', scales: 'h7-scales', chest: 'g2-chest', pendulum: 'g1-pendulum', assembly: 'g1-map', runes: 'g1-runes', door: 'g1-door', goldchest: 'g1-chest', levers: 'g2-levers', rails: 'g2-rails', gravity: 'g2-gravity', gate: 'g2-gate',
   evidence: 'h1-evidence', board: 'h1-board', book: 'h1-book', wicks: 'h2-wicks', lamptest: 'h2-test', blueprint: 'h2-blueprint',
   sequence: 'h4-sequence', mirror: 'h4-mirror', spin: 'h5-spin', memory: 'h5-memory', corners: 'h5-corners', shelf: 'h6-shelf', oilscale: 'h6-scales',
+  // "הצופן הזוגי" opens its own windows (couples/cc-panel.component.ts and the letters); never this panel
+  couples: '', letters: '', 'cc-op': '',
 };
 
 export const ITEM_EMOJI: Record<string, string> = {

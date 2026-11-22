@@ -1392,6 +1392,52 @@ namespace PortalX.Server.Data.Migrations
                     b.ToTable("PaymentEvents");
                 });
 
+            modelBuilder.Entity("PortalX.Server.Domain.PersonalLetter", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BodySealed")
+                        .IsRequired()
+                        .HasMaxLength(24000)
+                        .HasColumnType("character varying(24000)");
+
+                    b.Property<string>("ClientLetterId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeliveredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("OpenedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("RecipientPlayerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("RoomId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Round")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("SenderPlayerId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RecipientPlayerId");
+
+                    b.HasIndex("RoomId", "Round", "SenderPlayerId")
+                        .IsUnique();
+
+                    b.ToTable("PersonalLetters", (string)null);
+                });
+
             modelBuilder.Entity("PortalX.Server.Domain.PlayerCouponEligibility", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2248,6 +2294,15 @@ namespace PortalX.Server.Data.Migrations
                         .WithMany()
                         .HasForeignKey("ReferralLinkId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.PersonalLetter", b =>
+                {
+                    b.HasOne("PortalX.Server.Domain.GameRoom", null)
+                        .WithMany()
+                        .HasForeignKey("RoomId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("PortalX.Server.Domain.PlayerCouponEligibility", b =>

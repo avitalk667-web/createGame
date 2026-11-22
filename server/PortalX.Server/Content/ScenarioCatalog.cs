@@ -38,6 +38,8 @@ public sealed class ScenarioContent
     public int? IntroSeconds { get; init; }
     /// <summary>Minutes under which the group earns "fast" (when the scenario sets it; otherwise the general option).</summary>
     public int? FastMinutes { get; init; }
+    /// <summary>The players may leave each other a private letter (הצופן הזוגי). Off for every other game.</summary>
+    public bool PersonalLetters { get; init; }
 
     public PuzzleContent Puzzle(string id) =>
         Puzzles.FirstOrDefault(p => p.Id == id) ?? throw new KeyNotFoundException($"Puzzle {id} not found");
@@ -230,7 +232,9 @@ public sealed class ScenarioCatalog
                     if (t!["item"]?.GetValue<string>() is { } item && s.Item(item) == null) throw new InvalidDataException($"{p.Id}: unknown item {item}");
             }
             // the free game's compass: its target is one of its marks, and its flash is told by one private clue
-            if (p.Type == "compass")
+            if (p.Type == "compass" && p.PublicData["hands"] != null) ValidateCouples(s, p);
+            else if (p.Type is "bridge" or "build") ValidateCouples(s, p);
+            else if (p.Type == "compass")
             {
                 var marks = p.PublicData["marks"]?.AsArray().Select(n => n!["id"]!.GetValue<string>()).ToList() ?? [];
                 if (marks.Count < 2 || !marks.Contains(p.Solution["target"]?.GetValue<string>() ?? ""))
@@ -292,6 +296,46 @@ public sealed class ScenarioCatalog
                 if (p.PersonalKey.Any(part => msg.All(n => part.Any(k => k.Symbol == n!.GetValue<string>()))))
                     throw new InvalidDataException($"{p.Id}: one key part decodes the message alone — no cooperation needed");
             }
+        }
+    }
+
+    /// <summary>"הצופן הזוגי": the clock's hands, the bridge's range and the house's stages must fit their solutions.</summary>
+    private static void ValidateCouples(ScenarioContent s, PuzzleContent p)
+    {
+        if (p.Type == "compass")
+        {
+            var marks = p.PublicData["marks"]?.AsArray().Select(n => n!["id"]!.GetValue<string>()).ToList() ?? [];
+            var targets = p.Solution["targets"]?.AsArray().Select(n => n!.GetValue<string>()).ToList() ?? [];
+            if (targets.Count != p.PublicData["hands"]!.GetValue<int>() || targets.Any(t => !marks.Contains(t)))
+                throw new InvalidDataException($"{p.Id}: every hand needs a target among the marks");
+        }
+        else if (p.Type == "bridge")
+        {
+            var start = p.PublicData["start"]?.AsArray().Select(n => n!.GetValue<int>()).ToList() ?? [];
+            int min = p.PublicData["min"]?.GetValue<int>() ?? 0, max = p.PublicData["max"]?.GetValue<int>() ?? 0;
+            var joint = p.PublicData["joint"]?.GetValue<int>() ?? 0;
+            var stations = p.PublicData["stations"]?.GetValue<int>() ?? 0;
+            if (start.Count != 2 || start.Any(a => a < min || a > max) || joint <= 0 || stations <= joint || (p.PublicData["sides"]?.AsArray().Count ?? 0) != 2)
+                throw new InvalidDataException($"{p.Id}: a bridge needs two sides, starts within its range and a joint between its ends");
+        }
+        else
+        {
+            var accepts = p.PublicData["accepts"]?.AsArray().Select(n => n!.GetValue<string>()).ToHashSet() ?? [];
+            if (accepts.Count == 0 || accepts.Any(a => s.Item(a) == null)) throw new InvalidDataException($"{p.Id}: the house needs known parts");
+            var used = new HashSet<string>();
+            foreach (var stage in p.PublicData["stages"]?.AsArray() ?? [])
+            {
+                var id = stage!["id"]!.GetValue<string>();
+                var want = p.Solution[id]?.AsObject() ?? throw new InvalidDataException($"{p.Id}: stage {id} has no solution");
+                foreach (var socket in stage["sockets"]!.AsArray().Select(n => n!["id"]!.GetValue<string>()))
+                {
+                    var part = want[socket]?.GetValue<string>().Split('@')[0] ?? throw new InvalidDataException($"{p.Id}: socket {socket} has no part");
+                    if (!accepts.Contains(part) || !used.Add(part)) throw new InvalidDataException($"{p.Id}: part {part} must be accepted and used once");
+                }
+            }
+            // every reward of the earlier rooms is a real part of the house
+            foreach (var reward in s.Puzzles.Where(x => x.RewardItem != null).Select(x => x.RewardItem!))
+                if (!used.Contains(reward)) throw new InvalidDataException($"{p.Id}: the reward {reward} is not used in the house");
         }
     }
 }

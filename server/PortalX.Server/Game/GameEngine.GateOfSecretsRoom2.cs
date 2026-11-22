@@ -92,8 +92,8 @@ public sealed partial class GameEngine
                 mech.Found.Clear();
                 Contribute(world, player.Id);
                 SaveWorld(room, world, now);
-                return new ActionOutcome(true, "rotated", "הצינור הסתובב",
-                    [new("puzzle-action", $"{player.Nickname} · {puzzle.Title}: סובב צינור", pid, puzzle.Id)], true);
+                return new ActionOutcome(true, "rotated", data["rotatedText"]?.GetValue<string>() ?? "הצינור הסתובב",
+                    [new("puzzle-action", $"{player.Nickname} · {puzzle.Title}: {data["rotateAction"]?.GetValue<string>() ?? "סובב צינור"}", pid, puzzle.Id)], true);
             }
             case "valve":
             {
@@ -103,7 +103,7 @@ public sealed partial class GameEngine
                     mech.Levers[1] = !mech.Levers[1];
                     Contribute(world, player.Id);
                     SaveWorld(room, world, now);
-                    var text = mech.Levers[1] ? "ברז הניקוז נפתח" : "ברז הניקוז נסגר";
+                    var text = mech.Levers[1] ? data["drainOpenText"]?.GetValue<string>() ?? "ברז הניקוז נפתח" : data["drainClosedText"]?.GetValue<string>() ?? "ברז הניקוז נסגר";
                     return new ActionOutcome(true, "valve", text, [new("puzzle-action", $"{player.Nickname} · {puzzle.Title}: {text}", pid, puzzle.Id)], true);
                 }
                 if (which != "main") return ActionOutcome.Fail("bad-action", "הברז הזה לא קיים.");
@@ -120,7 +120,8 @@ public sealed partial class GameEngine
                 }
                 var (cells, reached) = PipeFlow(data, mech.Rotations);
                 mech.Found = cells;
-                if (!reached)
+                // a track with checkpoints (הצופן הזוגי) must pass all of them; without checkpoints this is always true
+                if (!reached || !PipeCheckpoints(data, cells))
                 {
                     SaveWorld(room, world, now);
                     return new ActionOutcome(false, "leaked", puzzle.Failure, [new("wrong-answer", $"{player.Nickname} · {puzzle.Title}: {puzzle.Failure}", pid, puzzle.Id)], true);

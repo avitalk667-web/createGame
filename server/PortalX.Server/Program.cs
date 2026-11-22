@@ -37,6 +37,8 @@ builder.Services.AddSingleton<GameEngine>();
 builder.Services.AddSingleton<RoomRuntime>();
 builder.Services.AddSingleton<DatabaseStatus>();
 builder.Services.AddScoped<RoomService>();
+builder.Services.AddSingleton(sp => PortalX.Server.Letters.LetterProtector.FromConfig(sp.GetRequiredService<IConfiguration>()));
+builder.Services.AddScoped<PortalX.Server.Letters.LetterService>();
 builder.Services.AddSingleton<SumitHttp>();
 builder.Services.AddSingleton(sp => PaymentGateway.Create(
     sp.GetRequiredService<IConfiguration>().GetSection("Payments").Get<PaymentOptions>() ?? new PaymentOptions(),

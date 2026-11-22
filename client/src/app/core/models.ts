@@ -231,7 +231,7 @@ export interface ItemContent {
 export interface PuzzleContent {
   id: string;
   order: number;
-  type: 'cipher' | 'sequence' | 'sound' | 'split' | 'items' | 'final' | 'slots' | 'maze' | 'mosaic';
+  type: 'cipher' | 'sequence' | 'sound' | 'split' | 'items' | 'final' | 'slots' | 'maze' | 'mosaic' | 'compass' | 'pipes' | 'assembly' | 'bridge' | 'build';
   zone: string;
   title: string;
   objective: string;
@@ -415,4 +415,25 @@ export function formatPreviousPrice(p: Product): string | null {
 
 export function playersLabel(p: Product): string {
   return p.minPlayers > 1 ? `${p.minPlayers}–${p.maxPlayers} משתתפים` : `1–${p.maxPlayers} משתתפים`;
+}
+
+/** "הצופן הזוגי": a personal letter as its envelope (no text). */
+export interface LetterEnvelope {
+  id: string;
+  from: string;
+  createdAt: string;
+  openedAt: string | null;
+  round: number;
+}
+
+export interface LetterView extends LetterEnvelope {
+  text: string;
+}
+
+/** What this player may read: letters sent to them, the status of the one they sent, and a solo letter they kept. */
+export interface LettersView {
+  inbox: LetterView[];
+  sent: { id: string; hasRecipient: boolean; createdAt: string; deliveredAt: string | null; openedAt: string | null } | null;
+  kept: LetterView | null;
+  solo: boolean;
 }

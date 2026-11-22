@@ -13,6 +13,9 @@ import {
 import { Hanukkiah } from '../hanukkah/hanukkiah';
 import { StoneHall, stoneHallEnvironment } from './stone-hall';
 import { Workshop, workshopEnvironment } from './workshop';
+import { COUPLES_DOOR_SYMBOL, CouplesRooms, isCouplesZone } from './couples/cc-rooms';
+/** Length of the establishing shot on entering a room of "הצופן הזוגי", in seconds. */
+const CC_INTRO_S = 2.8;
 import {
   H_HALF_D, H_HALF_W, H_INTERACTABLES, H_SPACING, H_WALL, H_ZONES, HInteractable, HRect, HZone,
   hCenter, hInRects, hObstacles, hWalkable, hWorldPos, hZoneAt,
@@ -155,6 +158,7 @@ const LETTERS = 'אבגדהוזחטיכלמנסעפצקרשת'.split('');
 /** Symbols carved on each door, by the room it leads to. */
 const DOOR_SYMBOL: Partial<Record<HZone, string>> = {
   workshop: '🪔', maze: '🧭', cipher: '📜', dreidels: 'נ ג', lab: '🏺', mosaic: '💎', hall: '🕎', gearworks: '⚙️',
+  ...COUPLES_DOOR_SYMBOL,
 };
 
 interface Flicker { light: THREE.PointLight; base: number; seed: number }
@@ -718,6 +722,8 @@ export class StoneMazeWorld {
   /** The free game's second room (2.0): the Mechanism Workshop model and its live parts (workshop.ts). */
   private workshop?: Workshop;
   private workEnv?: THREE.Texture;
+  /** "הצופן הזוגי": its six rooms, built in code (couples/cc-rooms.ts). */
+  private couples?: CouplesRooms;
   /** The server's time in ms (the game service keeps it precise); the pendulum is drawn by it. */
   private serverClock: () => number = () => Date.now();
   setServerClock(fn: () => number) { this.serverClock = fn; }
@@ -743,7 +749,7 @@ export class StoneMazeWorld {
   private unlocked = new Set<string>(['library']);
   private rects: HRect[] = hWalkable(this.unlocked);
   private obstacles: HRect[] = hObstacles();
-  private cut?: { from: THREE.Vector3; to: THREE.Vector3; look: THREE.Vector3; t: number; dur: number; pushY?: number };
+  private cut?: { from: THREE.Vector3; to: THREE.Vector3; look: THREE.Vector3; t: number; dur: number; pushY?: number; still?: boolean };
   private itemMeshes = new Map<string, THREE.Object3D>();
   private worldItems = new Set<string>();
   private hanukkiot: Hanukkiah[] = [];
@@ -906,6 +912,9 @@ export class StoneMazeWorld {
   private camYaw = 0;
   private camPitch = 0.32;
   private camDist = 4.6;
+  /** "הצופן הזוגי" only: the short establishing shot on first entering a room, and the rooms already shown. */
+  private ccIntro?: { zone: HZone; t: number };
+  private readonly ccSeen = new Set<HZone>();
   private keys = new Set<string>();
   private joystick = new THREE.Vector2();
   private remotes = new Map<string, { avatar: PlayerAvatar; pos: THREE.Vector3; yaw: number; speed: number; connected: boolean }>();
@@ -950,6 +959,10 @@ export class StoneMazeWorld {
       mosaic: () => this.buildMosaic(scenario), hall: () => this.buildHall(),
       maproom: () => this.buildStoneHall(scenario), gearworks: () => this.buildWorkshopRoom(scenario),
     };
+    if (H_ZONES.some(isCouplesZone)) {
+      const cc = (this.couples = new CouplesRooms(this.scene, this.quality, scenario, (x, y, z, color, i, d, f) => this.addLight(x, y, z, color, i, d, f)));
+      for (const z of H_ZONES) if (isCouplesZone(z)) rooms[z] = () => cc.build(z, hCenter(z));
+    }
     for (const z of H_ZONES) rooms[z]?.();
     for (const def of H_INTERACTABLES) {
       const m = new THREE.Mesh(new THREE.SphereGeometry(def.radius, 12, 8), new THREE.MeshBasicMaterial({ visible: false }));
@@ -1028,6 +1041,7 @@ export class StoneMazeWorld {
     const stone = zone === 'maproom' && !!this.stoneHall?.loaded;
     // the workshop: warm amber and copper, with its own reflection environment
     const works = zone === 'gearworks' && !!this.workshop?.loaded;
+    const mood = this.couples?.mood(zone);
     this.hemi.intensity = moody ? 0.75 : stone ? 0.9 : works ? 0.85 : 1.35;
     this.hemi.color.set(moody ? '#b8a890' : stone ? '#7f9fe0' : works ? '#ffc89a' : '#a8b4e6');
     this.hemi.groundColor.set(stone ? '#1c1a22' : works ? '#2a1a10' : '#4a3620');
@@ -1037,6 +1051,16 @@ export class StoneMazeWorld {
     if (works && !this.workEnv) this.workEnv = workshopEnvironment(this.renderer);
     this.scene.environment = stone ? this.stoneEnv! : works ? this.workEnv! : null;
     this.scene.environmentIntensity = works ? 0.6 : 0.55;
+    // a room of "הצופן הזוגי": its own warm fill and reflections
+    if (mood) {
+      this.hemi.intensity = mood.hemi;
+      this.hemi.color.set(mood.sky);
+      this.hemi.groundColor.set(mood.ground);
+      this.ambient.intensity = mood.ambient;
+      this.ambient.color.set(mood.ambientColor);
+      this.scene.environment = this.couples!.environment(this.renderer, zone);
+      this.scene.environmentIntensity = 0.5;
+    }
     this.lightPool.forEach((p, i) => {
       const s = chosen[i] ?? null;
       p.spec = s;
@@ -1090,9 +1114,10 @@ export class StoneMazeWorld {
     const tint: Record<HZone, string> = {
       library: '#7a6e66', workshop: '#786a5c', maze: '#6e6a78', cipher: '#6a6680', dreidels: '#7a6a5a', lab: '#666e78', mosaic: '#5e6684', hall: '#5c6290',
       maproom: '#76695c', gearworks: '#666a76',
+      'cc-sounds': '#6a4a40', 'cc-partnership': '#6a5a48', 'cc-trust': '#565a66', 'cc-letters': '#6a4a44', 'cc-home': '#8a7458',
     };
     const wallMat = this.std(tint[zone], { map: stoneTexture([5, 2.5]) });
-    const floorMat = ['library', 'workshop', 'dreidels', 'maproom'].includes(zone)
+    const floorMat = ['library', 'workshop', 'dreidels', 'maproom'].includes(zone) || isCouplesZone(zone)
       ? this.std('#9a7a5a', { map: woodFloorTexture([4, 4]), roughness: 0.7 })
       : this.std('#6a6470', { map: stoneTexture([6, 6]), roughness: 0.6 });
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(H_HALF_W * 2, H_HALF_D * 2), floorMat);
@@ -1101,7 +1126,9 @@ export class StoneMazeWorld {
     const ceil = new THREE.Mesh(new THREE.PlaneGeometry(H_HALF_W * 2, H_HALF_D * 2), this.std('#2b2420'));
     ceil.rotation.x = Math.PI / 2;
     ceil.position.set(0, H_WALL, c);
-    this.scene.add(floor, ceil);
+    // "הצופן הזוגי" lays its own floors (one of them has a real pit in it); every other game keeps the shell's floor
+    if (isCouplesZone(zone)) this.scene.add(ceil);
+    else this.scene.add(floor, ceil);
     for (const sx of [-1, 1]) {
       const wall = new THREE.Mesh(new THREE.PlaneGeometry(H_HALF_D * 2, H_WALL), wallMat);
       wall.rotation.y = -sx * Math.PI / 2;
@@ -1323,6 +1350,7 @@ export class StoneMazeWorld {
   }
 
   private placeKeyLight(zone: HZone) {
+    this.couples?.focus(zone);
     this.assignLights(zone);
     if (!this.keyLight) return;
     const c = hCenter(zone);
@@ -2180,6 +2208,11 @@ export class StoneMazeWorld {
   }
 
   /** The player's secret task (from the server, for them alone): its mark shows in the room until it is found. */
+  /** "הצופן הזוגי": the writing desk glows until this player wrote; the mailbox flag shows an unread letter. */
+  setLetterState(deskGlow: boolean, unread: boolean) {
+    this.couples?.setLetterState(deskGlow, unread);
+  }
+
   setMyTask(id: string | null, done: boolean) {
     this.myTask = id;
     this.myTaskDone = done;
@@ -3361,6 +3394,7 @@ export class StoneMazeWorld {
     this.puzzleStatus = new Map(s.puzzles.map((p) => [p.id, p.status]));
     this.stoneHall?.apply(s);
     this.workshop?.apply(s);
+    this.couples?.apply(s, live);
     this.applyLibraryEvidence(s, live);
     this.applyWorkshopPrep(s);
     this.applyCipherPrep(s);
@@ -4397,6 +4431,7 @@ export class StoneMazeWorld {
     this.updateSample(dt, t);
     this.stoneHall?.update(dt, t, this.serverClock());
     this.workshop?.update(dt, t, this.serverClock());
+    this.couples?.update(dt, t);
     // turning the room over with reduced motion: a short fade instead of the spin
     this.renderer.toneMappingExposure = 1.55 * (1 - 0.85 * (this.workshop?.fade ?? 0));
 
@@ -4408,7 +4443,14 @@ export class StoneMazeWorld {
   /** Opening scene in the library: around the desk and the letter, ending at the group's starting point. */
   private introCamera(s: number) {
     // the free game opens over the swinging pendulum and the frozen map, the rune disc and the mechanical cabinet
-    const keys: [number, THREE.Vector3, THREE.Vector3][] = H_ZONES[0] === 'maproom' ? [
+    const keys: [number, THREE.Vector3, THREE.Vector3][] = H_ZONES[0] === 'cc-sounds' ? [
+      // "הצופן הזוגי": over the sound device, along the bells and the clock, ending at the entrance
+      [0, new THREE.Vector3(5, 4.0, 5.5), new THREE.Vector3(0, 1.4, -1.3)],
+      [6, new THREE.Vector3(-3.0, 2.4, 1.0), new THREE.Vector3(-7.0, 2.0, -1.6)],
+      [12, new THREE.Vector3(-1.8, 2.4, -3.0), new THREE.Vector3(-3.6, 2.6, -6.8)],
+      [18, new THREE.Vector3(0, 2.4, 7.5), new THREE.Vector3(0, 1.4, -1.5)],
+      [19, new THREE.Vector3(0, 2.4, 7.5), new THREE.Vector3(0, 1.4, -1.5)],
+    ] : H_ZONES[0] === 'maproom' ? [
       [0, new THREE.Vector3(6, 4.6, 6), new THREE.Vector3(0, 2.2, -1.3)],
       [6, new THREE.Vector3(-3.4, 2.5, 0.6), new THREE.Vector3(-7.6, 2.6, -1.6)],
       [12, new THREE.Vector3(-2.2, 2.1, -3.2), new THREE.Vector3(-4.4, 2.0, -6.6)],
@@ -4486,25 +4528,48 @@ export class StoneMazeWorld {
     this.local.root.rotation.y = this.localYaw;
     this.local.update(dt, this.localSpeed, t);
 
-    const pivot = new THREE.Vector3(this.localPos.x, 1.6, this.localPos.z);
-    const dir = new THREE.Vector3(Math.sin(this.camYaw) * Math.cos(this.camPitch), Math.sin(this.camPitch), Math.cos(this.camYaw) * Math.cos(this.camPitch));
+    // "הצופן הזוגי" frames the rooms a little wider and over the shoulder, so the character never hides the station in
+    // front of it; every other game keeps its camera exactly as it was
+    const ccFrame = isCouplesZone(hZoneAt(this.localPos.z));
+    const pitch = ccFrame ? Math.min(1.1, this.camPitch + 0.05) : this.camPitch;
+    const pivot = new THREE.Vector3(this.localPos.x, ccFrame ? 1.75 : 1.6, this.localPos.z);
+    const dir = new THREE.Vector3(Math.sin(this.camYaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(this.camYaw) * Math.cos(pitch));
+    if (ccFrame) pivot.addScaledVector(new THREE.Vector3(Math.cos(this.camYaw), 0, -Math.sin(this.camYaw)), 0.55);
     const cam = new THREE.Vector3();
     const roomish = this.rects.map((r) => ({ x0: r.x0 - 0.45, x1: r.x1 + 0.45, z0: r.z0 - 0.45, z1: r.z1 + 0.45 }));
-    for (let dist = this.camDist; dist > 0.8; dist -= 0.2) {
+    for (let dist = ccFrame ? this.camDist + 0.7 : this.camDist; dist > 0.8; dist -= 0.2) {
       cam.copy(pivot).addScaledVector(dir, dist);
       // stay inside the player's room — or in line with the doorway — so walls and door leaves never block the view
       const sameRoom = hZoneAt(cam.z) === hZoneAt(pivot.z) || Math.abs(cam.x) < DOOR_W / 2 - 0.25;
-      if (hInRects(roomish, cam.x, cam.z) && cam.y < H_WALL - 0.3 && sameRoom) break;
+      // "הצופן הזוגי" has deep door casings and wall furniture: keep the camera clear of the front and back walls
+      const clear = !ccFrame || Math.abs(cam.z - hCenter(hZoneAt(pivot.z))) < 6.6;
+      if (hInRects(roomish, cam.x, cam.z) && cam.y < H_WALL - 0.3 && sameRoom && clear) break;
     }
-    if (this.snapCamera) {
-      this.camera.position.copy(cam);
-      this.snapCamera = false;
-    } else this.camera.position.lerp(cam, Math.min(1, dt * 10));
-    this.camera.lookAt(pivot);
+    const intro = this.ccIntro;
+    if (intro && intro.zone === hZoneAt(this.localPos.z)) {
+      // the establishing shot: from high by the entrance, a slow drift across the room, then down into the follow view
+      intro.t += dt;
+      const k = Math.min(1, intro.t / CC_INTRO_S);
+      const c = hCenter(intro.zone);
+      const wide = new THREE.Vector3(-2.6 + 5.2 * k, 5.0 - 0.6 * k, c + 6.5);
+      const look = new THREE.Vector3(1.2 - 2.4 * k, 1.5, c - 2.6);
+      const e = THREE.MathUtils.smoothstep(k, 0.62, 1);
+      this.camera.position.copy(wide.lerp(cam, e));
+      this.camera.lookAt(look.lerp(pivot, e));
+      if (k >= 1) this.ccIntro = undefined;
+    } else {
+      this.ccIntro = undefined;
+      if (this.snapCamera) {
+        this.camera.position.copy(cam);
+        this.snapCamera = false;
+      } else this.camera.position.lerp(cam, Math.min(1, dt * 10));
+      this.camera.lookAt(pivot);
+    }
 
     const zone = hZoneAt(this.localPos.z);
     if (zone !== this.currentZone) {
       this.currentZone = zone;
+      this.ccEstablish(zone);
       this.placeKeyLight(zone);
       this.cb.onZoneChange?.(zone);
     }
@@ -4538,13 +4603,24 @@ export class StoneMazeWorld {
     this.mode = 'cutscene';
   }
 
+  /**
+   * "הצופן הזוגי": the camera turns to a mechanism in a room and holds still on it while it moves, then hands the view
+   * back. Positions are in the room's own frame (x across, z from the room's centre), like the room's objects.
+   */
+  playWatchShot(zone: string, at: [number, number, number], look: [number, number, number], dur: number) {
+    if (this.mode !== 'play' || !H_ZONES.includes(zone as HZone)) return;
+    const c = hCenter(zone as HZone);
+    this.cut = { from: this.camera.position.clone(), to: new THREE.Vector3(at[0], at[1], c + at[2]), look: new THREE.Vector3(look[0], look[1], c + look[2]), t: 0, dur, still: true };
+    this.mode = 'cutscene';
+  }
+
   private cutsceneCamera(dt: number, t: number) {
     const c = this.cut!;
     c.t += dt;
     const k = THREE.MathUtils.smootherstep(Math.min(1, c.t / 1.3), 0, 1);
     const push = THREE.MathUtils.smootherstep(Math.max(0, (c.t - 2.2) / 2.8), 0, 1);
     const pos = new THREE.Vector3().lerpVectors(c.from, c.to, k);
-    pos.lerp(new THREE.Vector3(0.3, c.pushY ?? 2.0, c.look.z + 4.2), push * 0.75);
+    if (!c.still) pos.lerp(new THREE.Vector3(0.3, c.pushY ?? 2.0, c.look.z + 4.2), push * 0.75);
     this.camera.position.copy(pos);
     this.camera.lookAt(c.look);
     this.local?.update(dt, 0, t);
@@ -4617,7 +4693,8 @@ export class StoneMazeWorld {
     this.cut = undefined;
     if (this.mode === 'cutscene') this.mode = 'play';
     const c = hCenter(zone);
-    const z = zone === 'library' ? SPAWN.z : c + 5.2;
+    // "הצופן הזוגי" puts the group a step further in, so the camera has room behind them
+    const z = zone === 'library' ? SPAWN.z : c + (isCouplesZone(zone) ? 4.5 : 5.2);
     const x = ((slot % 5) - 2) * 0.9;
     if (this.canStand(x, z)) this.localPos.set(x, 0, z);
     else this.localPos.set(0, 0, z);
@@ -4631,6 +4708,15 @@ export class StoneMazeWorld {
       this.placeKeyLight(zone);
       this.cb.onZoneChange?.(zone);
     }
+    this.ccEstablish(zone);
+  }
+
+  /** "הצופן הזוגי": the first time the player is in a room (after the first one), play its short establishing shot. */
+  private ccEstablish(zone: HZone) {
+    if (!isCouplesZone(zone) || this.ccSeen.has(zone)) return;
+    const first = this.ccSeen.size === 0;
+    this.ccSeen.add(zone);
+    if (!first) this.ccIntro = { zone, t: 0 };
   }
 
   get localZone(): HZone {
@@ -4795,6 +4881,7 @@ export class StoneMazeWorld {
     this.disposed = true;
     this.stoneEnv?.dispose();
     this.workEnv?.dispose();
+    this.couples?.dispose();
     cancelAnimationFrame(this.raf);
     clearInterval(this.watchdog);
     this.resizeObs.disconnect();

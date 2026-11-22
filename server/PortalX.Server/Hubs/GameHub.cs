@@ -14,7 +14,7 @@ public sealed record HubResult(bool Ok, string Code, string Message, JsonNode? D
 /// Real-time channel (spec §11 SignalR): joining, readiness, player moves, puzzle events, hints, items, chat and reconnects.
 /// The server is the source of truth; clients only send intents.
 /// </summary>
-public sealed class GameHub(RoomService rooms, RoomRuntime runtime, PortalDbContext db, ILogger<GameHub> logger) : Hub
+public sealed partial class GameHub(RoomService rooms, RoomRuntime runtime, PortalDbContext db, ILogger<GameHub> logger) : Hub
 {
     private Guid? PlayerId => Context.Items.TryGetValue("player", out var v) ? (Guid?)v : null;
     private Guid? RoomId => Context.Items.TryGetValue("room", out var v) ? (Guid?)v : null;
@@ -52,6 +52,8 @@ public sealed class GameHub(RoomService rooms, RoomRuntime runtime, PortalDbCont
         Context.Items["player"] = player.Id;
         Context.Items["room"] = player.RoomId;
         await Groups.AddToGroupAsync(Context.ConnectionId, Group(player.RoomId));
+        // this player's own tabs: private deliveries (a personal letter) reach only them
+        await Groups.AddToGroupAsync(Context.ConnectionId, PlayerGroup(player.Id));
         await Broadcast(exec, exceptCaller: true);
 
         var data = new JsonObject

@@ -2,7 +2,7 @@ import { Injectable, NgZone, computed, inject, signal } from '@angular/core';
 import * as signalR from '@microsoft/signalr';
 import { Subject } from 'rxjs';
 import { ApiService, StoredSession, sessionStore } from './api.service';
-import { ChatMessage, GameNotice, HubResult, PlayerDto, RemotePosition, RoomSnapshot, ScenarioContent } from './models';
+import { ChatMessage, GameNotice, HubResult, LetterEnvelope, LettersView, PlayerDto, RemotePosition, RoomSnapshot, ScenarioContent } from './models';
 
 export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'failed';
 
@@ -30,6 +30,12 @@ export class GameService {
   readonly positions = new Map<string, RemotePosition & { t: number }>();
   readonly notices$ = new Subject<GameNotice>();
   readonly pings$ = new Subject<{ playerId: string; objectId: string }>();
+  /** "הצופן הזוגי": a personal letter reached this player (the envelope only — the text is read with getMyLetters). */
+  readonly letter$ = new Subject<LetterEnvelope>();
+  /** The partner opened the letter this player sent. */
+  readonly letterOpened$ = new Subject<{ id: string; openedAt: string }>();
+  /** Counts every successful handshake (first connection and each reconnection), so private data can be fetched again. */
+  readonly handshakes = signal(0);
 
   readonly me = computed<PlayerDto | undefined>(() => this.snapshot()?.players.find((p) => p.id === this.playerId()));
   readonly isHost = computed(() => !!this.snapshot() && this.snapshot()!.hostPlayerId === this.playerId());
@@ -113,6 +119,8 @@ export class GameService {
       this.positions.set(id, { x, y, z, ry, zone: zoneId, t: performance.now() });
     });
     hub.on('pinged', (playerId: string, objectId: string) => this.zone.run(() => this.pings$.next({ playerId, objectId })));
+    hub.on('letter', (e: LetterEnvelope) => this.zone.run(() => this.letter$.next(e)));
+    hub.on('letter-opened', (e: { id: string; openedAt: string }) => this.zone.run(() => this.letterOpened$.next(e)));
     hub.onreconnecting(() => this.zone.run(() => this.connection.set('reconnecting')));
     hub.onreconnected(() => this.zone.run(() => this.handshake()));
     hub.onclose(() => this.zone.run(() => this.connection.set(this.session ? 'disconnected' : 'idle')));
@@ -146,6 +154,7 @@ export class GameService {
       for (const [id, p] of Object.entries(r.data!.positions ?? {})) this.positions.set(id, { ...p, t: performance.now() });
       if (r.snapshot) this.applySnapshot(r.snapshot);
       this.connection.set('connected');
+      this.handshakes.update((n) => n + 1);
       return true;
     } catch {
       this.connection.set('failed');
@@ -230,6 +239,14 @@ export class GameService {
   transferHost = (playerId: string) => this.invoke('TransferHost', playerId);
   releaseSeat = (playerId: string) => this.invoke('ReleaseSeat', playerId);
   sendChat = (text: string | null, emote: string | null) => this.invoke('SendChat', text, emote);
+  // "הצופן הזוגי": personal letters (never part of the shared state; the server decides who may read what)
+  sendLetter = (clientLetterId: string, text: string, keepAlone: boolean) =>
+    this.invoke<{ id: string; createdAt: string; hasRecipient: boolean }>('SendLetter', clientLetterId, text, keepAlone);
+  getMyLetters = () => this.invoke<LettersView>('GetMyLetters');
+  openLetter = (letterId: string) => this.invoke('OpenLetter', letterId);
+  letterSeen = (letterId: string) => this.invoke('LetterSeen', letterId);
+  /** TESTING ONLY: a local preview (Game:TestJumps) takes the group to a later room; refused elsewhere. */
+  testJump = (zone: string) => this.invoke('TestJump', zone);
 
   async leave() {
     await this.invoke('Leave');
