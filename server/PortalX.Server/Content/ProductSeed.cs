@@ -68,6 +68,16 @@ public sealed class ProductSeed
         ("stone-maze", "2 חדרים · 6 חידות", "חידות חשיבה ושיתוף פעולה"),
     ];
 
+    /// <summary>
+    /// Cover corrections for rows that already exist: the cover and its gallery picture change only while they still show
+    /// the old picture, so a cover the admin chose later is never replaced.
+    /// </summary>
+    public static readonly (string ProductId, string Old, string New)[] CoverFixes =
+    [
+        // the couples game launched with the Stone Maze cover as a stand-in
+        ("couples-cipher", "img/stone-maze/cover.jpg", "img/couples-cipher/cover.jpg"),
+    ];
+
     public static async Task ApplyFeatureFixesAsync(PortalDbContext db)
     {
         foreach (var (id, oldText, newText) in FeatureFixes)
@@ -80,6 +90,21 @@ public sealed class ProductSeed
             features[i] = newText;
             p.FeaturesJson = JsonSerializer.Serialize(features, ScenarioCatalog.JsonOptions);
             p.UpdatedAt = DateTime.UtcNow;
+        }
+        foreach (var (id, oldImg, newImg) in CoverFixes)
+        {
+            var p = await db.Products.FindAsync(id);
+            if (p == null) continue;
+            var changed = false;
+            if (p.CoverImage == oldImg) { p.CoverImage = newImg; changed = true; }
+            var gallery = JsonSerializer.Deserialize<List<GalleryImage>>(p.GalleryJson, ScenarioCatalog.JsonOptions) ?? [];
+            if (gallery.Any(g => g.Src == oldImg))
+            {
+                gallery = gallery.Select(g => g.Src == oldImg ? g with { Src = newImg } : g).ToList();
+                p.GalleryJson = JsonSerializer.Serialize(gallery, ScenarioCatalog.JsonOptions);
+                changed = true;
+            }
+            if (changed) p.UpdatedAt = DateTime.UtcNow;
         }
         await db.SaveChangesAsync();
     }

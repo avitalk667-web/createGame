@@ -175,6 +175,45 @@ public class ProductCatalogTests
     }
 
     [Fact]
+    public async Task The_couples_game_gets_its_own_cover_once_and_an_admin_cover_stays()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PortalDbContext>();
+        var p = await db.Products.FirstAsync(x => x.Id == "couples-cipher");
+        var (cover, gallery, status, price) = (p.CoverImage, p.GalleryJson, p.Status, p.PriceIls);
+        try
+        {
+            // a row seeded with the stand-in cover (as on the live site): the cover and its gallery picture change, the caption stays
+            p.CoverImage = "img/stone-maze/cover.jpg";
+            p.GalleryJson = "[{\"src\":\"img/stone-maze/cover.jpg\",\"caption\":\"הצופן הזוגי\"}]";
+            await db.SaveChangesAsync();
+            await ProductSeed.ApplyFeatureFixesAsync(db);
+            await db.Entry(p).ReloadAsync();
+            Assert.Equal("img/couples-cipher/cover.jpg", p.CoverImage);
+            var pics = JsonSerializer.Deserialize<List<GalleryImage>>(p.GalleryJson, ScenarioCatalog.JsonOptions)!;
+            Assert.Equal([new GalleryImage("img/couples-cipher/cover.jpg", "הצופן הזוגי")], pics);
+            // only the picture: the status and the price are untouched
+            Assert.Equal(status, p.Status);
+            Assert.Equal(price, p.PriceIls);
+            // a cover the admin chose is never replaced, and the Stone Maze keeps its own cover
+            p.CoverImage = "img/home/taste-room.jpg";
+            await db.SaveChangesAsync();
+            await ProductSeed.ApplyFeatureFixesAsync(db);
+            await db.Entry(p).ReloadAsync();
+            Assert.Equal("img/home/taste-room.jpg", p.CoverImage);
+            Assert.Equal("img/stone-maze/cover.jpg", (await db.Products.AsNoTracking().FirstAsync(x => x.Id == "stone-maze")).CoverImage);
+        }
+        finally
+        {
+            (p.CoverImage, p.GalleryJson) = (cover, gallery);
+            await db.SaveChangesAsync();
+        }
+        // the default catalog file already names the new cover, and the picture is in the site
+        var seed = ProductSeed.LoadDefault().Single(x => x.Id == "couples-cipher");
+        Assert.Equal("img/couples-cipher/cover.jpg", seed.CoverImage);
+    }
+
+    [Fact]
     public async Task The_last_portal_card_shows_its_scoring_instead_of_its_length_and_admin_texts_stay()
     {
         using var scope = _factory.Services.CreateScope();
