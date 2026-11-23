@@ -159,7 +159,7 @@ interface Note { note: number; at: number }
               <div class="slots" [class.many]="slots().length > 4">
                 @for (sl of slots(); track sl.id) {
                   @let placed = mech()?.slots?.[sl.id];
-                  <button class="slot fb-host" [class.full]="!!placed" [class.lit]="solved()" [class.fb-right]="fb.of(sl.id) === 'right'" [class.fb-wrong]="fb.of(sl.id) === 'wrong'" (click)="slotClick(sl.id)" [disabled]="busy() || solved()">
+                  <button class="slot fb-host" [class.full]="!!placed" [class.lit]="solved()" [class.fb-right]="fb.of(sl.id) === 'right'" [class.fb-wrong]="fb.of(sl.id) === 'wrong'" (click)="slotClick(sl.id)" [disabled]="busy() || (solved() && !readable(placed))" [class.reading]="solved() && !!placed && selected() === placed">
                     @if (fb.of(sl.id); as v) { <span class="fb-mark" [class.right]="v === 'right'" [class.wrong]="v === 'wrong'" aria-hidden="true">{{ v === 'right' ? '✓' : '✗' }}</span> }
                     <small>{{ sl.label }}</small>
                     <b>{{ placed ? itemName(placed) : 'ריק' }}</b>
@@ -167,6 +167,7 @@ interface Note { note: number; at: number }
                   </button>
                 }
               </div>
+              @if (solved() && hasReadable()) { <p class="muted small">לחצו על מכתב שעל השולחן כדי לקרוא אותו שוב.</p> }
               <ng-container *ngTemplateOutlet="bagTpl" />
               <!-- judged one by one with nothing to activate (the last wall): the last right piece completes it by itself -->
               @if (!solved() && !(data().judgeEach && data().mode !== 'activate')) { <button class="btn primary" (click)="operate({ op: 'activate' })" [disabled]="busy()">{{ data().activateLabel ?? data().checkLabel ?? 'בדיקה' }}</button> }
@@ -322,7 +323,7 @@ interface Note { note: number; at: number }
     .end { font-size:1.2rem; text-align:center; }
     .slots { display:grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap:.5rem; margin:.4rem 0; }
     .slot { display:grid; gap:.2rem; text-align:center; background:#21170e; border:1px dashed #8a6a3a; border-radius:12px; padding:.55rem; color:inherit; }
-    button.slot { cursor:pointer; } .slot.full { border-style:solid; } .slot.lit { border-color: var(--ok); }
+    button.slot { cursor:pointer; } .slot.full { border-style:solid; } .slot.lit { border-color: var(--ok); } .slot.reading { box-shadow: 0 0 0 2px #e6c27a; }
     .by { font-size:.75rem; color: var(--muted); }
     .bag { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; margin:.5rem 0; }
     .inv { background:#2a1c10; border:1px solid #8a6a3a; border-radius:999px; padding:.3rem .7rem; color:inherit; cursor:pointer; }
@@ -469,8 +470,18 @@ export class CcPanelComponent {
   select(id: string) {
     this.selected.set(this.selected() === id ? null : id);
   }
+  /** A letter stays readable on the table after the puzzle is solved (its bold word is needed for the next puzzle). */
+  readable(id: string | null | undefined) {
+    return !!id && isLetterItem(id);
+  }
+  hasReadable = computed(() => Object.values(this.mech()?.slots ?? {}).some((id) => this.readable(id)));
   slotClick(slot: string) {
-    if (this.mech()?.slots?.[slot]) return void this.operate({ op: 'remove', slot });
+    const placed = this.mech()?.slots?.[slot];
+    if (this.solved()) {
+      if (this.readable(placed)) this.selected.set(this.selected() === placed ? null : placed!);
+      return;
+    }
+    if (placed) return void this.operate({ op: 'remove', slot });
     const item = this.selected() ?? (this.bagItems().length === 1 ? this.bagItems()[0] : null);
     if (!item) return this.message.set({ ok: false, text: 'בחרו קודם פריט.' });
     this.selected.set(null);
