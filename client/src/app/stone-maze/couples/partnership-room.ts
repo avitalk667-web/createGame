@@ -1,35 +1,22 @@
-// "הצופן הזוגי", room 2 — חדר שיתוף הפעולה: a copper-and-oak workshop. The swaying bridge over a pit (two halves on one
-// axle, a lever station on each side, a brass container at its end), the gears table with its drawer, and the ball
-// track board on the right wall with two brass lamps. Everything moves as the server says: the halves tilt to their
-// values, the latches show, the ball rolls along the stations it passed (and falls when it fell), placed gears turn.
+// "הצופן הזוגי", room 2 — חדר שיתוף הפעולה: a copper-and-oak workshop. The gears table with its drawer and the blueprint
+// on the wall, and the ball track board on the right wall with two brass lamps. Everything moves as the server says:
+// placed gears turn, the track's tiles turn and the ball runs the solved route. (The swaying bridge over a pit was taken
+// out of this room; its puzzle is kept in the scenario's "retired" section.)
 import * as THREE from 'three';
 import { RoomSnapshot } from '../../core/models';
 import { rugTexture } from '../../world/textures';
 import {
-  RoomCtx, RoomPart, approach, box, brass, copper, cyl, dressWalls, gearGeometry, glow, iron, mechIn, paperTex, pd, plane, sheet,
+  RoomCtx, RoomPart, approach, box, brass, canvasTex, copper, cyl, dressWalls, gearGeometry, glow, iron, mechIn, paperTex, pd, plane, sheet,
   solvedIn, sprite, std, table, textTex, wallpaperTex, wood,
 } from './cc-kit';
 import { BRASS, DARKIRON, IRON, STONE, bake, bx, chain, deco, gear, girder } from './cc-decor';
 import { dressPartnership } from './cc-dress';
-
-const DEG = Math.PI / 180;
-const STEP_DEG = 6;
-const HALF = 2.6;
-const BRIDGE_Y = 1.25;
-const BRIDGE_Z = -2.5;
-/** The pit under the bridge: a real opening in the floor, [x0, x1, z0, z1], and how deep it goes. */
-const PIT: [number, number, number, number] = [-3.2, 3.2, BRIDGE_Z - 0.85, BRIDGE_Z + 0.85];
-const PIT_DEPTH = 3.2;
 
 const GEARS: Record<string, { r: number; teeth: number; mat: () => THREE.Material }> = {
   'cc-gear-r3-24': { r: 3, teeth: 24, mat: copper }, 'cc-gear-r3-20': { r: 3, teeth: 20, mat: copper },
   'cc-gear-r1-8': { r: 1, teeth: 8, mat: () => brass() }, 'cc-gear-r2-16': { r: 2, teeth: 16, mat: iron }, 'cc-gear-r2-14': { r: 2, teeth: 14, mat: iron },
 };
 const UNIT = 0.08;
-/** Each half of the bridge and its station share a colour: the left one blue, the right one amber. */
-const SIDE_COLOR = ['#3a8ad8', '#e0962a'];
-const SIDE_NAME = ['החצי השמאלי', 'החצי הימני'];
-
 function trackTileTex(kind: string, wet: boolean) {
   const c = document.createElement('canvas');
   c.width = c.height = 128;
@@ -48,6 +35,67 @@ function trackTileTex(kind: string, wet: boolean) {
   return tex;
 }
 
+/**
+ * The gear train blueprint on the wall: the motor (radius 2, turning clockwise), the three pins at 5, 4 and 3 from each
+ * other, the drawer that opens only when the last gear turns counter-clockwise, and the rule of the teeth in the margin.
+ */
+function blueprintTex() {
+  return canvasTex('cc2-blueprint-v2', 1120, 800, (g, w, h) => {
+    g.fillStyle = '#1d4a7a'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(230,240,255,.12)'; g.lineWidth = 2;
+    for (let x = 0; x < w; x += 40) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); }
+    for (let y = 0; y < h; y += 40) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
+    const ink = '#e6f0ff', gold = '#ffd76a';
+    g.fillStyle = ink; g.strokeStyle = ink; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = 'bold 54px "Frank Ruehl CLM", "David", serif';
+    g.fillText('רכבת הגלגלים', w / 2, 62);
+    // left to right on paper: the motor, then the pins (a unit is 44 px: 5, 4 and 3 units apart)
+    const U = 44, cy = 380, mx = 150;
+    const xs = [mx, mx + 5 * U, mx + 9 * U, mx + 12 * U];
+    g.setLineDash([10, 10]); g.lineWidth = 3;
+    g.beginPath(); g.moveTo(mx, cy); g.lineTo(xs[3] + 150, cy); g.stroke(); g.setLineDash([]);
+    g.lineWidth = 5; g.beginPath(); g.arc(mx, cy, 2 * U, 0, Math.PI * 2); g.stroke();
+    g.font = 'bold 34px "Frank Ruehl CLM", "David", serif';
+    g.fillText('מנוע', mx, cy + 2 * U + 40);
+    g.fillText('רדיוס 2', mx, cy + 2 * U + 80);
+    [1, 2, 3].forEach((n) => {
+      const x = xs[n];
+      g.beginPath(); g.arc(x, cy, 10, 0, Math.PI * 2); g.fill();
+      g.fillText('פין ' + n, x, cy + 2 * U + 40);
+    });
+    // the distances, above the axis
+    const dist = (a: number, b: number, t: string) => {
+      const y = cy - 2 * U - 50;
+      g.lineWidth = 3;
+      g.beginPath(); g.moveTo(a, y); g.lineTo(b, y); g.stroke();
+      g.beginPath(); g.moveTo(a, y - 14); g.lineTo(a, y + 14); g.moveTo(b, y - 14); g.lineTo(b, y + 14); g.stroke();
+      g.font = 'bold 40px Arial, sans-serif'; g.fillText(t, (a + b) / 2, y - 30);
+    };
+    dist(xs[0], xs[1], '5'); dist(xs[1], xs[2], '4'); dist(xs[2], xs[3], '3');
+    // a turning arrow: clockwise on the motor, counter-clockwise wanted on the last pin
+    const turn = (x: number, r: number, cw: boolean, color: string) => {
+      g.strokeStyle = color; g.fillStyle = color; g.lineWidth = 6;
+      const a0 = -Math.PI * 0.85, a1 = -Math.PI * 0.15;
+      g.beginPath(); g.arc(x, cy, r, cw ? a0 : a1, cw ? a1 : a0, !cw); g.stroke();
+      const end = cw ? a1 : a0, tx = x + r * Math.cos(end), ty = cy + r * Math.sin(end);
+      const dir = end + (cw ? Math.PI / 2 : -Math.PI / 2);
+      g.beginPath();
+      g.moveTo(tx + 22 * Math.cos(dir), ty + 22 * Math.sin(dir));
+      g.lineTo(tx + 13 * Math.cos(dir + 2.2), ty + 13 * Math.sin(dir + 2.2));
+      g.lineTo(tx + 13 * Math.cos(dir - 2.2), ty + 13 * Math.sin(dir - 2.2));
+      g.closePath(); g.fill();
+    };
+    turn(mx, 2 * U + 22, true, '#9be3b4');
+    turn(xs[3], 2 * U - 10, false, gold);
+    g.font = 'bold 30px "Frank Ruehl CLM", "David", serif';
+    g.fillStyle = '#9be3b4'; g.fillText('המנוע: עם כיוון השעון', mx + 40, cy + 2 * U + 125);
+    g.fillStyle = gold; g.fillText('הגלגל האחרון: נגד כיוון השעון — רק אז המגירה נפתחת', w / 2 + 80, cy + 2 * U + 175);
+    // the margin
+    g.fillStyle = ink; g.font = 'italic bold 36px "Frank Ruehl CLM", "David", serif';
+    g.fillText('„כל הגלגלים באותו פסיעה: מספר השיניים הוא פי 8 מהרדיוס.”', w / 2, h - 60);
+  });
+}
+
 export function buildPartnershipRoom(ctx: RoomCtx): RoomPart {
   const g = ctx.group;
   const anim: ((t: number, dt: number) => void)[] = [];
@@ -57,165 +105,10 @@ export function buildPartnershipRoom(ctx: RoomCtx): RoomPart {
   rug.position.set(-4.8, 0.01, 3.6);
   g.add(rug);
 
-  // ---- the pit and the bridge
+  // ---- the room's dressing (a whole floor: there is no bridge and no pit in this room any more)
   const dressing = deco(ctx, anim);
-  dressPartnership(dressing, PIT);
-  const rim = brass({ color: '#8a6a3a', roughness: 0.5 });
-  for (const dz of [-0.88, 0.88]) box(g, 6.6, 0.08, 0.1, rim, 0, 0.04, BRIDGE_Z + dz);
-  for (const dx of [-3.25, 3.25]) box(g, 0.1, 0.08, 1.86, rim, dx, 0.04, BRIDGE_Z);
-  const pitGlow = sprite(g, '#ff7a3a', 4, 0, -1.6, BRIDGE_Z, 0.25);
-  // the axle in the middle, on a stone pier
-  bx(dressing.s, 0.56, BRIDGE_Y + PIT_DEPTH - 0.05, 0.56, STONE('#8a8076', [1, 3]), 0, (BRIDGE_Y - 0.05 - PIT_DEPTH) / 2, BRIDGE_Z);
-  bx(dressing.s, 0.7, 0.14, 0.7, DARKIRON(), 0, BRIDGE_Y - 0.12, BRIDGE_Z);
-  const axle = cyl(g, 0.08, 0.08, 0.9, brass(), 0, BRIDGE_Y, BRIDGE_Z, 18);
-  axle.rotation.x = Math.PI / 2;
-  // the start platform and the container at the far end
-  bx(dressing.s, 0.6, BRIDGE_Y + 0.1 + PIT_DEPTH, 0.7, STONE('#8a8076', [1, 3]), -HALF - 0.35, (BRIDGE_Y + 0.1 - PIT_DEPTH) / 2, BRIDGE_Z);
-  const cupPts: THREE.Vector2[] = [];
-  for (let k = 0; k <= 8; k++) cupPts.push(new THREE.Vector2(0.12 + (k / 8) * 0.12, (k / 8) * 0.3));
-  const cup = new THREE.Mesh(new THREE.LatheGeometry(cupPts, 28), brass({ side: THREE.DoubleSide, roughness: 0.22 }));
-  cup.position.set(HALF + 0.3, BRIDGE_Y - 0.55, BRIDGE_Z);
-  g.add(cup);
-  bx(dressing.s, 0.5, BRIDGE_Y - 0.55 + PIT_DEPTH, 0.5, STONE('#8a8076', [1, 3]), HALF + 0.3, (BRIDGE_Y - 0.55 - PIT_DEPTH) / 2, BRIDGE_Z);
-  const cupGlow = sprite(g, '#ffd98a', 1.2, HALF + 0.3, BRIDGE_Y - 0.3, BRIDGE_Z, 0);
-
-  const halves: THREE.Group[] = [];
-  const latchLamps: THREE.Mesh[] = [];
-  const plank = std('#ffffff', { map: wallpaperTex('#7a5230', '#3a2412', 'stripe', [6, 1]), roughness: 0.7 });
-  for (const side of [-1, 1]) {
-    const pivot = new THREE.Group();
-    pivot.position.set(0, BRIDGE_Y, BRIDGE_Z);
-    const half = box(pivot, HALF, 0.08, 0.5, plank, side * HALF / 2, 0, 0);
-    half.castShadow = true;
-    for (const dz of [-0.27, 0.27]) box(pivot, HALF, 0.14, 0.04, copper(), side * HALF / 2, 0.06, dz);
-    // station marks along the half
-    for (let k = 1; k <= 2; k++) box(pivot, 0.03, 0.01, 0.5, std('#f0d090', { emissive: '#ffcf7a', emissiveIntensity: 0.4 }), side * k * 1.3, 0.045, 0);
-    // the half's own colour (the same as its station's sign): blue on the left, amber on the right
-    box(pivot, 0.18, 0.012, 0.5, std(SIDE_COLOR[side < 0 ? 0 : 1], { emissive: SIDE_COLOR[side < 0 ? 0 : 1], emissiveIntensity: 0.35 }), side * (HALF - 0.15), 0.047, 0);
-    g.add(pivot);
-    halves.push(pivot);
-  }
-  // the iron gantry over the pit: two columns, a riveted girder, pulleys and a chain down to the end of each half
-  for (const sx of [-1, 1]) {
-    bx(dressing.s, 0.3, 5.0, 0.3, IRON(), sx * 3.75, 2.5, PIT[2] - 0.35);
-    bx(dressing.s, 0.5, 0.2, 0.5, DARKIRON(), sx * 3.75, 0.1, PIT[2] - 0.35);
-    bx(dressing.s, 0.24, 0.24, 0.9, IRON(), sx * 3.75, 4.9, BRIDGE_Z - 0.75);
-  }
-  girder(dressing, -3.9, 3.9, 5.0, BRIDGE_Z);
-  const pulleys = [-1, 1].map((sx) => gear(dressing, sx * 2.3, 4.72, BRIDGE_Z + 0.22, 0, 0.2, 12, 0, BRASS(), 0.06));
-  const chains = [-1, 1].map((sx) => chain(dressing, new THREE.Vector3(sx * 2.3, 4.55, BRIDGE_Z), new THREE.Vector3(sx * 2.3, BRIDGE_Y, BRIDGE_Z), 0.07));
-  const hub = gear(dressing, 0, BRIDGE_Y, BRIDGE_Z + 0.48, 0, 0.3, 16, 0, BRASS(), 0.06);
-  const tipFrom = [-1, 1].map((sx) => new THREE.Vector3(sx * 2.3, 4.55, BRIDGE_Z));
-  const tip = new THREE.Vector3();
-
-  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.12, 24, 16), std('#d8d8e0', { metalness: 0.95, roughness: 0.12 }));
-  g.add(ball);
-  const ballGlow = sprite(ball, '#bfe0ff', 0.6, 0, 0, 0, 0.3);
-
-  // the two lever stations. On each, from left to right: one green lever whose position follows the angle of its half
-  // (▲ raises the end, ▼ lowers it), a brass bolt that slides in to lock the half (a lamp and a sign say "נעול" or
-  // "פתוח"), and a gauge whose needle shows the half's angle. Short engraved lines say what each control is for, and the
-  // post carries the seesaw rule. By the release plunger, a "הגשר מוכן" lamp lights once both halves are bolted and meet
-  // at the axle (what the room can see, never whether the ball will make it). The server decides everything.
-  const levers: THREE.Group[] = [];
-  const minis: THREE.Group[] = [];
-  const bolts: THREE.Mesh[] = [];
-  const boltSigns: { on: THREE.Mesh; off: THREE.Mesh }[] = [];
-  const needles: THREE.Group[] = [];
-  const plate = (parent: THREE.Object3D, text: string, x: number, y: number, z: number, w = 0.27, color = '#2a1608', bg = '#e8d6a8', h = w * 0.5) =>
-    plane(parent, w, h, new THREE.MeshBasicMaterial({ map: textTex(text, { color, bg, w: 256, h: Math.round(256 * (h / w)), size: 58 }) }), x, y, z);
-  for (const side of [-1, 1]) {
-    const i = side < 0 ? 0 : 1;
-    const st = new THREE.Group();
-    st.position.set(side * 3.7, 0, -0.6);
-    box(st, 0.95, 0.95, 0.7, wood('#4a2c16'), 0, 0.475, 0);
-    box(st, 1.0, 0.06, 0.8, brass({ color: '#8a6a3a' }), 0, 0.98, 0);
-    // the green lever on its slotted base, with the two arrows beside it
-    box(st, 0.1, 0.03, 0.3, iron(), -0.2, 1.02, 0.15);
-    const arm = new THREE.Group();
-    arm.position.set(-0.2, 1.01, 0.15);
-    cyl(arm, 0.022, 0.022, 0.42, iron(), 0, 0.21, 0, 10);
-    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.075, 16, 12), std('#2fae55', { roughness: 0.35, emissive: '#2fae55', emissiveIntensity: 0.3 }));
-    knob.position.y = 0.44;
-    arm.add(knob);
-    st.add(arm);
-    levers.push(arm);
-    plate(st, '▲', -0.36, 1.0, 0.2, 0.1, '#ffffff', '#2fae55', 0.1).rotation.x = -Math.PI / 2;
-    plate(st, '▼', -0.04, 1.0, 0.2, 0.1, '#ffffff', '#2fae55', 0.1).rotation.x = -Math.PI / 2;
-    plate(st, 'כוונו את זווית הגשר', -0.2, 0.84, 0.356, 0.42, '#ffffff', '#2a7a44', 0.1);
-    // the bolt: it slides into its keeper when locked
-    box(st, 0.06, 0.12, 0.08, brass(), 0.17, 1.08, 0.15);
-    const bolt = box(st, 0.22, 0.06, 0.08, brass(), 0.33, 1.08, 0.15);
-    bolt.castShadow = false;
-    bolts.push(bolt);
-    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.05, 14, 10), glow('#3a6a3a'));
-    lamp.position.set(0.33, 1.2, 0.15);
-    st.add(lamp);
-    latchLamps.push(lamp);
-    const on = plate(st, '🔒 נעול', 0.3, 0.84, 0.357, 0.3, '#ffffff', '#b8321e', 0.1);
-    const off = plate(st, '🔓 פתוח', 0.3, 0.84, 0.357, 0.3, '#ffffff', '#2a7a44', 0.1);
-    boltSigns.push({ on, off });
-    plate(st, 'נעלו את הצד לאחר הכיוון', 0.3, 0.72, 0.356, 0.34, '#2a1608', '#d8b870', 0.08);
-    // the gauge: a dial from −3 to 3 and a needle that follows the half
-    const dial = document.createElement('canvas');
-    dial.width = 256; dial.height = 160;
-    const dg = dial.getContext('2d')!;
-    dg.fillStyle = '#efe2bf'; dg.fillRect(0, 0, 256, 160);
-    dg.strokeStyle = '#5a3a1a'; dg.lineWidth = 6; dg.strokeRect(3, 3, 250, 154);
-    dg.font = 'bold 22px Heebo, Arial'; dg.fillStyle = '#2a1608'; dg.textAlign = 'center'; dg.textBaseline = 'middle';
-    for (let v = -3; v <= 3; v++) {
-      const ang = -Math.PI / 2 + v * 0.42;
-      dg.strokeStyle = v === 0 ? '#2a7a44' : '#5a3a1a'; dg.lineWidth = v === 0 ? 5 : 3;
-      dg.beginPath(); dg.moveTo(128 + Math.cos(ang) * 86, 140 + Math.sin(ang) * 86); dg.lineTo(128 + Math.cos(ang) * 104, 140 + Math.sin(ang) * 104); dg.stroke();
-      dg.fillText(String(v), 128 + Math.cos(ang) * 68, 140 + Math.sin(ang) * 68);
-    }
-    dg.font = 'bold 20px Heebo, Arial'; dg.fillText('שיפוע', 128, 148);
-    const dialTex = new THREE.CanvasTexture(dial);
-    dialTex.colorSpace = THREE.SRGBColorSpace;
-    box(st, 0.06, 0.5, 0.06, iron(), 0, 1.25, -0.3);
-    plane(st, 0.46, 0.29, new THREE.MeshBasicMaterial({ map: dialTex }), 0, 1.38, -0.265);
-    const needle = new THREE.Group();
-    needle.position.set(0, 1.38 - 0.29 / 2 + 0.29 * (20 / 160), -0.26);
-    box(needle, 0.012, 0.16, 0.01, std('#c8321e', { emissive: '#7a1008', emissiveIntensity: 0.4 }), 0, 0.08, 0);
-    st.add(needle);
-    needles.push(needle);
-    // the sign in the half's colour, the seesaw rule, and the small model of the half
-    box(st, 0.06, 0.6, 0.06, iron(), 0, 1.85, -0.3);
-    plate(st, SIDE_NAME[i], 0, 2.25, -0.26, 0.9, '#ffffff', SIDE_COLOR[i]);
-    plate(st, 'בריח פתוח: החצי השני זז הפוך · בריח נעול: רק החצי השני זז', 0, 2.06, -0.26, 1.0, '#2a1608', '#e8d6a8', 0.09);
-    const mini = new THREE.Group();
-    mini.position.set(0, 1.78, -0.25);
-    box(mini, 0.06, 0.06, 0.06, brass(), 0, 0, 0);
-    box(mini, 0.55, 0.035, 0.12, std(SIDE_COLOR[i], { emissive: SIDE_COLOR[i], emissiveIntensity: 0.3 }), side * 0.27, 0, 0);
-    st.add(mini);
-    minis.push(mini);
-    g.add(st);
-  }
-  // the release plunger by the start platform, the "bridge ready" lamp over it, and the gate that holds the ball
-  const plunger = new THREE.Group();
-  plunger.position.set(-4.6, 0, -2.5);
-  cyl(plunger, 0.16, 0.2, 0.95, iron(), 0, 0.475, 0, 16);
-  cyl(plunger, 0.2, 0.2, 0.05, brass(), 0, 0.97, 0, 20);
-  const press = cyl(plunger, 0.13, 0.13, 0.08, std('#c8321e', { roughness: 0.3, emissive: '#7a1008', emissiveIntensity: 0.4 }), 0, 1.03, 0, 24);
-  plate(plunger, 'שחרור הכדור', 0, 0.68, 0.21, 0.36);
-  cyl(plunger, 0.02, 0.02, 0.5, iron(), 0, 1.3, 0, 8);
-  const readyLamp = new THREE.Mesh(new THREE.SphereGeometry(0.09, 16, 12), glow('#3a3a30'));
-  readyLamp.position.set(0, 1.6, 0);
-  plunger.add(readyLamp);
-  const readyGlow = sprite(plunger, '#7aff9a', 0.8, 0, 1.6, 0, 0);
-  plate(plunger, 'הגשר מוכן', 0, 1.82, 0, 0.4, '#ffffff', '#2a5a3a', 0.12);
-  plate(plunger, 'כאשר שני הצדדים מיושרים, תוכלו לשחרר את הכדור', 0, 0.5, 0.21, 0.5, '#2a1608', '#e8d6a8', 0.12);
-  g.add(plunger);
-  const gate = new THREE.Group();
-  gate.position.set(-HALF + 0.05, BRIDGE_Y + 0.1, BRIDGE_Z);
-  box(gate, 0.04, 0.3, 0.3, brass(), 0, 0.15, 0);
-  g.add(gate);
-  ctx.addLight(-4.4, 2.2, -1.9, '#ffc890', 1.6, 3.5);
-  sheet(g, 0.5, 0.32, paperTex(['שני חצאים', 'על ציר אחד'], { size: 52, w: 512, h: 320, bg: '#d8c49a' }), 0, 0.86, -0.2);
-  box(g, 0.6, 0.84, 0.4, wood('#3a2410'), 0, 0.42, -0.2);
-  ctx.addLight(0, 3.6, BRIDGE_Z + 0.6, '#ffd9a8', 7, 8, false);
-  ctx.addLight(-3.7, 2.4, -0.4, '#ffb070', 2.5, 4);
-  ctx.addLight(3.7, 2.4, -0.4, '#ffb070', 2.5, 4);
+  dressPartnership(dressing);
+  ctx.addLight(0, 3.6, -1.9, '#ffd9a8', 7, 8, false);
 
   // ---- the gears table: the motor and three pins, the spare gears lying beside, the drawer
   table(g, 2.4, 1.4, 1.0, -5.4, 3.4, '#5a3a1e');
@@ -249,7 +142,7 @@ export function buildPartnershipRoom(ctx: RoomCtx): RoomPart {
   const drawerGlow = sprite(g, '#ffd98a', 0.8, -5.4, 0.95, 2.5, 0);
   sheet(g, 0.7, 0.5, paperTex(['5 · 4 · 3', '×8'], { size: 64, bg: '#cbd8e8', ink: '#1a3a6a', w: 448, h: 320 }), -4.55, 1.09, 3.0, 0.15);
   // the blueprint on the left wall
-  const bp = plane(g, 1.4, 1.0, std('#ffffff', { map: paperTex(['מנוע ← 5 ← 4 ← 3'], { size: 44, bg: '#1d4a7a', ink: '#e6f0ff', w: 560, h: 400 }) }), -7.92, 2.4, 1.4, Math.PI / 2);
+  const bp = plane(g, 1.4, 1.0, std('#ffffff', { map: blueprintTex() }), -7.92, 2.4, 1.4, Math.PI / 2);
   bp.castShadow = false;
   ctx.addLight(-5.4, 2.8, 3.4, '#ffcf90', 4, 5.5);
 
@@ -344,42 +237,12 @@ export function buildPartnershipRoom(ctx: RoomCtx): RoomPart {
   bake(dressing);
 
   // ---- state
-  const data = pd<{ start?: number[]; joint?: number; stations?: number; jointTolerance?: number }>(ctx, 'cc2-bridge');
-  const tol = data.jointTolerance ?? 1;
-  const stations = data.stations ?? 4;
-  const val = [...(data.start ?? [-2, 2])], shown = [...val];
-  let latched = [false, false];
-  let ready = false, ready01 = 0, drop = -1, cupFlash = 0;
-  let progress = 0;
-  let solvedBridge = false, solvedGears = false, solvedTrack = false;
-  let play: { path: number[]; fall: boolean; t: number; key: string } | null = null;
-  let lastKey = '';
-  let pressT = 9;
+  let solvedGears = false, solvedTrack = false;
   const slots: Record<string, string> = {};
   let world = new Set<string>();
 
-  const stationX = (p: number) => -HALF + (p * 2 * HALF) / stations;
-  const surfaceY = (x: number) => {
-    const a = x <= 0 ? shown[0] : shown[1];
-    return BRIDGE_Y + 0.16 - x * Math.tan(a * STEP_DEG * DEG);
-  };
-
   return {
     apply(s: RoomSnapshot, live: boolean) {
-      const m = mechIn(s, 'cc2-bridge');
-      if (m?.rotations?.length === 2) { val[0] = m.rotations[0]; val[1] = m.rotations[1]; }
-      latched = [!!m?.levers?.[0], !!m?.levers?.[1]];
-      solvedBridge = solvedIn(s, 'cc2-bridge');
-      const found = (m?.found ?? []).map(Number);
-      const key = `${found.join(',')}|${m?.revealed ?? ''}|${m?.misses ?? 0}|${m?.progress ?? 0}`;
-      const fell = ['steep', 'joint', 'bounced'].includes(m?.revealed ?? '');
-      if (live && key !== lastKey && found.length > 1) play = { path: found, fall: fell, t: 0, key };
-      else if (live && key !== lastKey && fell && found.length) play = { path: found, fall: true, t: 0, key };
-      if (play && play.t === 0) pressT = 0;
-      lastKey = key;
-      progress = solvedBridge ? stations : m?.progress ?? 0;
-      // ready: both halves bolted and meeting at the axle — what the room shows, not whether the ball will make it
-      ready = !solvedBridge && latched[0] && latched[1] && Math.abs(val[0] - val[1]) <= tol;
       // the gears: placed on their pins; the others lie on the table
       const gm = mechIn(s, 'cc2-gears');
       for (const k of Object.keys(slots)) delete slots[k];
@@ -422,63 +285,6 @@ export function buildPartnershipRoom(ctx: RoomCtx): RoomPart {
       (valves[0] as THREE.Mesh).rotation.z = tm?.levers?.[1] ? Math.PI / 2 : 0;
     },
     update(dt, t) {
-      for (let i = 0; i < 2; i++) {
-        shown[i] = approach(shown[i], val[i], dt, 5);
-        halves[i].rotation.z = -shown[i] * STEP_DEG * DEG;
-        minis[i].rotation.z = -shown[i] * STEP_DEG * DEG;
-        (latchLamps[i].material as THREE.MeshBasicMaterial).color.set(latched[i] ? '#ff5a3a' : '#5ae07a');
-        // the lever stands where its half is, the bolt slides in, the sign and the needle follow
-        levers[i].rotation.x = shown[i] * 0.16 * (i ? -1 : 1);
-        bolts[i].position.x = approach(bolts[i].position.x, latched[i] ? 0.22 : 0.33, dt, 4);
-        boltSigns[i].on.visible = latched[i];
-        boltSigns[i].off.visible = !latched[i];
-        needles[i].rotation.z = -shown[i] * 0.42;
-        const a = halves[i].rotation.z, sx = i ? 1 : -1, r = HALF * 0.88;
-        tip.set(Math.cos(a) * sx * r, BRIDGE_Y + 0.05 + Math.sin(a) * sx * r, BRIDGE_Z);
-        chains[i](tipFrom[i], tip);
-        pulleys[i].rotation.z = a * 8 * sx;
-      }
-      hub.rotation.z = (halves[0].rotation.z + halves[1].rotation.z) * 3;
-      pressT += dt;
-      press.position.y = 1.03 - (pressT < 0.35 ? Math.sin((pressT / 0.35) * Math.PI) * 0.045 : 0);
-      ready01 = approach(ready01, ready ? 1 : 0, dt, 4);
-      (readyLamp.material as THREE.MeshBasicMaterial).color.set(ready01 > 0.5 ? '#6aff8a' : '#3a3a30');
-      (readyGlow.material as THREE.SpriteMaterial).opacity = ready01 * (0.45 + Math.sin(t * 3) * 0.1);
-      // the gate in front of the ball lifts as the plunger is pressed, and drops back behind it
-      gate.position.y = BRIDGE_Y + 0.1 + (pressT < 1.4 ? Math.min(1, pressT / 0.25) : Math.max(0, 1 - (pressT - 1.4) / 0.3)) * 0.34;
-      // the ball: rolling along the last path, falling into the pit, or resting at its station
-      if (play) {
-        play.t += dt;
-        const per = 0.45;
-        const k = Math.min(play.path.length - 1, Math.floor(play.t / per));
-        const f = Math.min(1, (play.t - k * per) / per);
-        const a = play.path[k], b = play.path[Math.min(play.path.length - 1, k + 1)];
-        const x = stationX(a + (b - a) * f);
-        const done = play.t >= per * (play.path.length - 1);
-        if (!done) ball.position.set(x, surfaceY(x), BRIDGE_Z);
-        else if (!play.fall && solvedBridge && drop < 0) { drop = 0; play = null; }
-        else if (play.fall) {
-          const ft = play.t - per * (play.path.length - 1);
-          ball.position.y -= dt * (2 + ft * 9);
-          if (ft > 0.9) play = null;
-        } else play = null;
-      } else if (drop >= 0 && drop < 1) {
-        // over the edge and down into the container, in one beat; the container answers with a flash
-        drop = Math.min(1, drop + dt / 0.55);
-        const x = HALF + drop * 0.3;
-        ball.position.set(x, surfaceY(HALF) + (BRIDGE_Y - 0.3 - surfaceY(HALF)) * drop * drop, BRIDGE_Z);
-        if (drop >= 1) cupFlash = 1;
-      } else {
-        const x = solvedBridge ? HALF + 0.3 : stationX(progress);
-        ball.position.set(x, solvedBridge ? BRIDGE_Y - 0.3 : surfaceY(x), BRIDGE_Z);
-      }
-      ball.rotation.z = -ball.position.x / 0.12;
-      (ballGlow.material as THREE.SpriteMaterial).opacity = 0.25 + Math.sin(t * 3) * 0.08;
-      cupFlash = Math.max(0, cupFlash - dt * 0.8);
-      const inCup = solvedBridge && !play && (drop < 0 || drop >= 1);
-      (cupGlow.material as THREE.SpriteMaterial).opacity = inCup ? 0.55 + cupFlash * 0.45 : 0.08;
-      cup.scale.setScalar(1 + cupFlash * 0.08);
-      (pitGlow.material as THREE.SpriteMaterial).opacity = 0.18 + Math.sin(t * 0.8) * 0.06;
       // gears: the motor always turns slowly; once the train is right, every gear turns with it at its ratio
       const w = solvedGears ? 1.4 : 0.25;
       motor.rotation.z += dt * w;

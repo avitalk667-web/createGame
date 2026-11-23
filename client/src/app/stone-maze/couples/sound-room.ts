@@ -82,20 +82,35 @@ function clockFaceTex() {
 }
 
 function symbolsBoardTex() {
+  // the same order and wording as the board's note: a title, four numbered rows (symbol and dots), and the line under them
+  const W = 1024, H = 768;
   const c = document.createElement('canvas');
-  c.width = 512; c.height = 384;
+  c.width = W; c.height = H;
   const g = c.getContext('2d')!;
-  g.fillStyle = '#6e6a66'; g.fillRect(0, 0, 512, 384);
-  for (let k = 0; k < 900; k++) { g.fillStyle = `rgba(${Math.random() < 0.5 ? '0,0,0' : '255,255,255'},0.05)`; g.fillRect(Math.random() * 512, Math.random() * 384, 3, 3); }
+  g.fillStyle = '#6e6a66'; g.fillRect(0, 0, W, H);
+  for (let k = 0; k < 1800; k++) { g.fillStyle = `rgba(${Math.random() < 0.5 ? '0,0,0' : '255,255,255'},0.05)`; g.fillRect(Math.random() * W, Math.random() * H, 5, 5); }
+  g.strokeStyle = 'rgba(42,36,32,.55)'; g.lineWidth = 6; g.strokeRect(18, 18, W - 36, H - 36);
+  const ink = '#2a2420';
+  g.fillStyle = ink; g.textAlign = 'center'; g.textBaseline = 'middle'; g.direction = 'rtl';
+  g.font = 'bold 64px "Frank Ruehl CLM", "David", "Times New Roman", serif';
+  g.fillText('לוח הסמלים', W / 2, 76);
+  g.fillRect(W / 2 - 220, 120, 440, 4);
   const rows: [string, number][] = [['arch', 3], ['leaf', 8], ['wave', 1], ['flame', 6]];
   rows.forEach(([sym, dots], i) => {
-    const y = 60 + i * 82;
-    drawSymbol(g, sym, 400, y, 58, '#2a2420');
-    g.fillStyle = '#2a2420';
-    for (let d = 0; d < dots; d++) { g.beginPath(); g.arc(320 - d * 30, y, 9, 0, Math.PI * 2); g.fill(); }
+    const y = 196 + i * 118;
+    g.font = 'bold 56px "Frank Ruehl CLM", "David", serif';
+    g.textAlign = 'right';
+    g.fillText(`${i + 1}.`, W - 60, y);
+    drawSymbol(g, sym, W - 200, y, 92, ink);
+    for (let d = 0; d < dots; d++) { g.beginPath(); g.arc(W - 330 - d * 62, y, 18, 0, Math.PI * 2); g.fill(); }
+    if (i < rows.length - 1) { g.fillStyle = 'rgba(42,36,32,.25)'; g.fillRect(60, y + 59, W - 120, 2); g.fillStyle = ink; }
   });
+  g.textAlign = 'center';
+  g.font = 'italic bold 46px "Frank Ruehl CLM", "David", serif';
+  g.fillText('„כל פעמון נושא סמל. הקשיבו לסדר, וספרו.”', W / 2, H - 70);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
   return tex;
 }
 

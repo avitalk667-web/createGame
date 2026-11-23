@@ -13,7 +13,7 @@ import { ResultShareComponent } from '../ui/result-share.component';
     <div class="wrap">
       <div class="confetti" aria-hidden="true">@for (i of confetti; track i) { <i [style.--i]="i"></i> }</div>
       <section #card class="card result" aria-labelledby="res-title">
-        <h1 id="res-title" class="gold-title">יצאתם ממבוך האבן!</h1>
+        <h1 id="res-title" class="gold-title">{{ couples() ? 'יצאתם מהצופן הזוגי!' : 'יצאתם ממבוך האבן!' }}</h1>
         <p class="sub">מי גילה הכי הרבה, פתר הכי הרבה והוביל את הקבוצה לניצחון?</p>
 
         @if (score(); as sc) {
@@ -71,7 +71,7 @@ import { ResultShareComponent } from '../ui/result-share.component';
         }
 
         <!-- a picture of this card as it is shown (without the buttons and the email form) to copy, share or save -->
-        <px-result-share [target]="card" [ready]="!!score()" fileName="PORTAL-X-מבוך-האבן.png" />
+        <px-result-share [target]="card" [ready]="!!score()" [fileName]="couples() ? 'PORTAL-X-הצופן-הזוגי.png' : 'PORTAL-X-מבוך-האבן.png'" />
 
         <px-results-email class="no-capture" />
 
@@ -118,6 +118,8 @@ export class SmResultComponent {
   confetti = Array.from({ length: 30 }, (_, i) => i);
 
   score = computed(() => this.game.snapshot()?.score ?? null);
+  /** "הצופן הזוגי" ends on this same results screen, under its own name. */
+  couples = computed(() => this.game.snapshot()?.scenarioId === 'couples-cipher');
   zones = computed(() => [...(this.game.scenario()?.zones ?? [])].sort((a, b) => a.order - b.order));
   /** The end-of-game titles with their winners' names; a title of the player looking is highlighted. */
   titles = computed(() => {

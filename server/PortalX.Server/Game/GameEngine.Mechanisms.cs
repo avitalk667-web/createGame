@@ -194,6 +194,9 @@ public sealed partial class GameEngine
 
     // ---- slots: lamp assembly, dreidel stand, pedestals
 
+    /** A table whose wrong check costs the room points (only where the scenario sets a penalty). */
+    private static bool Penalized(PuzzleContent p) => p.PublicData["penalized"]?.GetValue<bool>() == true;
+
     private ActionOutcome OperateSlots(GameRoom room, ScenarioContent scenario, PuzzleContent puzzle, PuzzleState state,
         PlayerSession player, WorldState world, MechanismState mech, string op, JsonElement action, DateTime now)
     {
@@ -324,10 +327,19 @@ public sealed partial class GameEngine
                         SaveWorld(room, world, now);
                         return Solve(room, scenario, puzzle, state, player, now);
                     }
-                    var wrong = WrongCode(state, now, puzzle.Failure);
+                    // a table whose wrong arrangement costs the room points ("penalized": the couples' gears and last wall):
+                    // the check counts one miss, taken from the room's score when it is completed
+                    var told = puzzle.Failure;
+                    var penalty = scenario.Scoring?.WrongPlacementPenalty ?? 0;
+                    if (penalty > 0 && Penalized(puzzle))
+                    {
+                        mech.Misses++;
+                        told += $" (−{penalty} לניקוד הקבוצתי של החדר)";
+                    }
+                    var wrong = WrongCode(state, now, told);
                     SaveWorld(room, world, now);
                     return new ActionOutcome(false, "wrong-answer", wrong,
-                        [new("wrong-answer", $"{player.Nickname} · {puzzle.Title}: {puzzle.Failure}", player.Id.ToString(), puzzle.Id)], true);
+                        [new("wrong-answer", $"{player.Nickname} · {puzzle.Title}: {told}", player.Id.ToString(), puzzle.Id)], true);
                 }
                 if (verify)
                 {
@@ -793,9 +805,9 @@ public sealed partial class GameEngine
         {
             var basePoints = rules.Room[scenario.ZoneDifficulty[puzzle.Zone]];
             var hints = zonePuzzles.Sum(p => room.Puzzles.First(s => s.PuzzleId == p.Id).HintsRevealed);
-            // wrong placements on tables judged piece by piece (only where the scenario sets a penalty: "הצופן הזוגי")
+            // wrong placements or wrong checks on penalized tables (only where the scenario sets a penalty: "הצופן הזוגי")
             var misses = rules.WrongPlacementPenalty <= 0 ? 0 : zonePuzzles
-                .Where(p => p.PublicData["judgeEach"]?.GetValue<bool>() == true)
+                .Where(p => p.PublicData["judgeEach"]?.GetValue<bool>() == true || Penalized(p))
                 .Sum(p => world.Mechanisms.TryGetValue(p.Id, out var m) ? m.Misses : 0);
             var points = Math.Max(0, basePoints - hints * rules.HintPenalty - misses * rules.WrongPlacementPenalty);
             var zoneName = scenario.Zones.First(z => z.Id == puzzle.Zone).Name;

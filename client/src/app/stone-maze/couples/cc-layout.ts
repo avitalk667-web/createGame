@@ -43,16 +43,7 @@ const ROOMS: Record<CcZone, Row[]> = {
   ],
   // 2 · חדר שיתוף הפעולה — the swaying bridge and its two lever stations, the gears table, the ball track
   'cc-partnership': [
-    // the bridge has no window: each half is worked at its own station — one green lever (▲ raises the end of the half,
-    // ▼ lowers it), a brass bolt that locks the half, and a gauge — and the plunger by the start platform releases the ball
-    O('cc2-up-left', 'cc2-bridge', 'ידית ירוקה ▲ — הרמת הקצה של החצי השמאלי', 'משיכה', { op: 'tilt', side: 0, dir: 1 }, [-4.06, 1.2, -0.45], 0.15),
-    O('cc2-down-left', 'cc2-bridge', 'ידית ירוקה ▼ — הורדת הקצה של החצי השמאלי', 'משיכה', { op: 'tilt', side: 0, dir: -1 }, [-3.74, 1.2, -0.45], 0.15),
-    O('cc2-latch-left', 'cc2-bridge', 'בריח החצי השמאלי — נעילה או שחרור', 'הפעלה', { op: 'latch', side: 0 }, [-3.37, 1.1, -0.45], 0.17),
-    O('cc2-up-right', 'cc2-bridge', 'ידית ירוקה ▲ — הרמת הקצה של החצי הימני', 'משיכה', { op: 'tilt', side: 1, dir: -1 }, [3.34, 1.2, -0.45], 0.15),
-    O('cc2-down-right', 'cc2-bridge', 'ידית ירוקה ▼ — הורדת הקצה של החצי הימני', 'משיכה', { op: 'tilt', side: 1, dir: 1 }, [3.66, 1.2, -0.45], 0.15),
-    O('cc2-latch-right', 'cc2-bridge', 'בריח החצי הימני — נעילה או שחרור', 'הפעלה', { op: 'latch', side: 1 }, [4.03, 1.1, -0.45], 0.17),
-    O('cc2-release', 'cc2-bridge', 'כפתור שחרור הכדור', 'הפעלה', { op: 'release' }, [-4.6, 1.05, -2.5], 0.3),
-    C('cc2-bridge-plate', 'cc2-bridge-plate', 'לוחית הגשר', [0, 0.9, -0.2], 0.45),
+    // (the swaying bridge and its controls were taken out of this room)
     P('cc2-gear-table', 'cc2-gears', 'שולחן גלגלי השיניים', 'הנחה', [-5.4, 1.05, 3.4], 1.1),
     C('cc2-blueprint', 'cc2-blueprint', 'השרטוט החלקי', [-7.75, 2.4, 1.4], 1.0),
     P('cc2-track', 'cc2-track', 'לוח מסילת הכדור', 'סיבוב', [7.6, 2.2, 2.4], 1.4),
@@ -109,15 +100,12 @@ export const COUPLES_INTERACTABLES: HInteractable[] = COUPLES_ZONES.flatMap((zon
 /** Furniture the player cannot walk through: [zone, x0, x1, z0, z1] relative to the room centre. */
 export const COUPLES_OBSTACLES: [CcZone, number, number, number, number][] = [
   ['cc-sounds', -1.2, 1.2, -2.3, -0.3], ['cc-sounds', 2.4, 4.4, -2.5, -1.3], ['cc-sounds', -7.4, -6.3, -3.0, -0.2], ['cc-sounds', -6.8, -4.4, 3.9, 5.0],
-  ['cc-partnership', -3.0, 3.0, -3.4, -1.6], ['cc-partnership', -4.2, -3.2, -1.1, -0.1], ['cc-partnership', 3.2, 4.2, -1.1, -0.1],
   ['cc-partnership', -6.6, -4.2, 2.7, 4.1], ['cc-partnership', 6.4, 7.4, 4.2, 5.2],
   ['cc-trust', -2.2, 2.6, -2.0, -0.4], ['cc-trust', -5.4, -3.0, -7.0, -5.8], ['cc-trust', 1.9, 6.1, -7.0, -5.9], ['cc-trust', 6.9, 8.0, 0.6, 2.6], ['cc-trust', 4.4, 6.2, 3.6, 4.6],
   ['cc-letters', -6.4, -4.0, 2.8, 4.0], ['cc-letters', -5.0, -2.6, -2.8, -1.6], ['cc-letters', 2.5, 3.9, -1.8, -0.4], ['cc-letters', 3.9, 5.3, 3.0, 4.2],
-  ['cc-partnership', -4.85, -4.35, -2.75, -2.25],
   ['cc-home', -2.0, 2.0, -2.8, 0.0], ['cc-home', 7.0, 8.0, -3.4, 0.6],
   // the dressing (cc-dress.ts): free-standing furniture and the bigger wall pieces
   ['cc-sounds', 3.1, 4.1, 3.9, 4.9], ['cc-sounds', 4.0, 4.8, 4.9, 5.7], ['cc-sounds', -4.15, -3.65, 5.85, 6.35], ['cc-sounds', -8.0, -7.4, 0.7, 3.1], ['cc-sounds', 3.6, 5.8, -7.0, -6.25],
-  ['cc-partnership', -3.25, 3.25, -3.4, -1.6], ['cc-partnership', -3.95, -3.55, -3.95, -3.45], ['cc-partnership', 3.55, 3.95, -3.95, -3.45],
   ['cc-partnership', -8.0, -6.75, 4.35, 6.85], ['cc-partnership', -5.6, -3.2, 5.9, 7.0], ['cc-partnership', 6.55, 7.45, -6.55, -5.65], ['cc-partnership', 6.1, 6.9, -5.3, -4.5], ['cc-partnership', 3.6, 6.0, 6.2, 7.0],
   ['cc-trust', 2.4, 3.4, 0.4, 1.4], ['cc-trust', 3.45, 3.95, 0.05, 0.55], ['cc-trust', -6.0, -5.2, -5.0, -4.2], ['cc-trust', 6.9, 8.0, 2.6, 3.9], ['cc-trust', -8.0, -7.2, 3.5, 7.0], ['cc-trust', 7.2, 8.0, 3.9, 5.7], ['cc-trust', -6.1, -3.1, 6.1, 7.0], ['cc-trust', 3.1, 6.1, 6.1, 7.0],
   ['cc-letters', 5.4, 6.2, 5.0, 6.2], ['cc-letters', 4.7, 5.3, 5.3, 5.9], ['cc-letters', -3.4, -2.4, 5.1, 6.1], ['cc-letters', -7.25, -6.75, 5.85, 6.35], ['cc-letters', -5.7, -2.7, -7.0, -6.2], ['cc-letters', 2.5, 5.5, -7.0, -6.25],

@@ -126,14 +126,19 @@ interface Note { note: number; at: number }
               @if (puzzleId() === 'cc2-gears') {
                 <ol class="steps">
                   <li [class.on]="!selected()">בחרו גלגל מהשולחן (למטה).</li>
-                  <li [class.on]="!!selected()">לחצו על פין פנוי. גלגל מתאים נשאר על הפין עם מסגרת ירוקה; גלגל שלא מתאים מסומן באדום וחוזר לשולחן.</li>
-                  <li [class.on]="slotsFull()">כשעל כל שלושת הפינים יש גלגל — „{{ data().activateLabel ?? data().checkLabel }}”.</li>
+                  <li [class.on]="!!selected()">לחצו על פין פנוי כדי להניח עליו את הגלגל. אפשר להניח כל גלגל על כל פין, ולחיצה על גלגל שכבר על פין מחזירה אותו לשולחן.</li>
+                  <li [class.on]="slotsFull()">כשעל כל שלושת הפינים יש גלגל, לחצו „{{ data().activateLabel ?? data().checkLabel }}” כדי לבדוק את הסידור.</li>
                 </ol>
-                <svg class="gears" viewBox="0 0 240 150" role="group" aria-label="רכבת הגלגלים: מנוע ושלושה פינים">
+                <svg class="gears" viewBox="0 0 240 156" role="group" aria-label="רכבת הגלגלים: מנוע ושלושה פינים">
                   <defs><marker id="cc-arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="arrowhead" /></marker></defs>
                   <line x1="34" y1="75" x2="196" y2="75" class="axis" />
                   <circle cx="34" cy="75" r="16" class="motor" />
                   <path d="M 34 49 A 26 26 0 0 1 60 75" class="spin" marker-end="url(#cc-arrow)" />
+                  <text x="34" y="36" text-anchor="middle" class="lbl cw-t">עם כיוון השעון</text>
+                  <!-- the distances of the blueprint: 5, 4 and 3 between the motor and the pins -->
+                  <text x="54" y="148" text-anchor="middle" class="lbl dist">↔5</text>
+                  <text x="90" y="148" text-anchor="middle" class="lbl dist">↔4</text>
+                  <text x="118" y="148" text-anchor="middle" class="lbl dist">↔3</text>
                   <text x="34" y="113" text-anchor="middle" class="lbl">מנוע</text>
                   <text x="34" y="127" text-anchor="middle" class="lbl">רדיוס 2</text>
                   <text x="102" y="134" text-anchor="middle" class="lbl">פינים</text>
@@ -155,6 +160,7 @@ interface Note { note: number; at: number }
                   <path d="M 200 52 A 22 22 0 0 0 178 40" class="spin need" marker-end="url(#cc-arrow)" />
                   <text x="150" y="22" text-anchor="middle" class="lbl need-t">נפתחת בסיבוב נגד כיוון השעון</text>
                 </svg>
+                <p class="rule">„כל הגלגלים באותו פסיעה: מספר השיניים הוא פי 8 מהרדיוס.”</p>
               }
               <div class="slots" [class.many]="slots().length > 4">
                 @for (sl of slots(); track sl.id) {
@@ -286,7 +292,7 @@ interface Note { note: number; at: number }
     .panel-modal { width: min(780px, calc(100% - 24px)); max-height: calc(100dvh - 32px); overflow:auto; }
     header { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; }
     h2 { margin:.3rem 0 .4rem; font-family: var(--font-title); color: var(--gold-2); }
-    .instructions { line-height:1.7; margin:.2rem 0 .8rem; }
+    .instructions { line-height:1.7; margin:.2rem 0 .8rem; white-space:pre-line; }
     .locked { font-size:1.1rem; color: var(--muted); }
     .solved { color:#9be3b4; border:1px solid var(--ok); border-radius:10px; padding:.5rem .8rem; }
     .row { display:flex; gap:.5rem; align-items:center; } .row.wrap { flex-wrap:wrap; } .row input { flex:1; min-width:0; }
@@ -338,6 +344,8 @@ interface Note { note: number; at: number }
     .gears .pinbox { cursor:pointer; } .gears .pinbox.ready .empty { stroke:#ffd76a; stroke-width:3; animation: ccpulse 1s ease-in-out infinite; }
     .gears .teeth { fill:#1a0e06; font-size:11px; font-weight:700; } .gears .lbl { fill:#d8c8a8; font-size:11px; }
     .gears .drawer { fill:#6a4424; stroke:#c9a050; } .gears .spin { fill:none; stroke:#9be3b4; stroke-width:2.5; } .gears .arrowhead { fill:#9be3b4; }
+    .gears .dist { fill:#9cc8ff; font-weight:700; } .gears .cw-t { fill:#9be3b4; font-size:9px; }
+    .rule { text-align:center; margin:0 0 .4rem; color:#d8c8a8; font-style:italic; font-size:.92rem; }
     .gears .spin.need { stroke:#ffd76a; } .gears .need-t { fill:#ffd76a; } .gears .pin-n { font-weight:700; font-size:12px; }
     @keyframes ccpulse { 50% { opacity:.4; } }
     .steps { margin:.2rem 0 .4rem; padding-inline-start:1.3rem; line-height:1.7; color: var(--muted); } .steps li.on { color: var(--gold-2); font-weight:700; }

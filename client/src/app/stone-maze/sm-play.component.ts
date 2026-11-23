@@ -128,7 +128,8 @@ function pickupSound(item: string): Sfx {
         </div>
       </header>
 
-      <aside class="score card" aria-label="לוח ניקוד">
+      <aside #scoreEl class="score card" aria-label="לוח ניקוד" [class.cc]="isCouples()" [style.translate]="shift(scoreShift())" (pointerdown)="startDrag($event, scoreShift)" (dblclick)="scoreShift.set(null)"
+        [attr.title]="isCouples() ? 'אפשר לגרור את הניקוד למקום אחר' : null">
         <div class="score-head"><span>ניקוד קבוצתי</span><b>{{ game.snapshot()!.score?.group ?? 0 }}</b></div>
         <ol>
           @for (p of game.snapshot()!.score?.players ?? []; track p.playerId) {
@@ -420,7 +421,7 @@ function pickupSound(item: string): Sfx {
         <section class="panel-modal note" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
           <header><h2>{{ n.title }}</h2><button class="btn small ghost" (click)="note.set(null)" aria-label="סגירה">✕</button></header>
           @if (n.letter) { <article class="letter-card" dir="rtl"><p [innerHTML]="letterHtml(n.text)"></p></article> }
-          @else { <p class="note-text">{{ n.text }}</p> }
+          @else { <p class="note-text" [class.lines]="isCouples()" dir="rtl">{{ n.text }}</p> }
           @if (n.by) { <p class="muted small">{{ n.by }}</p> }
         </section>
       </div>
@@ -430,7 +431,7 @@ function pickupSound(item: string): Sfx {
       <div class="celebrate" role="alert" aria-live="assertive">
         <div class="card-c" [class.drag]="isCouples()" [style.translate]="shift(cardShift())" (pointerdown)="startDrag($event, cardShift)" (dblclick)="cardShift.set(null)"
           [attr.title]="isCouples() ? 'אפשר לגרור את ההודעה למקום אחר' : null">
-          <span class="emoji" aria-hidden="true">{{ isSample() ? '✨' : '🕎' }}</span>
+          <span class="emoji" aria-hidden="true">{{ isSample() ? '✨' : isCouples() ? '🗝️' : '🕎' }}</span>
           <h2>{{ c.name }} {{ c.verb }}!</h2>
           <p class="what">{{ c.what }}</p>
           @if (c.points) { <p class="pts">+{{ c.points }} נקודות אישיות על החידה</p> }
@@ -620,7 +621,7 @@ function pickupSound(item: string): Sfx {
     .help header { display:flex; justify-content:space-between; align-items:center; color: var(--gold-2); }
     .help ul { margin:.4rem 0 .6rem; padding-inline-start:1.1rem; line-height:1.7; font-size:.95rem; }
     .note { width:min(520px, calc(100% - 24px)); } .note header { display:flex; justify-content:space-between; align-items:center; }
-    .note h2 { font-family: var(--font-title); color: var(--gold-2); margin:0; } .note-text { font-size:1.2rem; line-height:1.8; }
+    .note h2 { font-family: var(--font-title); color: var(--gold-2); margin:0; } .note-text { font-size:1.2rem; line-height:1.8; } .note-text.lines { white-space:pre-line; text-align:right; line-height:1.7; overflow-wrap:anywhere; }
     .toasts { position:fixed; top:66px; left:50%; transform:translateX(-50%); display:flex; flex-direction:column; gap:.4rem; align-items:center; z-index:30; pointer-events:none; width:min(520px, calc(100% - 32px)); }
     .toast { background: rgba(10,16,36,.92); border:1px solid var(--line); padding:.5rem 1rem; border-radius:12px; box-shadow: var(--shadow); animation: fadein .3s ease; text-align:center; }
     .toast.zone-unlocked, .toast.clue, .toast.mechanism { border-color: var(--gold-2); color: var(--gold-2); } .toast.wrong-answer { border-color: rgba(226,113,91,.6); }
@@ -631,6 +632,7 @@ function pickupSound(item: string): Sfx {
       .toasts.low { top:27vh; bottom:auto; left:16px; transform:none; width:calc(50vw - 30vh - 24px); align-items:stretch; }
       .toasts.low .toast:nth-last-child(n+3) { display:block; }
     }
+    .score.cc { cursor:grab; touch-action:none; user-select:none; } .score.cc:active { cursor:grabbing; }
     .toasts.drag .toast, .card-c.drag { pointer-events:auto; cursor:grab; touch-action:none; user-select:none; } .toasts.drag .toast:active, .card-c.drag:active { cursor:grabbing; }
     .toast.hint { border-color: var(--blue); } .toast.score-group { border-color: var(--ok); color:#9be3b4; }
     .joy { position:fixed; bottom:90px; left:20px; z-index:11; }
@@ -657,6 +659,11 @@ function pickupSound(item: string): Sfx {
       .hud-col .objectives { order:2; width:auto; flex:1 1 auto; min-height:0; max-height:34vh; overflow:auto; overscroll-behavior:contain; touch-action:pan-y; padding:.5rem .7rem; }
       .hud-col .objectives.collapsed { flex:0 0 auto; align-self:flex-start; }
       .hud-col .score { order:3; width:auto; font-size:.82rem; max-height:16vh; overflow:auto; overscroll-behavior:contain; padding:.35rem .6rem; }
+      /* "הצופן הזוגי": a small chip (the team score, then the players on one line) that can be dragged anywhere */
+      .hud-col .score.cc { width:fit-content; max-width:70vw; align-self:flex-end; font-size:.74rem; max-height:none; overflow:visible; padding:.22rem .55rem; line-height:1.3; }
+      .score.cc .score-head { gap:.5rem; } .score.cc .score-head b { font-size:1rem; }
+      .score.cc ol { flex-direction:row; flex-wrap:wrap; gap:.1rem .7rem; margin-top:.1rem; } .score.cc .rank { display:none; }
+      .score.cc li { font-size:.74rem; gap:.25rem; } .score.cc .nm { max-width:5.5rem; }
       .hover-label { display:none; }
       /* the bag: one row that scrolls sideways, at the bottom edge — it never grows over the tasks */
       .hud-bottom { bottom:max(8px, env(safe-area-inset-bottom)); }
@@ -734,6 +741,9 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
   /** "הצופן הזוגי": where the player dragged the messages and the celebration card (null: their usual place; a double click returns them). */
   toastShift = signal<{ x: number; y: number } | null>(null);
   cardShift = signal<{ x: number; y: number } | null>(null);
+  /** "הצופן הזוגי": where the team score was dragged to (it stays on the screen after a resize or a turn of the phone). */
+  scoreShift = signal<{ x: number; y: number } | null>(null);
+  private scoreRef = viewChild<ElementRef<HTMLElement>>('scoreEl');
   /** "הצופן הזוגי": the camera is watching the ball run on the wall — the messages step down so the board stays in view. */
   watching = signal(false);
   transfer = signal<string | null>(null);
@@ -1255,6 +1265,12 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
     });
     addEventListener('resize', this.onResize);
     this.destroyRef.onDestroy(() => removeEventListener('resize', this.onResize));
+    // the dragged team score (הצופן הזוגי) also follows a turn of the phone that sends no resize event
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => this.scoreShift() && this.onResize());
+      ro.observe(document.documentElement);
+      this.destroyRef.onDestroy(() => ro.disconnect());
+    }
     // a panel that grows back from its minimized bar stays on the screen
     effect(() => {
       this.benchMin();
@@ -1727,11 +1743,7 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
       return;
     }
     this.audio.sfx(def.op?.['op'] === 'latch' ? 'click' : 'lever');
-    const m = this.game.snapshot()?.mechanisms?.[def.ref!];
-    if (def.ref === 'cc2-bridge' && m && def.op?.['op'] !== 'release') {
-      const side = (i: number) => `${i ? 'הימני' : 'השמאלי'}: ${m.levers?.[i] ? 'נעול 🔒' : 'שיפוע ' + (m.rotations?.[i] ?? 0)}`;
-      this.toast(`הגשר — ${side(0)} · ${side(1)}`, 'info');
-    } else if (r.message) this.toast(r.message, 'info');
+    if (r.message) this.toast(r.message, 'info');
   }
 
   /** Pulling the glowing book (the server checks that the board is solved; the bookcase then swings open for everyone). */
@@ -1933,7 +1945,20 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
   private onResize = () => {
     const p = this.benchPos();
     if (p) this.ngZone.run(() => this.benchPos.set(this.clampBench(p.x, p.y)));
+    // after the new layout is in place (a timer, not a frame: it runs even while the page is in the background)
+    if (this.scoreShift()) setTimeout(() => this.ngZone.run(() => this.keepOnScreen(this.scoreRef()?.nativeElement, this.scoreShift)), 60);
   };
+
+  /** Pulls a dragged element back inside the screen (after a resize or a rotation); one that no longer fits goes back home. */
+  private keepOnScreen(el: HTMLElement | undefined, at: WritableSignal<{ x: number; y: number } | null>) {
+    const p = at();
+    if (!el || !p) return;
+    const r = el.getBoundingClientRect();
+    if (r.width > innerWidth - 8 || r.height > innerHeight - 8) return at.set(null);
+    const dx = r.left < 4 ? 4 - r.left : r.right > innerWidth - 4 ? innerWidth - 4 - r.right : 0;
+    const dy = r.top < 4 ? 4 - r.top : r.bottom > innerHeight - 4 ? innerHeight - 4 - r.bottom : 0;
+    if (dx || dy) at.set({ x: p.x + dx, y: p.y + dy });
+  }
 
   /**
    * The scales: the bonus of the Hanukkah mosaic room, or the free game's last mechanism (open once the gears turn).

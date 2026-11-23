@@ -7,7 +7,7 @@
 //   always comes from something in the room (chandeliers, lanterns, lamps, candles, windows). Shared materials: walnut
 //   and oak, brass and gold, dark iron, copper, stone, velvet, paper. Each room has its own palette and motif:
 //     1 Sounds       crimson velvet, gold, dark walnut · musical frieze · candlelit salon
-//     2 Partnership  soot stone, iron, copper, amber · gear frieze · industrial pendants over a real pit
+//     2 Partnership  soot stone, iron, copper, amber · gear frieze · industrial pendants
 //     3 Trust        deep navy, walnut, brass, banker's green · key frieze · focused desk lamps in a dark archive
 //     5 Letters      burgundy, rosewood, cream paper, gold · envelope frieze · romantic lamplight and a sunset window
 //     6 Home         honey oak, sandstone, terracotta · house frieze · exposed roof trusses and lanterns
@@ -103,24 +103,10 @@ export function dressSounds(d: Deco) {
 
 // ------------------------------------------------------------------------------------------------ 2 · Partnership
 
-export function dressPartnership(d: Deco, pit: [number, number, number, number]) {
+export function dressPartnership(d: Deco) {
+  // a whole stone floor: the bridge and the pit under it were taken out of this room
   const stone = TEXM('flag-prt', () => flagstoneTex('#8a8278', [5, 4]), 0.9);
-  floor(d, stone, { holes: [pit], border: IRON(), skirting: S('#3a3430', 0.9) });
-  // the pit itself: stone walls going down into the glow
-  const [x0, x1, z0, z1] = pit, depth = 3.2, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
-  const wallM = TEXM('ash-pit', () => ashlarTex('#5a5048', [3, 2]), 0.95);
-  pl(d.s, x1 - x0, depth, wallM, cx, -depth / 2, z0 + 0.01, 0);
-  pl(d.s, x1 - x0, depth, wallM, cx, -depth / 2, z1 - 0.01, F);
-  pl(d.s, z1 - z0, depth, wallM, x0 + 0.01, -depth / 2, cz, L);
-  pl(d.s, z1 - z0, depth, wallM, x1 - 0.01, -depth / 2, cz, R);
-  pl(d.s, x1 - x0, z1 - z0, cm('embers', () => new THREE.MeshBasicMaterial({ color: '#5a1a06', toneMapped: false })), cx, -depth, cz, 0, -L);
-  dust(d, x0 + 0.3, x1 - 0.3, -depth + 0.2, 1.4, z0 + 0.2, z1 - 0.2, 70, '#ff8a3a');
-  // an iron guard rail along the long sides of the pit
-  for (const z of [z0 - 0.12, z1 + 0.12]) {
-    for (let x = x0 + 0.2; x <= x1 - 0.1; x += 1.0) cy(d.s, 0.03, 0.03, 0.9, DARKIRON(), x, 0.45, z, 8);
-    const rail = cy(d.s, 0.03, 0.03, x1 - x0 - 0.3, IRON(), cx, 0.9, z, 8);
-    rail.rotation.z = L;
-  }
+  floor(d, stone, { border: IRON(), skirting: S('#3a3430', 0.9) });
 
   const ash = TEXM('ash-prt', () => rep(ashlarTex('#8a7e70', [1, 1]), [10, 1]), 0.9);
   upperWalls(d, ash, TEXM('frz-prt', () => friezeTex('#2a2018', '#b8783e', 'gears'), 0.6), DARKIRON());
