@@ -1,8 +1,10 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, DestroyRef, HostListener, computed, effect, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, HostListener, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { AudioService } from '../../core/audio.service';
 import { GameService } from '../../core/game.service';
 import { ItemContent, MechanismState, PuzzleContent, PuzzleStateDto } from '../../core/models';
+import { FEEDBACK_CSS, PlacementFeedback } from './cc-feedback';
+import { LETTER_CARD_CSS, isLetterItem, letterHtml, plainText } from './cc-rich';
 import { wallFaceText } from './home-room';
 
 const SYMBOL_NAME: Record<string, string> = { arch: 'קשת', leaf: 'עלה', wave: 'גל', flame: 'להבה', bell: 'פעמון', key: 'מפתח', star: 'כוכב', home: 'בית' };
@@ -93,7 +95,7 @@ interface Note { note: number; at: number }
                 <circle r="8" [attr.cx]="ballX()" [attr.cy]="ballY()" class="ball" />
               </svg>
               @if (!solved()) {
-                <p class="room-ctl">🕹 את הגשר מפעילים בחדר עצמו: בכל עמדה ידית ירוקה מרימה את הקצה של החצי, ידית אדומה מורידה אותו, והבריח נועל אותו. הכפתור האדום ליד משטח ההתחלה משחרר את הכדור.</p>
+                <p class="room-ctl">🕹 את הגשר מפעילים בחדר עצמו: בכל צד עמדה משלו — ידית ירוקה שמכוונת את הזווית (▲ / ▼), בריח שנועל את החצי ומד שיפוע. בריח נעול מחזיק את החצי במקומו, כך שאפשר לכוון את החצי השני לבד. כששני החצאים מיושרים ונעולים, נורית „הגשר מוכן” נדלקת ליד כפתור השחרור.</p>
                 <p class="muted small">החצי השמאלי: שיפוע {{ tilt(0) }}{{ latched(0) ? ' · נעול 🔒' : '' }} · החצי הימני: שיפוע {{ tilt(1) }}{{ latched(1) ? ' · נעול 🔒' : '' }}</p>
                 <p class="muted small">{{ bridgeStatus() }}</p>
               }
@@ -124,8 +126,8 @@ interface Note { note: number; at: number }
               @if (puzzleId() === 'cc2-gears') {
                 <ol class="steps">
                   <li [class.on]="!selected()">בחרו גלגל מהשולחן (למטה).</li>
-                  <li [class.on]="!!selected()">לחצו על הפין שעליו להניח אותו. לחיצה על גלגל שכבר מונח מחזירה אותו לשולחן.</li>
-                  <li>כשעל כל שלושת הפינים יש גלגל — „{{ data().checkLabel }}”.</li>
+                  <li [class.on]="!!selected()">לחצו על פין פנוי. גלגל מתאים נשאר על הפין עם מסגרת ירוקה; גלגל שלא מתאים מסומן באדום וחוזר לשולחן.</li>
+                  <li [class.on]="slotsFull()">כשעל כל שלושת הפינים יש גלגל — „{{ data().activateLabel ?? data().checkLabel }}”.</li>
                 </ol>
                 <svg class="gears" viewBox="0 0 240 150" role="group" aria-label="רכבת הגלגלים: מנוע ושלושה פינים">
                   <defs><marker id="cc-arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="arrowhead" /></marker></defs>
@@ -136,7 +138,7 @@ interface Note { note: number; at: number }
                   <text x="34" y="127" text-anchor="middle" class="lbl">רדיוס 2</text>
                   <text x="102" y="134" text-anchor="middle" class="lbl">פינים</text>
                   @for (x of pinPx; track x; let i = $index) {
-                    <g class="pinbox" [class.ready]="!!selected() && !gearR(i)" (click)="slotClick('g' + (i + 1))" role="button" tabindex="0" [attr.aria-label]="'פין ' + (i + 1)">
+                    <g class="pinbox" [class.ready]="!!selected() && !gearR(i)" [class.fb-ok]="fb.of('g' + (i + 1)) === 'right'" [class.fb-no]="fb.of('g' + (i + 1)) === 'wrong'" (click)="slotClick('g' + (i + 1))" role="button" tabindex="0" [attr.aria-label]="'פין ' + (i + 1)">
                       @if (gearR(i)) {
                         <circle [attr.cx]="x" cy="75" [attr.r]="gearR(i) * 8" class="gear" />
                         <text [attr.x]="x" y="79" text-anchor="middle" class="teeth">{{ teethAt(i) }}</text>
@@ -145,6 +147,7 @@ interface Note { note: number; at: number }
                         <circle [attr.cx]="x" cy="75" r="4" class="pin" />
                       }
                       <text [attr.x]="x" y="115" text-anchor="middle" class="lbl pin-n">{{ i + 1 }}</text>
+                      @if (fb.of('g' + (i + 1)); as v) { <text [attr.x]="x + 16" y="50" text-anchor="middle" class="fb-svg" [class.no]="v === 'wrong'">{{ v === 'right' ? '✓' : '✗' }}</text> }
                     </g>
                   }
                   <rect x="170" y="58" width="30" height="34" rx="4" class="drawer" />
@@ -156,7 +159,8 @@ interface Note { note: number; at: number }
               <div class="slots" [class.many]="slots().length > 4">
                 @for (sl of slots(); track sl.id) {
                   @let placed = mech()?.slots?.[sl.id];
-                  <button class="slot" [class.full]="!!placed" [class.lit]="solved()" (click)="slotClick(sl.id)" [disabled]="busy() || solved()">
+                  <button class="slot fb-host" [class.full]="!!placed" [class.lit]="solved()" [class.fb-right]="fb.of(sl.id) === 'right'" [class.fb-wrong]="fb.of(sl.id) === 'wrong'" (click)="slotClick(sl.id)" [disabled]="busy() || solved()">
+                    @if (fb.of(sl.id); as v) { <span class="fb-mark" [class.right]="v === 'right'" [class.wrong]="v === 'wrong'" aria-hidden="true">{{ v === 'right' ? '✓' : '✗' }}</span> }
                     <small>{{ sl.label }}</small>
                     <b>{{ placed ? itemName(placed) : 'ריק' }}</b>
                     @if (by(sl.id); as b) { <em class="by">✋ {{ b }}</em> }
@@ -164,7 +168,8 @@ interface Note { note: number; at: number }
                 }
               </div>
               <ng-container *ngTemplateOutlet="bagTpl" />
-              @if (!solved()) { <button class="btn primary" (click)="operate({ op: 'activate' })" [disabled]="busy()">{{ data().checkLabel ?? 'בדיקה' }}</button> }
+              <!-- judged one by one with nothing to activate (the last wall): the last right piece completes it by itself -->
+              @if (!solved() && !(data().judgeEach && data().mode !== 'activate')) { <button class="btn primary" (click)="operate({ op: 'activate' })" [disabled]="busy()">{{ data().activateLabel ?? data().checkLabel ?? 'בדיקה' }}</button> }
             }
             @case ('model') {
               <div class="views">
@@ -252,10 +257,13 @@ interface Note { note: number; at: number }
             <div class="bag">
               <span class="muted small">{{ data().fromRoom ? 'בחדר:' : 'זמין:' }}</span>
               @for (id of bagItems(); track id) {
-                <button class="inv" [class.sel]="selected() === id" (click)="select(id)" [title]="itemDesc(id)">{{ itemName(id) }}</button>
+                <button class="inv" [class.sel]="selected() === id" (click)="select(id)" [title]="plainText(itemDesc(id))">{{ itemName(id) }}</button>
               } @empty { <span class="muted small">אין חלקים זמינים.</span> }
             </div>
-            @if (selected(); as id) { <p class="desc">🔎 {{ itemDesc(id) }}</p> }
+            @if (selected(); as id) {
+              @if (isLetterItem(id)) { <article class="letter-card" dir="rtl"><p [innerHTML]="letterHtml(itemDesc(id))"></p></article> }
+              @else { <p class="desc">🔎 {{ itemDesc(id) }}</p> }
+            }
           </ng-template>
 
           @if (cooldown()) { <p class="warn">{{ cooldown() }}</p> }
@@ -273,7 +281,7 @@ interface Note { note: number; at: number }
       </section>
     </div>
   `,
-  styles: [`
+  styles: [FEEDBACK_CSS, LETTER_CARD_CSS, `
     .panel-modal { width: min(780px, calc(100% - 24px)); max-height: calc(100dvh - 32px); overflow:auto; }
     header { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; }
     h2 { margin:.3rem 0 .4rem; font-family: var(--font-title); color: var(--gold-2); }
@@ -324,6 +332,8 @@ interface Note { note: number; at: number }
     .gears .axis { stroke:#3a2e22; stroke-width:2; stroke-dasharray:4 4; } .gears .motor { fill:#55595f; stroke:#8a8e94; stroke-width:2; }
     .gears .gear { fill:#c0714a; stroke:#ffd9a0; stroke-width:1.5; opacity:.9; } .gears .pin { fill:#c9a050; }
     .gears .empty { fill:none; stroke:#8a6a3a; stroke-width:2; stroke-dasharray:5 4; }
+    .gears .pinbox.fb-ok circle { stroke:#3fbf6a; stroke-width:4; } .gears .pinbox.fb-no .empty { stroke:#e2715b; stroke-width:4; fill: rgba(226,113,91,.18); }
+    .gears .fb-svg { fill:#3fbf6a; font-size:16px; font-weight:800; } .gears .fb-svg.no { fill:#e2715b; }
     .gears .pinbox { cursor:pointer; } .gears .pinbox.ready .empty { stroke:#ffd76a; stroke-width:3; animation: ccpulse 1s ease-in-out infinite; }
     .gears .teeth { fill:#1a0e06; font-size:11px; font-weight:700; } .gears .lbl { fill:#d8c8a8; font-size:11px; }
     .gears .drawer { fill:#6a4424; stroke:#c9a050; } .gears .spin { fill:none; stroke:#9be3b4; stroke-width:2.5; } .gears .arrowhead { fill:#9be3b4; }
@@ -354,6 +364,8 @@ export class CcPanelComponent {
   text = signal('');
   busy = signal(false);
   selected = signal<string | null>(null);
+  /** Right / wrong frames on the places just used (cc-feedback.ts). */
+  readonly fb = new PlacementFeedback();
   pick = signal<string | null>(null);
   message = signal<{ ok: boolean; text: string } | null>(null);
   playing = signal<{ who: string; index: number } | null>(null);
@@ -394,7 +406,7 @@ export class CcPanelComponent {
   private items = computed(() => new Map<string, ItemContent>((this.game.scenario()?.items ?? []).map((i) => [i.id, i])));
 
   constructor() {
-    inject(DestroyRef).onDestroy(() => { this.timers.forEach(clearTimeout); clearTimeout(this.closing); });
+    inject(DestroyRef).onDestroy(() => { this.timers.forEach(clearTimeout); clearTimeout(this.closing); this.fb.dispose(); });
     // a solve confirmed by the server while this window is open closes it after a moment, so the room's mechanism can be
     // seen moving; a window opened on an already solved puzzle stays open, and a wrong answer never closes it
     effect(() => {
@@ -403,6 +415,28 @@ export class CcPanelComponent {
       if (st.status !== 'solved') this.sawOpen = true;
       else if (this.sawOpen && !this.closing) this.closing = setTimeout(() => this.close.emit(), 1300);
     });
+    // the other player's placements frame the same places here: a piece judged on its own from the shared state (a new
+    // right piece, or the one place the server last judged wrong), a whole arrangement from the room's notices. Only
+    // what someone else did (my own actions are framed from the server's answer), and nothing here touches the score.
+    effect(() => {
+      const m = this.mech();
+      untracked(() => this.framePartnerChange(m));
+    });
+    const sub = this.game.notices$.subscribe((n) => {
+      if (n.puzzleId !== this.puzzleId() || this.judgedEach()) return;
+      if (n.kind === 'wrong-answer' && n.playerId && n.playerId !== this.game.playerId()) this.fb.showAll(this.filledPlaces(), 'wrong');
+      else if (n.kind === 'team-solved') this.fb.showAll(this.filledPlaces(), 'right');
+    });
+    inject(DestroyRef).onDestroy(() => sub.unsubscribe());
+  }
+  private judgedEach = () => !!this.data().judgeEach || !!this.data().checkEach;
+  private seen: { rev: number; slots: Record<string, string>; misses: number } | null = null;
+  private framePartnerChange(m: MechanismState | undefined) {
+    const prev = this.seen;
+    this.seen = m ? { rev: m.rev ?? 0, slots: { ...(m.slots ?? {}) }, misses: m.misses ?? 0 } : null;
+    if (!prev || !m || (m.rev ?? 0) <= prev.rev || !m.lastById || m.lastById === this.game.playerId() || !this.judgedEach()) return;
+    for (const [k, v] of Object.entries(m.slots ?? {})) if (v && prev.slots[k] !== v) this.fb.show(k, 'right');
+    if ((m.misses ?? 0) > prev.misses) for (const [k, ok] of Object.entries(m.verdict ?? {})) if (!ok) this.fb.show(k, 'wrong');
   }
   private sawOpen = false;
   private closing?: ReturnType<typeof setTimeout>;
@@ -415,6 +449,9 @@ export class CcPanelComponent {
   // ---------------------------------------------------------------- items and slots
 
   itemName = (id: string) => this.items().get(id)?.name ?? id;
+  readonly isLetterItem = isLetterItem;
+  readonly letterHtml = letterHtml;
+  readonly plainText = plainText;
   itemDesc = (id: string) => this.items().get(id)?.description ?? '';
   slots = computed<{ id: string; label: string }[]>(() => this.data().slots ?? []);
   bagItems = computed(() => {
@@ -576,6 +613,7 @@ export class CcPanelComponent {
       const op = String(action['op'] ?? '');
       const sent = ['place', 'remove', 'turn', 'swap', 'rotate'].includes(op) ? { ...action, rev: this.mech()?.rev ?? 0 } : action;
       const r = await this.game.operate(this.puzzleId(), sent);
+      this.feedback(op, action, r.ok, r.code);
       if (!r.ok) {
         this.message.set({ ok: false, text: r.message });
         this.audio.sfx('wrong');
@@ -587,6 +625,33 @@ export class CcPanelComponent {
       this.busy.set(false);
     }
   }
+
+  /**
+   * The right / wrong frames, from the server's answer only. A place judged on its own (the gears) gets its own frame; an
+   * arrangement checked as a whole gets one verdict on all its places, so a check never tells which place is wrong.
+   */
+  private feedback(op: string, action: Record<string, unknown>, ok: boolean, code: string) {
+    const key = String(action['slot'] ?? action['socket'] ?? '');
+    const judgedEach = !!this.data().judgeEach || !!this.data().checkEach;
+    if (op === 'place' && key) {
+      if (code === 'wrong-place') this.fb.show(key, 'wrong');
+      else if (ok && judgedEach) this.fb.show(key, 'right');
+      return;
+    }
+    if (op === 'activate' || op === 'check') {
+      const keys = this.filledPlaces();
+      if (ok && (code === 'solved' || code === 'stage' || code === 'built')) this.fb.showAll(keys, 'right');
+      else if (code === 'wrong-answer') this.fb.showAll(keys, 'wrong');
+    }
+  }
+
+  /** The places holding something right now (slots, or the sockets of the current building stage). */
+  private filledPlaces(): string[] {
+    const m = this.mech();
+    return Object.keys(m?.slots ?? {}).filter((k) => !!m?.slots?.[k]);
+  }
+
+  slotsFull = computed(() => this.slots().length > 0 && this.slots().every((sl) => !!this.mech()?.slots?.[sl.id]));
 
   async answer(value: string) {
     if (!value.trim()) return;

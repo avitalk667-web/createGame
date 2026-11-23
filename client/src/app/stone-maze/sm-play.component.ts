@@ -15,9 +15,11 @@ import { RoomOverlaysComponent } from '../ui/room-overlays.component';
 import { H_INTERACTABLES, H_ZONES, HInteractable, HPanel, HZone, useLayout } from './sm-layout';
 import { SmPanelComponent, ITEM_EMOJI } from './sm-panel.component';
 import { CcPanelComponent } from './couples/cc-panel.component';
+import { CC_OPENED } from './couples/cc-layout';
+import { LETTER_CARD_CSS, isLetterItem, letterHtml } from './couples/cc-rich';
 import { CcArrivalComponent, CcLettersComponent } from './couples/letters/letters.component';
 import { CcTestJumpComponent } from './couples/cc-test-jump.component';
-import { LettersStore } from './couples/letters/letters.store';
+import { LETTERS_AFTER, LettersStore } from './couples/letters/letters.store';
 import { MazePadComponent } from '../hanukkah/maze-pad.component';
 import { SmResultComponent } from './sm-result.component';
 import { StoneMazeWorld } from './sm-world';
@@ -417,7 +419,8 @@ function pickupSound(item: string): Sfx {
       <div class="overlay" (click)="note.set(null)">
         <section class="panel-modal note" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
           <header><h2>{{ n.title }}</h2><button class="btn small ghost" (click)="note.set(null)" aria-label="סגירה">✕</button></header>
-          <p class="note-text">{{ n.text }}</p>
+          @if (n.letter) { <article class="letter-card" dir="rtl"><p [innerHTML]="letterHtml(n.text)"></p></article> }
+          @else { <p class="note-text">{{ n.text }}</p> }
           @if (n.by) { <p class="muted small">{{ n.by }}</p> }
         </section>
       </div>
@@ -487,7 +490,7 @@ function pickupSound(item: string): Sfx {
       }
     }
   `,
-  styles: [`
+  styles: [LETTER_CARD_CSS, `
     :host { display:block; position:fixed; inset:0; overflow:hidden; }
     .stage { position:absolute; inset:0; } canvas { width:100%; height:100%; display:block; outline:none; touch-action:none; cursor:grab; }
     .loading { position:absolute; inset:0; display:grid; place-items:center; font-size:1.4rem; color: var(--gold-2); background: var(--bg); }
@@ -711,7 +714,8 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
   };
   hover = signal<HInteractable | null>(null);
   panel = signal<{ id: HPanel; ref?: string; from?: string } | null>(null);
-  note = signal<{ title: string; text: string; by?: string } | null>(null);
+  note = signal<{ title: string; text: string; by?: string; letter?: boolean } | null>(null);
+  readonly letterHtml = letterHtml;
   toasts = signal<Toast[]>([]);
   floats = signal<{ id: number; playerId: string; text: string }[]>([]);
   system = signal<{ id: string; text: string; at: number }[]>([]);
@@ -1245,7 +1249,7 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
     });
     // "הצופן הזוגי": the writing desk glows until this player wrote; the mailbox flag rises for an unread letter
     effect(() => {
-      const glow = this.isCouples() && !this.letters.decided();
+      const glow = this.isCouples() && this.letters.unlocked() && !this.letters.decided();
       const unread = this.letters.unread() > 0;
       untracked(() => this.world?.setLetterState(glow, unread));
     });
@@ -1504,7 +1508,19 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
       if (p.id === 'h2-lamp') this.progressTimers.push(setTimeout(() => this.celebrate(this.game.snapshot() ?? s, p.id), 8000));
       // "הצופן הזוגי": the ball first runs its route on the wall and the hatch opens; the message follows
       else if (p.id === CC_TRACK) this.progressTimers.push(setTimeout(() => this.celebrate(this.game.snapshot() ?? s, p.id), CC_TRACK_WATCH_MS));
-      else this.celebrate(s, p.id);
+      else {
+        this.celebrate(s, p.id);
+        // "הצופן הזוגי": a safe swings open, the camera turns to it and the note inside opens by itself
+        const opened = CC_OPENED[p.id];
+        if (opened?.clue) {
+          this.progressTimers.push(setTimeout(() => { this.panel.set(null); this.world?.playWatchShot('cc-trust', opened.cam, opened.look, 3.2); }, 1500));
+          this.progressTimers.push(setTimeout(() => void this.showOpened(p.id), 2900));
+        }
+        // "הצופן הזוגי": the letter room's first puzzle opens the writing desk — the invitation follows its message
+        if (p.id === LETTERS_AFTER && !this.letters.sent()) this.progressTimers.push(setTimeout(() => {
+          if (this.phase() === 'playing' && !this.letters.sent()) { this.note.set(null); this.panel.set({ id: 'letters', ref: 'gate' }); }
+        }, 3200));
+      }
     }
     // a room just opened: the door opens and the camera shows it; the group moves on with "Continue"
     if (s.phase === 'playing' && s.pendingZone && s.pendingZone !== this.pendingShown && this.world) {
@@ -1737,22 +1753,38 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
   /** The hint button opens the active puzzle of the room the player is in. */
   // ---- "הצופן הזוגי": its puzzle windows and the personal letters
 
-  /** A puzzle object; in the letter room the letter is offered first (once, and never as a condition to go on). */
+  /** A puzzle object. */
   private openPanel(def: HInteractable) {
-    if (def.panel === 'couples' && def.zone === 'cc-letters' && this.letters.active() && !this.letters.decided()) {
-      this.panel.set({ id: 'letters', ref: 'gate', from: def.ref });
+    // "הצופן הזוגי": an opened safe shows what it holds, never its lock again
+    if (def.panel === 'couples' && def.ref && CC_OPENED[def.ref] && this.game.snapshot()?.puzzles.find((p) => p.id === def.ref)?.status === 'solved') {
+      void this.showOpened(def.ref);
       return;
     }
     this.panel.set({ id: def.panel!, ref: def.ref, from: def.id });
+  }
+
+  /** What an opened safe holds: its note (found, and readable again from here or from the clues), or a short line. */
+  private async showOpened(puzzleId: string) {
+    const o = CC_OPENED[puzzleId];
+    if (!o) return;
+    if (!o.clue) {
+      this.note.set({ title: this.game.scenario()?.puzzles?.find((p) => p.id === puzzleId)?.title ?? '', text: o.text ?? '' });
+      return;
+    }
+    const clue = this.game.scenario()?.clues?.find((c) => c.id === o.clue);
+    if (!clue) return;
+    await this.game.discoverClue(clue.id);
+    this.audio.sfx('select');
+    this.note.set({ title: clue.title, text: clue.text });
   }
 
   letterMode(ref: string | undefined): 'write' | 'inbox' | 'gate' {
     return ref === 'inbox' || ref === 'gate' ? ref : 'write';
   }
 
-  /** The gate before a letter-room puzzle: on to that puzzle. */
+  /** The invitation after the letter room's first puzzle: back to the room (a puzzle it came from, if any). */
   continueFromGate(puzzleId: string | undefined) {
-    const def = H_INTERACTABLES.find((d) => d.panel === 'couples' && d.ref === puzzleId);
+    const def = puzzleId ? H_INTERACTABLES.find((d) => d.panel === 'couples' && d.ref === puzzleId) : undefined;
     this.panel.set(def ? { id: 'couples', ref: puzzleId, from: def.id } : null);
   }
 
@@ -1762,15 +1794,12 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
     this.panel.set({ id: 'letters', ref: 'inbox', from: id });
   }
 
-  /** Entering a room of "הצופן הזוגי" for the first time shows only its element; the letter room offers the letter. */
+  /** Entering a room of "הצופן הזוגי" for the first time shows only its element. */
   private enterCouplesZone(zone: HZone) {
     if (!this.isCouples() || this.phase() !== 'playing' || this.enteredZones.has(zone)) return;
     this.enteredZones.add(zone);
     const story = this.game.scenario()?.zones.find((z) => z.id === zone)?.story;
     if (story) this.toast(story, 'zone-unlocked');
-    if (zone === 'cc-letters' && !this.letters.decided() && !this.panel()) setTimeout(() => {
-      if (!this.panel() && !this.letters.decided() && this.zone() === 'cc-letters') this.panel.set({ id: 'letters', ref: 'gate' });
-    }, 1600);
   }
 
   openHint() {
@@ -1799,7 +1828,7 @@ export class SmPlayComponent implements AfterViewInit, OnDestroy {
 
   inspectItem(id: string) {
     const item = this.game.scenario()?.items.find((i) => i.id === id);
-    if (item) this.note.set({ title: `${this.emoji(id)} ${item.name}`, text: item.description });
+    if (item) this.note.set({ title: `${this.emoji(id)} ${item.name}`, text: item.description, letter: this.isCouples() && isLetterItem(id) });
   }
 
   emoji = (id: string) => ITEM_EMOJI[id] ?? '◆';

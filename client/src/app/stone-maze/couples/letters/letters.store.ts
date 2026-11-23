@@ -3,6 +3,13 @@ import { GameService } from '../../../core/game.service';
 import { LetterEnvelope, LetterView, LettersView } from '../../../core/models';
 
 const KEY = 'px-cc-letters:';
+/** The letter room's first puzzle: the letter may be written once it is solved (the server holds the same rule). */
+export const LETTERS_AFTER = 'cc5-order';
+/** A letter is a few words that stay (the server holds the same limit). */
+export const MAX_WORDS = 20;
+
+/** Words as the writer sees them: runs of non-space characters. */
+export const countWords = (text: string) => text.split(/\s+/).filter(Boolean).length;
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -41,6 +48,8 @@ export class LettersStore {
     const s = this.game.snapshot();
     return s && this.game.playerId() ? `${s.roomId}:${this.game.playerId()}:${s.round}` : null;
   });
+  /** The desk opens once the letter room's first puzzle is solved. */
+  readonly unlocked = computed(() => this.active() && this.game.snapshot()?.puzzles.find((p) => p.id === LETTERS_AFTER)?.status === 'solved');
   readonly sent = computed(() => this.view()?.sent ?? null);
   readonly inbox = computed<LetterView[]>(() => this.view()?.inbox ?? []);
   readonly kept = computed(() => this.view()?.kept ?? null);

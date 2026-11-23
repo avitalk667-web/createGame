@@ -74,7 +74,7 @@ public class LetterTests(HubIntegrationTests.Factory factory)
     }
 
     /// <summary>A paid "הצופן הזוגי" game with one or two players, already playing.</summary>
-    private async Task<List<Seat>> GameAsync(int players, string productId = ProductId)
+    private async Task<List<Seat>> GameAsync(int players, string productId = ProductId, bool lettersOpen = true)
     {
         await EnsureProductAsync();
         var http = factory.CreateClient();
@@ -84,7 +84,36 @@ public class LetterTests(HubIntegrationTests.Factory factory)
         foreach (var s in seats.Skip(1)) await Ok(s, "SetReady", true);
         await Ok(seats[0], "StartGame");
         await Ok(seats[0], "FinishIntro", true);
+        lastCode = code;
+        if (lettersOpen) await OpenLettersAsync(code);
         return seats;
+    }
+
+    private string lastCode = "";
+
+    /// <summary>Letters open after the letter room's first puzzle: here it is simply marked solved.</summary>
+    private async Task OpenLettersAsync(string code)
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PortalDbContext>();
+        var room = await db.Rooms.Include(r => r.Puzzles).FirstAsync(r => r.Code == code);
+        var p = room.Puzzles.FirstOrDefault(x => x.PuzzleId == "cc5-order");
+        if (p == null) return; // another game: it has no letter room
+        p.Status = PuzzleStatus.Solved;
+        p.SolvedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task A_letter_waits_for_the_first_letter_room_puzzle_and_holds_twenty_words()
+    {
+        var seats = await GameAsync(2, lettersOpen: false);
+        Assert.Equal("not-yet", Code(await Call(seats[0], "SendLetter", "letter-w-0001", "תודה", false)));
+        await OpenLettersAsync(lastCode);
+        var long21 = string.Join(" ", Enumerable.Range(1, 21).Select(i => "מילה" + i));
+        Assert.Equal("too-long", Code(await Call(seats[0], "SendLetter", "letter-w-0002", long21, false)));
+        var twenty = string.Join(" ", Enumerable.Range(1, 20).Select(i => "מילה" + i));
+        Assert.True((await Ok(seats[0], "SendLetter", "letter-w-0003", twenty, false)).GetProperty("ok").GetBoolean());
     }
 
     private static async Task<JsonElement> Call(Seat s, string method, params object?[] args) =>

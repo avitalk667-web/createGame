@@ -4,13 +4,12 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AudioService } from '../../../core/audio.service';
 import { GameService } from '../../../core/game.service';
 import { LetterView } from '../../../core/models';
-import { LettersStore } from './letters.store';
-
-const MAX = 4000;
+import { LettersStore, MAX_WORDS, countWords } from './letters.store';
 
 /**
  * The personal letters of "הצופן הזוגי": writing (with the draft kept on this device), the mailbox of letters received,
- * and the soft door before the letter room's puzzles — an offer to write first, never a condition to go on.
+ * and the invitation once the letter room's first puzzle is solved — an offer to write, never a condition to go on. Before
+ * that puzzle the desk stays closed. A letter holds at most MAX_WORDS words.
  */
 @Component({
   selector: 'px-cc-letters',
@@ -23,15 +22,17 @@ const MAX = 4000;
           <button class="btn small ghost" (click)="close.emit()" aria-label="סגירה">✕</button>
         </header>
 
-        @if (mode() === 'gate') {
-          <p class="lead">לפני החידות של החדר אפשר לכתוב מכתב אישי{{ store.solo() ? ' — לעצמכם, לשמור.' : ' למי שמשחק איתכם. רק הוא יוכל לקרוא אותו.' }}</p>
-          <div class="row wrap">
+        @if (mode() !== 'inbox' && !store.unlocked() && !store.sent()) {
+          <p class="lead">שולחן הכתיבה עוד סגור. הוא ייפתח אחרי שתפתרו את החידה הראשונה בחדר הזה.</p>
+          <button class="btn ghost" (click)="close.emit()">חזרה לחדר</button>
+        } @else if (mode() === 'gate' && !writing() && !store.sent()) {
+          <p class="lead invite">זה הזמן להשאיר כמה מילים שיישארו הרבה אחרי שהמשחק יסתיים.</p>
+          <p class="muted small center">{{ store.solo() ? 'אתם משחקים לבד: המכתב יישמר בשבילכם.' : 'רק מי שמשחק איתכם יוכל לקרוא אותו.' }} עד {{ maxWords }} מילים. המכתב לא נדרש כדי להמשיך.</p>
+          <div class="row wrap center">
             <button class="btn primary" (click)="writing.set(true)">✍️ כתיבת המכתב</button>
-            <button class="btn ghost" (click)="later()">אחר כך — להמשיך לחידה</button>
+            <button class="btn ghost" (click)="later()">אחר כך</button>
           </div>
-        }
-
-        @if (mode() === 'write' || writing()) {
+        } @else if (mode() !== 'inbox') {
           @if (store.sent(); as sent) {
             <div class="status">
               <p>✉️ {{ sent.hasRecipient ? 'המכתב שלכם נשלח.' : 'המכתב נשמר אצלכם.' }}</p>
@@ -44,26 +45,30 @@ const MAX = 4000;
             <p class="muted small">{{ store.solo() ? 'אתם משחקים לבד: המכתב יישמר רק בשבילכם.' : 'המכתב פרטי: הוא נשמר מוצפן ונמסר רק למי שמשחק איתכם. אפשר לכתוב אחד בכל משחק.' }}</p>
             <label class="sheet">
               <span class="sr">המכתב</span>
-              <textarea [value]="store.draft()" (input)="store.setDraft($any($event.target).value)" [attr.maxlength]="max" rows="9"
-                placeholder="כתבו כאן…" dir="auto"></textarea>
+              <textarea [value]="store.draft()" (input)="store.setDraft($any($event.target).value)" rows="5"
+                placeholder="כתבו כאן…" dir="auto" aria-describedby="cc-words"></textarea>
             </label>
             <div class="row between">
-              <span class="muted small" [class.warn]="store.draft().length > max - 200">{{ store.draft().length }} / {{ max }}</span>
+              <span id="cc-words" class="words" [class.warn]="left() >= 0 && left() <= 3" [class.over]="left() < 0" aria-live="polite">
+                {{ words() }} / {{ maxWords }} מילים · {{ leftText() }}</span>
               <span class="muted small">הטיוטה נשמרת במכשיר הזה עד השליחה.</span>
             </div>
             @if (store.error(); as e) { <p class="msg bad" role="status">{{ e }}</p> }
             <div class="row wrap">
-              <button class="btn primary" (click)="send()" [disabled]="!store.draft().trim() || store.sending()">
+              <button class="btn primary" (click)="send()" [disabled]="!store.draft().trim() || left() < 0 || store.sending()">
                 {{ store.sending() ? 'שומרים…' : store.solo() ? 'שמירת המכתב' : 'שליחת המכתב' }}</button>
-              @if (mode() !== 'gate') { <button class="btn ghost" (click)="close.emit()">אחר כך</button> }
+              <button class="btn ghost" (click)="mode() === 'gate' ? later() : close.emit()">אחר כך</button>
             </div>
           }
-          @if (mode() === 'gate' && store.decided()) { <button class="btn" (click)="go.emit()">להמשיך לחידה</button> }
+          @if (store.sent()) { <button class="btn" (click)="go.emit()">חזרה לחדר</button> }
         }
 
         @if (mode() === 'inbox') {
           @if (reading(); as l) {
-            <ng-container *ngTemplateOutlet="paper; context: { $implicit: l }" />
+            <div class="reading">
+              <div class="hearts" aria-hidden="true">@for (h of hearts; track $index) { <i [style.left]="h.x" [style.animation-delay]="h.d" [style.font-size]="h.s">♥</i> }</div>
+              <ng-container *ngTemplateOutlet="paper; context: { $implicit: l }" />
+            </div>
             <button class="btn ghost" (click)="reading.set(null)">חזרה לתיבה</button>
           } @else {
             @for (l of store.inbox(); track l.id) {
@@ -81,8 +86,8 @@ const MAX = 4000;
 
         <ng-template #paper let-l>
           <article class="paper" dir="auto">
-            <p class="from">{{ l.from ? 'מאת ' + l.from : '' }}</p>
             <p class="body">{{ l.text }}</p>
+            @if (l.from) { <p class="from">{{ l.from }}</p> }
           </article>
         </ng-template>
       </section>
@@ -101,8 +106,20 @@ const MAX = 4000;
     .msg.bad { color:#f0a08a; }
     .status { border:1px solid #8a6a3a; border-radius:12px; padding:.6rem .9rem; margin-bottom:.6rem; }
     .envelope-row { width:100%; display:flex; gap:.8rem; align-items:center; background:#2a1c10; border:1px solid #8a6a3a; border-radius:12px; padding:.7rem .9rem; margin:.35rem 0; color:inherit; cursor:pointer; text-align:start; }
-    .paper { background:#f3e6c6; color:#2a1a0a; border-radius:6px; padding:1.1rem 1.3rem; box-shadow: 0 6px 24px rgba(0,0,0,.4); margin:.6rem 0; }
-    .paper .from { margin:0 0 .5rem; font-weight:700; } .paper .body { margin:0; white-space:pre-wrap; font: 1.1rem/1.8 "Frank Ruehl CLM", "David", serif; overflow-wrap:anywhere; }
+    .invite { font: 1.35rem/1.7 "Frank Ruehl CLM", "David", serif; color:#f4e2b8; text-align:center; margin:.4rem 0 .8rem; }
+    .center { text-align:center; justify-content:center; }
+    .words { font-size:.9rem; color: var(--muted); } .words.warn { color:#f0c27a; } .words.over { color:#f0a08a; font-weight:700; }
+    .paper { background:#f3e6c6; color:#2a1a0a; border-radius:6px; padding:1.6rem 1.6rem 1.2rem; box-shadow: 0 6px 24px rgba(0,0,0,.4); margin:.6rem auto;
+      max-width:30rem; text-align:center; position:relative; z-index:1; }
+    .paper .body { margin:0; white-space:pre-wrap; font: 1.3rem/1.9 "Frank Ruehl CLM", "David", serif; overflow-wrap:anywhere; }
+    .paper .from { margin:1rem 0 0; font: italic 700 1.05rem/1.4 "Frank Ruehl CLM", "David", serif; color:#6a3a1a; }
+    .paper .from::before { content:"— "; }
+    .reading { position:relative; padding:1.2rem 0 .4rem; animation: unfold .7s ease both; }
+    .hearts { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
+    .hearts i { position:absolute; bottom:0; font-style:normal; color:#d8443a; opacity:0; animation: rise 3.2s ease-out both; }
+    @keyframes rise { 0% { opacity:0; transform: translateY(0) scale(.6); } 20% { opacity:.75; } 100% { opacity:0; transform: translateY(-16rem) scale(1.1) rotate(12deg); } }
+    @keyframes unfold { from { opacity:0; transform: translateY(14px) scale(.96); } }
+    @media (prefers-reduced-motion: reduce) { .reading { animation:none; } .hearts { display:none; } }
   `],
   imports: [NgTemplateOutlet],
 })
@@ -117,7 +134,17 @@ export class CcLettersComponent {
   go = output<void>();
   writing = signal(false);
   reading = signal<LetterView | null>(null);
-  readonly max = MAX;
+  readonly maxWords = MAX_WORDS;
+  words = computed(() => countWords(this.store.draft()));
+  left = computed(() => MAX_WORDS - this.words());
+  leftText = computed(() => {
+    const n = this.left();
+    if (n === 1) return 'נשארה מילה אחת';
+    if (n >= 0) return `נשארו ${n} מילים`;
+    return `${-n === 1 ? 'מילה אחת' : -n + ' מילים'} יותר מדי — קצרו קצת`;
+  });
+  /** A few hearts rising gently behind the letter as it opens. */
+  readonly hearts = Array.from({ length: 9 }, (_, i) => ({ x: 6 + i * 10.5 + '%', d: ((i % 3) * 0.35 + (i % 2) * 0.2).toFixed(2) + 's', s: (0.8 + (i % 4) * 0.25).toFixed(2) + 'rem' }));
 
   title = computed(() => (this.mode() === 'inbox' ? 'תיבת הדואר' : this.store.solo() ? 'מכתב לעצמכם' : 'מכתב אישי'));
 
@@ -163,17 +190,17 @@ export class CcLettersComponent {
   template: `
     @if (store.arrivals()[0]; as e) {
       @if (compact()) {
-        <button class="mini" (click)="openIt.emit(e.id)" [attr.aria-label]="'הגיע מכתב מ' + e.from">📩</button>
+        <button class="mini" (click)="openIt.emit(e.id)" aria-label="יש לכם מכתב חדש! לקריאת המכתב">📩<b class="dot" aria-hidden="true"></b></button>
       } @else {
-        <div class="arrive" role="dialog" aria-modal="true" [attr.aria-label]="'הגיע מכתב מ' + e.from">
+        <div class="arrive" role="dialog" aria-modal="true" aria-label="יש לכם מכתב חדש!">
           <div class="env" [class.open]="opening()">
             <div class="flap"></div>
             <div class="seal" aria-hidden="true">❦</div>
             <div class="card">מכתב מ{{ e.from }}</div>
           </div>
-          <p class="who">הגיע מכתב מ{{ e.from }}</p>
+          <p class="who">יש לכם מכתב חדש!</p>
           <div class="row">
-            <button class="btn primary" (click)="open(e.id)">פתיחת המכתב</button>
+            <button class="btn primary" (click)="open(e.id)">לקריאת המכתב</button>
             <button class="btn ghost" (click)="store.arrivalDone(e.id)">אחר כך — הוא יחכה בתיבת הדואר</button>
           </div>
         </div>
@@ -192,9 +219,11 @@ export class CcLettersComponent {
     .card { position:absolute; inset:18% 10% 12%; background:#fbf3de; border-radius:4px; display:grid; place-items:center; color:#3a2410; font-family:"Frank Ruehl CLM","David",serif; font-size:1.2rem;
       transform: translateY(30%); transition: transform .6s .3s ease; }
     .env.open .card { transform: translateY(-18%); z-index:4; }
-    .who { margin:0; color:#f4e2b8; font-size:1.2rem; }
+    .who { margin:0; color:#f4e2b8; font: 700 1.5rem/1.3 "Frank Ruehl CLM","David",serif; animation: glow 1.8s ease-in-out infinite; }
+    @keyframes glow { 50% { text-shadow: 0 0 14px rgba(255,200,140,.7); } }
+    .mini .dot { position:absolute; top:4px; inset-inline-end:4px; width:12px; height:12px; border-radius:50%; background:#e2715b; box-shadow:0 0 0 2px #2a1c10; }
     .row { display:flex; gap:.6rem; flex-wrap:wrap; justify-content:center; }
-    .mini { position:fixed; top:84px; inset-inline-start:16px; z-index:61; width:52px; height:52px; border-radius:50%; border:2px solid var(--gold-2); background:#2a1c10;
+    .mini { position:fixed; display:grid; place-items:center;top:84px; inset-inline-start:16px; z-index:61; width:52px; height:52px; border-radius:50%; border:2px solid var(--gold-2); background:#2a1c10;
       font-size:1.5rem; cursor:pointer; animation: bob 1.6s ease-in-out infinite; }
     @keyframes fly { from { transform: translate(-60vw, -40vh) rotate(-35deg) scale(.4); opacity:0; } 60% { opacity:1; } to { transform:none; } }
     @keyframes fade { from { opacity:0; } }

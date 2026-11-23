@@ -80,6 +80,11 @@ public sealed record LettersView(IReadOnlyList<LetterView> Inbox, SentView? Sent
 public sealed class LetterService(PortalDbContext db, ScenarioCatalog catalog, LetterProtector protector)
 {
     public const int MaxLength = 4000;
+    /// <summary>A letter is a few words that stay: at most this many.</summary>
+    public const int MaxWords = 20;
+
+    /// <summary>Words as the writer sees them: runs of non-space characters.</summary>
+    public static int Words(string text) => text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
 
     private static bool Active(PlayerSession p) => !p.IsRemoved && p.SeatReleasedAt == null;
 
@@ -95,7 +100,7 @@ public sealed class LetterService(PortalDbContext db, ScenarioCatalog catalog, L
 
     private async Task<(GameRoom? Room, PlayerSession? Me, string? Problem)> LoadAsync(Guid roomId, Guid playerId)
     {
-        var room = await db.Rooms.AsNoTracking().Include(r => r.Players).FirstOrDefaultAsync(r => r.Id == roomId);
+        var room = await db.Rooms.AsNoTracking().Include(r => r.Players).Include(r => r.Puzzles).FirstOrDefaultAsync(r => r.Id == roomId);
         if (room == null) return (null, null, "החדר לא נמצא.");
         if (catalog.Find(room.ScenarioId)?.PersonalLetters != true) return (null, null, "במשחק הזה אין מכתבים.");
         var me = room.Players.FirstOrDefault(p => p.Id == playerId && Active(p));
@@ -112,6 +117,11 @@ public sealed class LetterService(PortalDbContext db, ScenarioCatalog catalog, L
         var text = Clean(body);
         if (text.Length == 0) return new(false, "empty", "המכתב ריק. כתבו כמה מילים לפני השליחה.");
         if (text.Length > MaxLength) return new(false, "too-long", $"המכתב ארוך מדי — עד {MaxLength} תווים.");
+        if (Words(text) > MaxWords) return new(false, "too-long", $"המכתב ארוך מדי — עד {MaxWords} מילים.");
+        // the letter waits for its moment: the game says after which puzzle it may be written
+        var after = catalog.Find(room.ScenarioId)?.PersonalLettersAfter;
+        if (after != null && room.Puzzles.FirstOrDefault(p => p.PuzzleId == after)?.Status != PuzzleStatus.Solved)
+            return new(false, "not-yet", "אפשר לכתוב את המכתב אחרי החידה הראשונה בחדר המכתבים.");
 
         // the other player of this game, decided here; alone, the letter is kept only when the player chose to keep it
         var others = room.Players.Where(p => p.Id != playerId && Active(p)).ToList();

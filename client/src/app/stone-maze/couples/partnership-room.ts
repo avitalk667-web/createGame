@@ -112,62 +112,104 @@ export function buildPartnershipRoom(ctx: RoomCtx): RoomPart {
   g.add(ball);
   const ballGlow = sprite(ball, '#bfe0ff', 0.6, 0, 0, 0, 0.3);
 
-  // the two lever stations. On each: a green lever that raises the end of its half, a red one that lowers it, a brass
-  // bolt that latches the half (its lamp turns red), engraved plates under them, a sign in the half's colour, and a small
-  // model of the half that tilts with it. The plunger by the start platform releases the ball. No window: these are used
-  // in the room (cc-layout.ts), and the server decides what happens.
+  // the two lever stations. On each, from left to right: one green lever whose position follows the angle of its half
+  // (▲ raises the end, ▼ lowers it), a brass bolt that slides in to lock the half (a lamp and a sign say "נעול" or
+  // "פתוח"), and a gauge whose needle shows the half's angle. Short engraved lines say what each control is for, and the
+  // post carries the seesaw rule. By the release plunger, a "הגשר מוכן" lamp lights once both halves are bolted and meet
+  // at the axle (what the room can see, never whether the ball will make it). The server decides everything.
   const levers: THREE.Group[] = [];
   const minis: THREE.Group[] = [];
-  const plate = (parent: THREE.Object3D, text: string, x: number, y: number, z: number, w = 0.27, color = '#2a1608', bg = '#e8d6a8') =>
-    plane(parent, w, w * 0.5, new THREE.MeshBasicMaterial({ map: textTex(text, { color, bg, w: 256, h: 128, size: 58 }) }), x, y, z);
+  const bolts: THREE.Mesh[] = [];
+  const boltSigns: { on: THREE.Mesh; off: THREE.Mesh }[] = [];
+  const needles: THREE.Group[] = [];
+  const plate = (parent: THREE.Object3D, text: string, x: number, y: number, z: number, w = 0.27, color = '#2a1608', bg = '#e8d6a8', h = w * 0.5) =>
+    plane(parent, w, h, new THREE.MeshBasicMaterial({ map: textTex(text, { color, bg, w: 256, h: Math.round(256 * (h / w)), size: 58 }) }), x, y, z);
   for (const side of [-1, 1]) {
     const i = side < 0 ? 0 : 1;
     const st = new THREE.Group();
     st.position.set(side * 3.7, 0, -0.6);
     box(st, 0.95, 0.95, 0.7, wood('#4a2c16'), 0, 0.475, 0);
     box(st, 1.0, 0.06, 0.8, brass({ color: '#8a6a3a' }), 0, 0.98, 0);
-    // the same order on both stations, left to right: raise (green), lower (red), bolt
-    const ctl = [[-0.28, '#2fae55', '▲ הרמה'], [0, '#c8321e', '▼ הורדה']];
-    for (const [x, color, label] of ctl as [number, string, string][]) {
-      const arm = new THREE.Group();
-      arm.position.set(x, 1.01, 0.15);
-      box(st, 0.1, 0.03, 0.22, iron(), x, 1.02, 0.15);
-      cyl(arm, 0.022, 0.022, 0.42, iron(), 0, 0.21, 0, 10);
-      const knob = new THREE.Mesh(new THREE.SphereGeometry(0.07, 16, 12), std(color, { roughness: 0.35, emissive: color, emissiveIntensity: 0.25 }));
-      knob.position.y = 0.44;
-      arm.add(knob);
-      st.add(arm);
-      levers.push(arm);
-      plate(st, label, x, 0.8, 0.356, 0.25, '#ffffff', color);
-    }
-    // the bolt and its lamp
-    const bolt = box(st, 0.2, 0.07, 0.1, brass(), 0.28, 1.05, 0.15);
+    // the green lever on its slotted base, with the two arrows beside it
+    box(st, 0.1, 0.03, 0.3, iron(), -0.2, 1.02, 0.15);
+    const arm = new THREE.Group();
+    arm.position.set(-0.2, 1.01, 0.15);
+    cyl(arm, 0.022, 0.022, 0.42, iron(), 0, 0.21, 0, 10);
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.075, 16, 12), std('#2fae55', { roughness: 0.35, emissive: '#2fae55', emissiveIntensity: 0.3 }));
+    knob.position.y = 0.44;
+    arm.add(knob);
+    st.add(arm);
+    levers.push(arm);
+    plate(st, '▲', -0.36, 1.0, 0.2, 0.1, '#ffffff', '#2fae55', 0.1).rotation.x = -Math.PI / 2;
+    plate(st, '▼', -0.04, 1.0, 0.2, 0.1, '#ffffff', '#2fae55', 0.1).rotation.x = -Math.PI / 2;
+    plate(st, 'כוונו את זווית הגשר', -0.2, 0.84, 0.356, 0.42, '#ffffff', '#2a7a44', 0.1);
+    // the bolt: it slides into its keeper when locked
+    box(st, 0.06, 0.12, 0.08, brass(), 0.17, 1.08, 0.15);
+    const bolt = box(st, 0.22, 0.06, 0.08, brass(), 0.33, 1.08, 0.15);
     bolt.castShadow = false;
-    box(st, 0.05, 0.12, 0.05, brass(), 0.36, 1.08, 0.15);
+    bolts.push(bolt);
     const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.05, 14, 10), glow('#3a6a3a'));
-    lamp.position.set(0.28, 1.17, 0.15);
+    lamp.position.set(0.33, 1.2, 0.15);
     st.add(lamp);
     latchLamps.push(lamp);
-    plate(st, '🔒 בריח', 0.28, 0.8, 0.356, 0.25, '#2a1608', '#d8b870');
-    // the sign in the half's colour, and the small model of the half
-    box(st, 0.06, 1.0, 0.06, iron(), 0, 1.5, -0.3);
-    plate(st, SIDE_NAME[i], 0, 2.0, -0.26, 0.9, '#ffffff', SIDE_COLOR[i]);
+    const on = plate(st, '🔒 נעול', 0.3, 0.84, 0.357, 0.3, '#ffffff', '#b8321e', 0.1);
+    const off = plate(st, '🔓 פתוח', 0.3, 0.84, 0.357, 0.3, '#ffffff', '#2a7a44', 0.1);
+    boltSigns.push({ on, off });
+    plate(st, 'נעלו את הצד לאחר הכיוון', 0.3, 0.72, 0.356, 0.34, '#2a1608', '#d8b870', 0.08);
+    // the gauge: a dial from −3 to 3 and a needle that follows the half
+    const dial = document.createElement('canvas');
+    dial.width = 256; dial.height = 160;
+    const dg = dial.getContext('2d')!;
+    dg.fillStyle = '#efe2bf'; dg.fillRect(0, 0, 256, 160);
+    dg.strokeStyle = '#5a3a1a'; dg.lineWidth = 6; dg.strokeRect(3, 3, 250, 154);
+    dg.font = 'bold 22px Heebo, Arial'; dg.fillStyle = '#2a1608'; dg.textAlign = 'center'; dg.textBaseline = 'middle';
+    for (let v = -3; v <= 3; v++) {
+      const ang = -Math.PI / 2 + v * 0.42;
+      dg.strokeStyle = v === 0 ? '#2a7a44' : '#5a3a1a'; dg.lineWidth = v === 0 ? 5 : 3;
+      dg.beginPath(); dg.moveTo(128 + Math.cos(ang) * 86, 140 + Math.sin(ang) * 86); dg.lineTo(128 + Math.cos(ang) * 104, 140 + Math.sin(ang) * 104); dg.stroke();
+      dg.fillText(String(v), 128 + Math.cos(ang) * 68, 140 + Math.sin(ang) * 68);
+    }
+    dg.font = 'bold 20px Heebo, Arial'; dg.fillText('שיפוע', 128, 148);
+    const dialTex = new THREE.CanvasTexture(dial);
+    dialTex.colorSpace = THREE.SRGBColorSpace;
+    box(st, 0.06, 0.5, 0.06, iron(), 0, 1.25, -0.3);
+    plane(st, 0.46, 0.29, new THREE.MeshBasicMaterial({ map: dialTex }), 0, 1.38, -0.265);
+    const needle = new THREE.Group();
+    needle.position.set(0, 1.38 - 0.29 / 2 + 0.29 * (20 / 160), -0.26);
+    box(needle, 0.012, 0.16, 0.01, std('#c8321e', { emissive: '#7a1008', emissiveIntensity: 0.4 }), 0, 0.08, 0);
+    st.add(needle);
+    needles.push(needle);
+    // the sign in the half's colour, the seesaw rule, and the small model of the half
+    box(st, 0.06, 0.6, 0.06, iron(), 0, 1.85, -0.3);
+    plate(st, SIDE_NAME[i], 0, 2.25, -0.26, 0.9, '#ffffff', SIDE_COLOR[i]);
+    plate(st, 'בריח פתוח: החצי השני זז הפוך · בריח נעול: רק החצי השני זז', 0, 2.06, -0.26, 1.0, '#2a1608', '#e8d6a8', 0.09);
     const mini = new THREE.Group();
-    mini.position.set(0, 1.62, -0.25);
+    mini.position.set(0, 1.78, -0.25);
     box(mini, 0.06, 0.06, 0.06, brass(), 0, 0, 0);
     box(mini, 0.55, 0.035, 0.12, std(SIDE_COLOR[i], { emissive: SIDE_COLOR[i], emissiveIntensity: 0.3 }), side * 0.27, 0, 0);
     st.add(mini);
     minis.push(mini);
     g.add(st);
   }
-  // the release plunger by the start platform
+  // the release plunger by the start platform, the "bridge ready" lamp over it, and the gate that holds the ball
   const plunger = new THREE.Group();
   plunger.position.set(-4.6, 0, -2.5);
   cyl(plunger, 0.16, 0.2, 0.95, iron(), 0, 0.475, 0, 16);
   cyl(plunger, 0.2, 0.2, 0.05, brass(), 0, 0.97, 0, 20);
   const press = cyl(plunger, 0.13, 0.13, 0.08, std('#c8321e', { roughness: 0.3, emissive: '#7a1008', emissiveIntensity: 0.4 }), 0, 1.03, 0, 24);
   plate(plunger, 'שחרור הכדור', 0, 0.68, 0.21, 0.36);
+  cyl(plunger, 0.02, 0.02, 0.5, iron(), 0, 1.3, 0, 8);
+  const readyLamp = new THREE.Mesh(new THREE.SphereGeometry(0.09, 16, 12), glow('#3a3a30'));
+  readyLamp.position.set(0, 1.6, 0);
+  plunger.add(readyLamp);
+  const readyGlow = sprite(plunger, '#7aff9a', 0.8, 0, 1.6, 0, 0);
+  plate(plunger, 'הגשר מוכן', 0, 1.82, 0, 0.4, '#ffffff', '#2a5a3a', 0.12);
+  plate(plunger, 'כאשר שני הצדדים מיושרים, תוכלו לשחרר את הכדור', 0, 0.5, 0.21, 0.5, '#2a1608', '#e8d6a8', 0.12);
   g.add(plunger);
+  const gate = new THREE.Group();
+  gate.position.set(-HALF + 0.05, BRIDGE_Y + 0.1, BRIDGE_Z);
+  box(gate, 0.04, 0.3, 0.3, brass(), 0, 0.15, 0);
+  g.add(gate);
   ctx.addLight(-4.4, 2.2, -1.9, '#ffc890', 1.6, 3.5);
   sheet(g, 0.5, 0.32, paperTex(['שני חצאים', 'על ציר אחד'], { size: 52, w: 512, h: 320, bg: '#d8c49a' }), 0, 0.86, -0.2);
   box(g, 0.6, 0.84, 0.4, wood('#3a2410'), 0, 0.42, -0.2);
@@ -302,10 +344,12 @@ export function buildPartnershipRoom(ctx: RoomCtx): RoomPart {
   bake(dressing);
 
   // ---- state
-  const data = pd<{ start?: number[]; joint?: number; stations?: number }>(ctx, 'cc2-bridge');
+  const data = pd<{ start?: number[]; joint?: number; stations?: number; jointTolerance?: number }>(ctx, 'cc2-bridge');
+  const tol = data.jointTolerance ?? 1;
   const stations = data.stations ?? 4;
   const val = [...(data.start ?? [-2, 2])], shown = [...val];
   let latched = [false, false];
+  let ready = false, ready01 = 0, drop = -1, cupFlash = 0;
   let progress = 0;
   let solvedBridge = false, solvedGears = false, solvedTrack = false;
   let play: { path: number[]; fall: boolean; t: number; key: string } | null = null;
@@ -334,6 +378,8 @@ export function buildPartnershipRoom(ctx: RoomCtx): RoomPart {
       if (play && play.t === 0) pressT = 0;
       lastKey = key;
       progress = solvedBridge ? stations : m?.progress ?? 0;
+      // ready: both halves bolted and meeting at the axle — what the room shows, not whether the ball will make it
+      ready = !solvedBridge && latched[0] && latched[1] && Math.abs(val[0] - val[1]) <= tol;
       // the gears: placed on their pins; the others lie on the table
       const gm = mechIn(s, 'cc2-gears');
       for (const k of Object.keys(slots)) delete slots[k];
@@ -381,6 +427,12 @@ export function buildPartnershipRoom(ctx: RoomCtx): RoomPart {
         halves[i].rotation.z = -shown[i] * STEP_DEG * DEG;
         minis[i].rotation.z = -shown[i] * STEP_DEG * DEG;
         (latchLamps[i].material as THREE.MeshBasicMaterial).color.set(latched[i] ? '#ff5a3a' : '#5ae07a');
+        // the lever stands where its half is, the bolt slides in, the sign and the needle follow
+        levers[i].rotation.x = shown[i] * 0.16 * (i ? -1 : 1);
+        bolts[i].position.x = approach(bolts[i].position.x, latched[i] ? 0.22 : 0.33, dt, 4);
+        boltSigns[i].on.visible = latched[i];
+        boltSigns[i].off.visible = !latched[i];
+        needles[i].rotation.z = -shown[i] * 0.42;
         const a = halves[i].rotation.z, sx = i ? 1 : -1, r = HALF * 0.88;
         tip.set(Math.cos(a) * sx * r, BRIDGE_Y + 0.05 + Math.sin(a) * sx * r, BRIDGE_Z);
         chains[i](tipFrom[i], tip);
@@ -389,7 +441,11 @@ export function buildPartnershipRoom(ctx: RoomCtx): RoomPart {
       hub.rotation.z = (halves[0].rotation.z + halves[1].rotation.z) * 3;
       pressT += dt;
       press.position.y = 1.03 - (pressT < 0.35 ? Math.sin((pressT / 0.35) * Math.PI) * 0.045 : 0);
-      levers.forEach((l, k) => (l.rotation.x = Math.sin(t * 0.9 + k) * 0.02));
+      ready01 = approach(ready01, ready ? 1 : 0, dt, 4);
+      (readyLamp.material as THREE.MeshBasicMaterial).color.set(ready01 > 0.5 ? '#6aff8a' : '#3a3a30');
+      (readyGlow.material as THREE.SpriteMaterial).opacity = ready01 * (0.45 + Math.sin(t * 3) * 0.1);
+      // the gate in front of the ball lifts as the plunger is pressed, and drops back behind it
+      gate.position.y = BRIDGE_Y + 0.1 + (pressT < 1.4 ? Math.min(1, pressT / 0.25) : Math.max(0, 1 - (pressT - 1.4) / 0.3)) * 0.34;
       // the ball: rolling along the last path, falling into the pit, or resting at its station
       if (play) {
         play.t += dt;
@@ -400,18 +456,28 @@ export function buildPartnershipRoom(ctx: RoomCtx): RoomPart {
         const x = stationX(a + (b - a) * f);
         const done = play.t >= per * (play.path.length - 1);
         if (!done) ball.position.set(x, surfaceY(x), BRIDGE_Z);
+        else if (!play.fall && solvedBridge && drop < 0) { drop = 0; play = null; }
         else if (play.fall) {
           const ft = play.t - per * (play.path.length - 1);
           ball.position.y -= dt * (2 + ft * 9);
           if (ft > 0.9) play = null;
         } else play = null;
+      } else if (drop >= 0 && drop < 1) {
+        // over the edge and down into the container, in one beat; the container answers with a flash
+        drop = Math.min(1, drop + dt / 0.55);
+        const x = HALF + drop * 0.3;
+        ball.position.set(x, surfaceY(HALF) + (BRIDGE_Y - 0.3 - surfaceY(HALF)) * drop * drop, BRIDGE_Z);
+        if (drop >= 1) cupFlash = 1;
       } else {
         const x = solvedBridge ? HALF + 0.3 : stationX(progress);
         ball.position.set(x, solvedBridge ? BRIDGE_Y - 0.3 : surfaceY(x), BRIDGE_Z);
       }
       ball.rotation.z = -ball.position.x / 0.12;
       (ballGlow.material as THREE.SpriteMaterial).opacity = 0.25 + Math.sin(t * 3) * 0.08;
-      (cupGlow.material as THREE.SpriteMaterial).opacity = solvedBridge ? 0.55 : 0.08;
+      cupFlash = Math.max(0, cupFlash - dt * 0.8);
+      const inCup = solvedBridge && !play && (drop < 0 || drop >= 1);
+      (cupGlow.material as THREE.SpriteMaterial).opacity = inCup ? 0.55 + cupFlash * 0.45 : 0.08;
+      cup.scale.setScalar(1 + cupFlash * 0.08);
       (pitGlow.material as THREE.SpriteMaterial).opacity = 0.18 + Math.sin(t * 0.8) * 0.06;
       // gears: the motor always turns slowly; once the train is right, every gear turns with it at its ratio
       const w = solvedGears ? 1.4 : 0.25;

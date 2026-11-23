@@ -90,19 +90,23 @@ public sealed partial class GameEngine
         int joint = data["joint"]!.GetValue<int>(), container = data["stations"]!.GetValue<int>();
         int tol = data["jointTolerance"]?.GetValue<int>() ?? 1, steep = data["steep"]?.GetValue<int>() ?? 3;
         int maxIn = data["containerMaxSpeed"]?.GetValue<int>() ?? 1;
+        // "continuous": one release carries the ball as far as the slopes take it (into the container when the bridge is
+        // right), and its speed into the container is the slope of the half it arrives on. Without it, a slope of n moves
+        // the ball n stations per release.
+        var continuous = data["continuous"]?.GetValue<bool>() == true;
         int Slope(int p) => p < joint ? l : p > joint ? r : r > 0 ? r : l < 0 ? l : 0;
         var path = new List<int> { at };
         var a = Slope(at);
         if (a == 0 || (at == 0 && a < 0)) return new(path, "stuck");
         if (Math.Abs(a) >= steep) return new(path, "steep");
         int dir = Math.Sign(a), speed = Math.Abs(a), p = at;
-        for (var step = 0; step < speed; step++)
+        for (var step = 0; continuous || step < speed; step++)
         {
             p += dir;
             if (p < 0) break;
             path.Add(p);
             if (p == joint && Math.Abs(l - r) > tol) return new(path, "joint");
-            if (p >= container) return new(path, speed > maxIn ? "bounced" : "container");
+            if (p >= container) return new(path, (continuous ? Math.Abs(p > joint ? r : l) : speed) > maxIn ? "bounced" : "container");
             // the half the ball would roll on next: uphill (or flat) stops it here, too steep throws it off
             var ahead = dir > 0 ? (p >= joint ? r : l) : (p <= joint ? l : r);
             if (Math.Sign(ahead) != dir) break;

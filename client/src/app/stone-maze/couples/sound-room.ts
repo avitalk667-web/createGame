@@ -1,12 +1,12 @@
 // "הצופן הזוגי", room 1 — חדר הצלילים: a warm music salon. The brass sound device in the middle, the rack of four bells,
 // the stone symbols board, the broken wall clock with eight symbols, three paintings and the music box. The clock's two
-// hands follow the server; the device's lamps light as the room is solved; the music box opens with the clock.
+// hands follow the server; the device's lamps light as the room is solved; the music box stays closed (its puzzle is retired).
 import * as THREE from 'three';
 import { RoomSnapshot } from '../../core/models';
 import { rugTexture } from '../../world/textures';
 import {
   RoomCtx, RoomPart, approach, box, brass, candle, curtainTex, cyl, drawSymbol, dressWalls, frame, glow, mechIn, paperTex, pd, plane,
-  sheet, solvedIn, sprite, statusIn, std, symbolTex, table, wallpaperTex, wood,
+  sheet, solvedIn, sprite, std, symbolTex, table, wallpaperTex, wood,
 } from './cc-kit';
 import { bake, deco } from './cc-decor';
 import { dressSounds } from './cc-dress';
@@ -290,9 +290,10 @@ export function buildSoundRoom(ctx: RoomCtx): RoomPart {
     apply(s: RoomSnapshot) {
       const rot = mechIn(s, 'cc1-clock')?.rotations;
       if (rot?.length === 2) rot.forEach((r, k) => (target[k] = r));
-      lit = ['cc1-listen', 'cc1-clock', 'cc1-missing'].filter((id) => solvedIn(s, id)).length;
+      lit = ['cc1-listen', 'cc1-clock'].filter((id) => solvedIn(s, id)).length;
       clockOpenTarget = solvedIn(s, 'cc1-clock') ? 1 : 0;
-      boxOpenTarget = statusIn(s, 'cc1-missing') !== 'locked' ? 1 : 0;
+      // the music box puzzle (cc1-missing) is retired: the box stays closed
+      boxOpenTarget = 0;
       devTarget = solvedIn(s, 'cc1-listen') ? 1 : 0;
     },
     update(dt, t) {

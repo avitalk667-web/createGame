@@ -40,6 +40,8 @@ public sealed class ScenarioContent
     public int? FastMinutes { get; init; }
     /// <summary>The players may leave each other a private letter (הצופן הזוגי). Off for every other game.</summary>
     public bool PersonalLetters { get; init; }
+    /// <summary>The puzzle after which a letter may be written (null = from the start of the game).</summary>
+    public string? PersonalLettersAfter { get; init; }
 
     public PuzzleContent Puzzle(string id) =>
         Puzzles.FirstOrDefault(p => p.Id == id) ?? throw new KeyNotFoundException($"Puzzle {id} not found");
@@ -84,6 +86,11 @@ public sealed class ScoringRules
     public int Stage { get; init; } = 5;
     public Dictionary<string, int> Room { get; init; } = new() { ["easy"] = 100, ["medium"] = 150, ["hard"] = 250 };
     public int HintPenalty { get; init; } = 10;
+    /// <summary>
+    /// Points off the room's group score for each wrong placement on a table judged piece by piece ("judgeEach"), taken
+    /// like the hint penalty when the room is completed. 0 = none: the default, so other scenarios are unchanged.
+    /// </summary>
+    public int WrongPlacementPenalty { get; init; }
     /// <summary>First inspection of an object that hides evidence (the library's four objects).</summary>
     public int Found { get; init; } = 10;
     /// <summary>

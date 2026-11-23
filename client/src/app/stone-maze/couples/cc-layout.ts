@@ -17,6 +17,16 @@ const O = (id: string, ref: string, label: string, verb: HInteractable['verb'], 
 const D = (id: string, label: string, text: string, pos: [number, number, number], radius: number, verb: HInteractable['verb'] = 'בדיקה'): Row =>
   ({ id, label, verb, kind: 'decor', text, pos, radius });
 
+/**
+ * A safe already opened shows what it holds, never its lock again: the note inside (a clue), or a line when it is empty.
+ * When it opens, the camera turns to it (cam → look, room coordinates) and the note opens by itself for both players.
+ */
+export const CC_OPENED: Record<string, { clue?: string; text?: string; cam: [number, number, number]; look: [number, number, number] }> = {
+  'cc3-safe-a': { clue: 'cc3-note-a', cam: [2.6, 1.6, -4.4], look: [2.6, 1.05, -6.1] },
+  'cc3-safe-b': { clue: 'cc3-note-b', cam: [4.0, 1.6, -4.4], look: [4.0, 1.05, -6.1] },
+  'cc3-safe-c': { text: 'הכספת השלישית פתוחה. מה שהיה בה כבר בתיק.', cam: [5.4, 1.6, -4.4], look: [5.4, 1.05, -6.1] },
+};
+
 const ROOMS: Record<CcZone, Row[]> = {
   // 1 · חדר הצלילים — the sound device, the bells, the symbols board, the broken clock, the paintings and the music box
   'cc-sounds': [
@@ -26,22 +36,21 @@ const ROOMS: Record<CcZone, Row[]> = {
     P('cc1-clock', 'cc1-clock', 'השעון המקולקל', 'סיבוב', [-3.6, 2.7, -6.7], 1.1),
     C('cc1-clock-note', 'cc1-clock-note', 'פתק ליד השעון', [-2.2, 1.45, -6.75], 0.4),
     C('cc1-paintings', 'cc1-paintings', 'שלושה ציורים', [7.7, 2.4, 3.0], 1.5),
-    P('cc1-music-box', 'cc1-missing', 'תיבת הנגינה', 'פתיחה', [3.6, 1.12, -1.9], 0.55),
-    C('cc1-cards', 'cc1-cards', 'כרטיסיות הנגינה', [2.7, 1.04, -1.7], 0.4, 'cc1-missing'),
-    C('cc1-device-note', 'cc1-device-note', 'תווית המכשיר', [-0.95, 1.02, -0.75], 0.35, 'cc1-missing'),
+    // "הצליל החסר" (cc1-missing) is retired: the music box stays in the room as a closed keepsake, with no puzzle
+    D('cc1-music-box', 'תיבת נגינה', 'תיבת נגינה ישנה וסגורה. היא לא חלק מהחידה.', [3.6, 1.12, -1.9], 0.55),
     D('cc1-piano', 'פסנתר ישן', 'פסנתר זקוף ישן. כמה קלידים חסרים — הוא לא חלק מהחידה.', [-5.6, 1.1, 4.4], 1.0),
     D('cc1-cello', 'צ׳לו', 'צ׳לו נשען על הקיר. המיתרים רפויים.', [5.9, 1.0, 5.2], 0.6),
   ],
   // 2 · חדר שיתוף הפעולה — the swaying bridge and its two lever stations, the gears table, the ball track
   'cc-partnership': [
-    // the bridge has no window: each half is worked at its own station (green lever raises its end, red lowers it, the
-    // brass bolt latches it), and the plunger by the start platform releases the ball
-    O('cc2-up-left', 'cc2-bridge', 'ידית ירוקה — הרמת הקצה של החצי השמאלי', 'משיכה', { op: 'tilt', side: 0, dir: 1 }, [-3.98, 1.2, -0.45], 0.17),
-    O('cc2-down-left', 'cc2-bridge', 'ידית אדומה — הורדת הקצה של החצי השמאלי', 'משיכה', { op: 'tilt', side: 0, dir: -1 }, [-3.7, 1.2, -0.45], 0.17),
-    O('cc2-latch-left', 'cc2-bridge', 'בריח החצי השמאלי — נעילה או שחרור', 'הפעלה', { op: 'latch', side: 0 }, [-3.42, 1.12, -0.45], 0.17),
-    O('cc2-up-right', 'cc2-bridge', 'ידית ירוקה — הרמת הקצה של החצי הימני', 'משיכה', { op: 'tilt', side: 1, dir: -1 }, [3.42, 1.2, -0.45], 0.17),
-    O('cc2-down-right', 'cc2-bridge', 'ידית אדומה — הורדת הקצה של החצי הימני', 'משיכה', { op: 'tilt', side: 1, dir: 1 }, [3.7, 1.2, -0.45], 0.17),
-    O('cc2-latch-right', 'cc2-bridge', 'בריח החצי הימני — נעילה או שחרור', 'הפעלה', { op: 'latch', side: 1 }, [3.98, 1.12, -0.45], 0.17),
+    // the bridge has no window: each half is worked at its own station — one green lever (▲ raises the end of the half,
+    // ▼ lowers it), a brass bolt that locks the half, and a gauge — and the plunger by the start platform releases the ball
+    O('cc2-up-left', 'cc2-bridge', 'ידית ירוקה ▲ — הרמת הקצה של החצי השמאלי', 'משיכה', { op: 'tilt', side: 0, dir: 1 }, [-4.06, 1.2, -0.45], 0.15),
+    O('cc2-down-left', 'cc2-bridge', 'ידית ירוקה ▼ — הורדת הקצה של החצי השמאלי', 'משיכה', { op: 'tilt', side: 0, dir: -1 }, [-3.74, 1.2, -0.45], 0.15),
+    O('cc2-latch-left', 'cc2-bridge', 'בריח החצי השמאלי — נעילה או שחרור', 'הפעלה', { op: 'latch', side: 0 }, [-3.37, 1.1, -0.45], 0.17),
+    O('cc2-up-right', 'cc2-bridge', 'ידית ירוקה ▲ — הרמת הקצה של החצי הימני', 'משיכה', { op: 'tilt', side: 1, dir: -1 }, [3.34, 1.2, -0.45], 0.15),
+    O('cc2-down-right', 'cc2-bridge', 'ידית ירוקה ▼ — הורדת הקצה של החצי הימני', 'משיכה', { op: 'tilt', side: 1, dir: 1 }, [3.66, 1.2, -0.45], 0.15),
+    O('cc2-latch-right', 'cc2-bridge', 'בריח החצי הימני — נעילה או שחרור', 'הפעלה', { op: 'latch', side: 1 }, [4.03, 1.1, -0.45], 0.17),
     O('cc2-release', 'cc2-bridge', 'כפתור שחרור הכדור', 'הפעלה', { op: 'release' }, [-4.6, 1.05, -2.5], 0.3),
     C('cc2-bridge-plate', 'cc2-bridge-plate', 'לוחית הגשר', [0, 0.9, -0.2], 0.45),
     P('cc2-gear-table', 'cc2-gears', 'שולחן גלגלי השיניים', 'הנחה', [-5.4, 1.05, 3.4], 1.1),
@@ -69,8 +78,8 @@ const ROOMS: Record<CcZone, Row[]> = {
     P('cc3-safe-a', 'cc3-safe-a', 'הכספת הראשונה', 'פתיחה', [2.6, 1.0, -6.35], 0.55),
     P('cc3-safe-b', 'cc3-safe-b', 'הכספת השנייה', 'פתיחה', [4.0, 1.0, -6.35], 0.55),
     P('cc3-safe-c', 'cc3-safe-c', 'הכספת השלישית', 'פתיחה', [5.4, 1.0, -6.35], 0.55),
-    C('cc3-note-a', 'cc3-note-a', 'הפתק בכספת הראשונה', [2.6, 1.05, -6.05], 0.3, 'cc3-safe-b'),
-    C('cc3-note-b', 'cc3-note-b', 'הפתק בכספת השנייה', [4.0, 1.05, -6.05], 0.3, 'cc3-safe-c'),
+    C('cc3-note-a', 'cc3-note-a', 'הפתק בכספת הראשונה', [2.6, 1.05, -6.05], 0.42, 'cc3-safe-b'),
+    C('cc3-note-b', 'cc3-note-b', 'הפתק בכספת השנייה', [4.0, 1.05, -6.05], 0.42, 'cc3-safe-c'),
     D('cc3-files', 'קלסרים ישנים', 'קלסרים מאובקים של חשבונות ישנים. שום דבר על אבן הפינה.', [-6.8, 2.4, 4.4], 0.9),
   ],
   // 5 · חדר המכתבים — the writing desk and the mailbox (personal letters), the letters table, the drawers and the stamps
@@ -87,14 +96,11 @@ const ROOMS: Record<CcZone, Row[]> = {
     P('cc5-stamps', 'cc5-stamp', 'מעמד החותמות והתיבה', 'הנחה', [4.6, 1.05, 3.6], 0.9),
     D('cc5-pigeon', 'תאי דואר', 'עשרות תאים קטנים, רובם ריקים. רק תיבת הדואר שליד הדלת פעילה.', [-7.8, 2.8, 4.6], 0.9),
   ],
-  // 6 · הבית שבנינו — the building table, the plan, the engraving on the base and the shelf of parts
+  // 5 · הבית שבנינו — the house on the building table with its last wall, the plan of that wall and the shelf of stones
   'cc-home': [
-    P('cc6-table', 'cc6-build', 'שולחן הבנייה', 'הנחה', [0, 1.1, -1.4], 1.6),
-    C('cc6-plan', 'cc6-plan', 'תוכנית הבנייה', [-7.75, 2.3, -1.2], 1.1),
-    C('cc6-plan-128', 'cc6-plan-128', 'תוכנית מס׳ 128', [-7.75, 2.6, 0.75], 0.6),
-    C('cc6-plan-746', 'cc6-plan-746', 'תוכנית מס׳ 746', [-7.75, 2.6, 3.3], 0.6),
-    C('cc6-faces', 'cc6-faces', 'החריטה על הבסיס', [1.9, 0.95, -0.3], 0.4),
-    D('cc6-shelf', 'מדף החלקים', 'על המדף מונחים חלקי בית — חלקם דומים מאוד זה לזה. לוקחים אותם בשולחן הבנייה.', [7.6, 1.6, -1.4], 1.2),
+    P('cc6-table', 'cc6-wall', 'הקיר האחרון', 'הנחה', [0, 1.4, -0.85], 1.4),
+    C('cc6-plan', 'cc6-plan', 'תוכנית הקיר האחרון', [-7.75, 2.3, -1.2], 1.1),
+    D('cc6-shelf', 'מדף האבנים', 'על המדף מונחות חמש אבני בנייה, ועל כל אחת חרוט סמל. מניחים אותן בקיר האחרון שעל שולחן הבנייה.', [7.6, 1.6, -1.4], 1.2),
   ],
 };
 

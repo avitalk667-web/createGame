@@ -5,13 +5,39 @@ import * as THREE from 'three';
 import { RoomSnapshot } from '../../core/models';
 import { rugTexture } from '../../world/textures';
 import {
-  RoomCtx, RoomPart, approach, box, brass, candle, curtainTex, cyl, dressWalls, glow, mechIn, paperTex, plane, sheet, solvedIn, sprite,
+  RoomCtx, RoomPart, approach, box, brass, candle, canvasTex, curtainTex, cyl, dressWalls, glow, mechIn, paperTex, plane, sheet, solvedIn, sprite,
   statusIn, std, symbolTex, table, textTex, wallpaperTex, wood,
 } from './cc-kit';
 import { bake, deco } from './cc-decor';
 import { dressLetters } from './cc-dress';
 
 const EVENTS = ['e1', 'e2', 'e3', 'e4', 'e5', 'e6', 'e7', 'e8'];
+/** The eight events, written on the board itself under their numbers (the same as the clue "לוח האירועים"). */
+const EVENT_NAMES = ['הפגישה הראשונה', 'קניית החלקה', 'אבן הפינה', 'הקירות בגובה החלונות', 'הסערה', 'הגג החדש', 'הכניסה לבית', 'שתילת התאנה'];
+
+/** One card of the events board: an old pinned card, a large number and the event's name under it, readable from afar. */
+function eventCardTex(n: number, name: string) {
+  return canvasTex('cc-event2-' + n + name, 512, 256, (g, w, h) => {
+    g.fillStyle = '#efe0b8'; g.fillRect(0, 0, w, h);
+    const v = g.createRadialGradient(w / 2, h / 2, h * 0.3, w / 2, h / 2, w * 0.7);
+    v.addColorStop(0, 'rgba(255,250,230,.25)'); v.addColorStop(1, 'rgba(120,80,35,.28)');
+    g.fillStyle = v; g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#6a4420'; g.lineWidth = 7; g.strokeRect(6, 6, w - 12, h - 12);
+    g.fillStyle = '#8a2a1c'; g.beginPath(); g.arc(w / 2, 22, 10, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#1e1206'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.direction = 'rtl';
+    g.font = 'bold 66px "Frank Ruehl CLM", "David", "Times New Roman", serif';
+    g.fillText(String(n), w / 2, 66);
+    // the name as large as the card allows: one line, or two for a long name
+    const font = (px: number) => `900 ${px}px "Frank Ruehl CLM", "David", "Times New Roman", serif`;
+    const words = name.split(' ');
+    const lines = words.length > 2 ? [words.slice(0, Math.ceil(words.length / 2)).join(' '), words.slice(Math.ceil(words.length / 2)).join(' ')] : [name];
+    let size = lines.length > 1 ? 62 : 76;
+    g.font = font(size);
+    while (Math.max(...lines.map((l) => g.measureText(l).width)) > w - 36 && size > 34) g.font = font((size -= 2));
+    if (lines.length > 1) { g.fillText(lines[0], w / 2, 150); g.fillText(lines[1], w / 2, 150 + size); }
+    else g.fillText(name, w / 2, 172);
+  });
+}
 const STAMP_SYMBOL: Record<string, string> = { 'cc-stamp-a': 'flame', 'cc-stamp-b': 'wave', 'cc-stamp-c': 'heart', 'cc-stamp-d': 'wave' };
 
 function envelope(stamp: number) {
@@ -93,9 +119,10 @@ export function buildLettersRoom(ctx: RoomCtx): LettersRoomPart {
   box(eb, 2.6, 1.6, 0.05, std('#a8804a', { roughness: 1 }), 0, 0, 0);
   const pinned = EVENTS.map((_, k) => {
     const x = -0.96 + (k % 4) * 0.64, y = k < 4 ? 0.38 : -0.42;
-    plane(eb, 0.56, 0.12, new THREE.MeshBasicMaterial({ map: textTex(String(k + 1), { color: '#3a2410', bg: '#efe2c4', w: 256, h: 64, size: 40 }) }), x, y + 0.26, 0.03);
+    const card = plane(eb, 0.6, 0.3, new THREE.MeshBasicMaterial({ map: eventCardTex(k + 1, EVENT_NAMES[k]) }), x, y + 0.24, 0.03);
+    card.rotation.z = ((k * 37) % 5 - 2) * 0.012;
     const holder = new THREE.Group();
-    holder.position.set(x, y - 0.06, 0.04);
+    holder.position.set(x, y - 0.12, 0.04);
     eb.add(holder);
     return holder;
   });

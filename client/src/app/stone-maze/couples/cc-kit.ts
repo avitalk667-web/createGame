@@ -29,7 +29,7 @@ export const mechIn = (s: RoomSnapshot, id: string): MechanismState | undefined 
 // ------------------------------------------------------------------------------------------------ materials
 
 const cache = new Map<string, THREE.Texture>();
-function canvasTex(key: string, w: number, h: number, draw: (g: CanvasRenderingContext2D, w: number, h: number) => void, repeat?: [number, number]) {
+export function canvasTex(key: string, w: number, h: number, draw: (g: CanvasRenderingContext2D, w: number, h: number) => void, repeat?: [number, number]) {
   let tex = cache.get(key);
   if (!tex) {
     const c = document.createElement('canvas');
@@ -200,6 +200,11 @@ export function drawSymbol(g: CanvasRenderingContext2D, id: string, cx: number, 
     case 'home':
       g.moveTo(-r * 0.8, -r * 0.05); g.lineTo(0, -r * 0.85); g.lineTo(r * 0.8, -r * 0.05); g.moveTo(-r * 0.6, -r * 0.2); g.lineTo(-r * 0.6, r * 0.8); g.lineTo(r * 0.6, r * 0.8); g.lineTo(r * 0.6, -r * 0.2);
       g.moveTo(-r * 0.18, r * 0.8); g.lineTo(-r * 0.18, r * 0.3); g.lineTo(r * 0.18, r * 0.3); g.lineTo(r * 0.18, r * 0.8); g.stroke(); break;
+    case 'gear':
+      for (let k = 0; k < 16; k++) { const a = (k * Math.PI) / 8, rr = k % 2 ? r * 0.68 : r * 0.9; k ? g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr) : g.moveTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+      g.closePath(); g.moveTo(r * 0.28, 0); g.arc(0, 0, r * 0.28, 0, Math.PI * 2); g.stroke(); break;
+    case 'envelope':
+      g.rect(-r * 0.85, -r * 0.55, r * 1.7, r * 1.1); g.moveTo(-r * 0.85, -r * 0.55); g.lineTo(0, r * 0.12); g.lineTo(r * 0.85, -r * 0.55); g.stroke(); break;
     case 'heart':
       g.moveTo(0, r * 0.8); g.bezierCurveTo(-r * 1.2, 0, -r * 0.6, -r, 0, -r * 0.35); g.bezierCurveTo(r * 0.6, -r, r * 1.2, 0, 0, r * 0.8); g.fill(); break;
     default:

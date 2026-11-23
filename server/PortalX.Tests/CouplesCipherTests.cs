@@ -53,22 +53,25 @@ public class CouplesCipherTests
         for (var i = 0; i < 3; i++) Assert.True(g.Op(0, "cc1-clock", new { op = "turn", hand = 0, dir = -1 }).Ok);
         for (var i = 0; i < 3; i++) Assert.True(g.Op(1, "cc1-clock", new { op = "turn", hand = 1, dir = 1 }).Ok);
         Assert.Equal("solved", g.Op(1, "cc1-clock", new { op = "press" }).Code);
-        Assert.Equal("solved", g.Answer(0, "cc1-missing", "38").Code);
+        // "הצליל החסר" is retired: the clock gives the brass stone and opens the next room
+        Assert.Contains("cc-foundation-stone", g.World.Inventory);
+        Assert.DoesNotContain(Cc.Puzzles, p => p.Id == "cc1-missing");
         g.Continue();
     }
 
-    /// <summary>The bridge as one player can do it: latch one half, move the other, release.</summary>
+    /// <summary>
+    /// The bridge, as the room explains it: aim the right half (it moves with the left one), bolt it, aim the left half alone,
+    /// bolt it too, and one release carries the ball into the container. One player can do it all; two can share it.
+    /// </summary>
     public static void Bridge(Game g, int a = 0, int b = 0)
     {
-        Assert.True(g.Op(a, "cc2-bridge", new { op = "latch", side = 1 }).Ok);
-        for (var i = 0; i < 3; i++) Assert.True(g.Op(a, "cc2-bridge", new { op = "tilt", side = 0, dir = 1 }).Ok);   // -2 → 1
-        Assert.Equal("rolled", g.Op(a, "cc2-bridge", new { op = "release" }).Code);   // station 1
-        Assert.Equal("rolled", g.Op(b, "cc2-bridge", new { op = "release" }).Code);   // the joint
-        Assert.True(g.Op(b, "cc2-bridge", new { op = "latch", side = 1 }).Ok);        // free the right half
-        Assert.True(g.Op(b, "cc2-bridge", new { op = "latch", side = 0 }).Ok);        // hold the left
-        Assert.True(g.Op(b, "cc2-bridge", new { op = "tilt", side = 1, dir = -1 }).Ok); // 2 → 1
-        Assert.Equal("rolled", g.Op(a, "cc2-bridge", new { op = "release" }).Code);   // station 3
-        Assert.Equal("solved", g.Op(b, "cc2-bridge", new { op = "release" }).Code);   // the container
+        Assert.True(g.Op(a, "cc2-bridge", new { op = "tilt", side = 0, dir = 1 }).Ok);    // seesaw: (-2, 2) → (-1, 1)
+        Assert.True(g.Op(b, "cc2-bridge", new { op = "latch", side = 1 }).Ok);           // the right half is set: bolt it
+        Assert.True(g.Op(a, "cc2-bridge", new { op = "tilt", side = 0, dir = 1 }).Ok);    // the left alone: (0, 1)
+        Assert.True(g.Op(a, "cc2-bridge", new { op = "tilt", side = 0, dir = 1 }).Ok);    // (1, 1)
+        Assert.True(g.Op(b, "cc2-bridge", new { op = "latch", side = 0 }).Ok);
+        Assert.Equal("solved", g.Op(a, "cc2-bridge", new { op = "release" }).Code);      // one run, into the container
+        Assert.Equal([0, 1, 2, 3, 4], g.Mech("cc2-bridge").Found.Select(int.Parse).ToArray());
     }
 
     /// <summary>The one way through the track that passes both lamps: cell → its turn (row × 6 + column).</summary>
@@ -129,31 +132,18 @@ public class CouplesCipherTests
         g.Continue();
     }
 
-    public static readonly (string Stage, (string Socket, string Item, int Turns)[] Parts)[] House =
-    [
-        ("foundation", [("f-nw", "cc-base-arch", 0), ("f-ne", "cc-base-flame", 0), ("f-se", "cc-foundation-stone", 0), ("f-sw", "cc-base-wave", 0)]),
-        ("walls", [("w-n", "cc-wall-hidden", 2), ("w-e", "cc-wall-door", 2), ("w-s", "cc-wall-garden", 0), ("w-w", "cc-wall-plain", 1)]),
-        ("openings", [("o-door", "cc-door", 0), ("o-garden", "cc-win-trio", 0), ("o-hidden", "cc-win-single", 0)]),
-        ("roof", [("r-west", "cc-roof-left", 0), ("r-east", "cc-roof-right", 0), ("r-ridge", "cc-seal", 0)]),
-        ("heart", [("h-axle", "cc-heart-gear", 0)]),
-    ];
-
-    public static ActionOutcome BuildStage(Game g, int stage)
-    {
-        var k = 0;
-        foreach (var (socket, item, turns) in House[stage].Parts)
-        {
-            Assert.True(g.Op(k, "cc6-build", new { op = "place", socket, item }).Ok, item);
-            for (var t = 0; t < turns; t++) Assert.True(g.Op(k, "cc6-build", new { op = "turn", socket }).Ok);
-            k++;
-        }
-        return g.Op(0, "cc6-build", new { op = "check" });
-    }
+    /// <summary>The last wall: each sign of the plan and the stone that belongs in it (the keepsakes carry both).</summary>
+    public static readonly (string Place, string Stone)[] Wall =
+        [("wave", "cc-stone-gear"), ("star", "cc-stone-home"), ("arch", "cc-stone-key"), ("flame", "cc-stone-letter"), ("leaf", "cc-stone-bell")];
 
     public static void Home(Game g)
     {
-        for (var s = 0; s < House.Length - 1; s++) Assert.Equal("stage", BuildStage(g, s).Code);
-        Assert.Equal("solved", BuildStage(g, House.Length - 1).Code);
+        for (var k = 0; k < Wall.Length; k++)
+        {
+            var (slot, item) = Wall[k];
+            var r = g.Op(k % g.Ps.Count, "cc6-wall", new { op = "place", slot, item });
+            Assert.Equal(k == Wall.Length - 1 ? "solved" : "placed", r.Code);
+        }
     }
 
     public static void PlayAll(Game g)
@@ -177,7 +167,7 @@ public class CouplesCipherTests
             var count = Cc.Puzzles.Count(p => p.Zone == z.Id && !p.Id.StartsWith("cc3-safe-")) + (z.Id == "cc-trust" ? 1 : 0);
             Assert.InRange(count, 2, 3);
         }
-        Assert.Equal(["cc6-build"], Cc.Puzzles.Where(p => p.Zone == "cc-home").Select(p => p.Id).ToArray());
+        Assert.Equal(["cc6-wall"], Cc.Puzzles.Where(p => p.Zone == "cc-home").Select(p => p.Id).ToArray());
         // only one puzzle built for two: the bridge
         Assert.Single(Cc.Puzzles, p => p.Type == "bridge");
         Assert.NotNull(Cc.Scoring);
@@ -195,22 +185,30 @@ public class CouplesCipherTests
         Assert.Equal("cc-roof-left", Cc.Puzzle("cc3-safe-b").RewardItem);
         Assert.Equal("cc-wall-garden", Cc.Puzzle("cc5-order").RewardItem);
         Assert.Equal("cc-wall-hidden", Cc.Puzzle("cc5-keywords").RewardItem);
-        // the two house plans hang in the building room
-        Assert.Contains(Cc.Clues, c => c.Id == "cc6-plan-746" && c.Zone == "cc-home");
-        Assert.Contains(Cc.Clues, c => c.Id == "cc6-plan-128" && c.Zone == "cc-home");
+        // the plan of the last wall hangs in the house room; the old house build is retired
+        Assert.Contains(Cc.Clues, c => c.Id == "cc6-plan" && c.Zone == "cc-home");
+        Assert.DoesNotContain(Cc.Puzzles, p => p.Id == "cc6-build");
         // the rooms are numbered 1–5 without a gap
         Assert.Equal([1, 2, 3, 4, 5], Cc.Zones.Select(z => z.Order).OrderBy(o => o).ToArray());
     }
 
     [Fact]
-    public void Every_reward_is_a_part_of_the_house()
+    public void Every_room_leaves_a_keepsake_that_ties_a_stone_to_a_place_in_the_last_wall()
     {
         var rewards = Cc.Puzzles.Where(p => p.RewardItem != null).Select(p => p.RewardItem!).ToList();
-        var house = Cc.Puzzle("cc6-build").Solution.AsObject().SelectMany(st => st.Value!.AsObject().Select(kv => kv.Value!.GetValue<string>().Split('@')[0])).ToHashSet();
         Assert.Equal(7, rewards.Count);
-        Assert.All(rewards, r => Assert.Contains(r, house));
-        // every room before the house gives at least one part
+        // every room before the house gives at least one keepsake
         Assert.All(Cc.Zones.Take(4), z => Assert.Contains(Cc.Puzzles, p => p.Zone == z.Id && p.RewardItem != null));
+        // one keepsake per room carries the emblem of its stone and the sign of its place; the house itself is drawn on the plan
+        var signs = new Dictionary<string, string> { ["wave"] = "גל", ["star"] = "כוכב", ["arch"] = "קשת", ["flame"] = "להבה", ["leaf"] = "עלה" };
+        var keepsake = new Dictionary<string, string> { ["cc-stone-bell"] = "cc-foundation-stone", ["cc-stone-gear"] = "cc-heart-gear", ["cc-stone-key"] = "cc-door", ["cc-stone-letter"] = "cc-seal" };
+        foreach (var (place, stone) in Wall)
+        {
+            Assert.Contains(stone, Cc.Items.Select(i => i.Id));
+            if (!keepsake.TryGetValue(stone, out var k)) { Assert.Contains("בית קטן", Cc.Clues.First(c => c.Id == "cc6-plan").Text); continue; }
+            Assert.Contains(k, rewards);
+            Assert.Contains(signs[place], Cc.Items.First(i => i.Id == k).Description);
+        }
     }
 
     // ------------------------------------------------------------------ the whole game
@@ -224,8 +222,9 @@ public class CouplesCipherTests
         PlayAll(g);
         Assert.Equal(RoomPhase.Completed, g.R.Phase);
         Assert.All(g.R.Puzzles, p => Assert.Equal(PuzzleStatus.Solved, p.Status));
-        // nothing collected is left over: every reward went into the house
-        Assert.DoesNotContain(g.World.Inventory, i => Cc.Puzzles.Any(p => p.RewardItem == i));
+        // the keepsakes stay in the bag; the five stones are all in the wall
+        Assert.Equal(5, g.Mech("cc6-wall").Slots.Count);
+        Assert.DoesNotContain(g.World.WorldItems, i => i.StartsWith("cc-stone-"));
         var result = g.E.BuildResult(g.R);
         Assert.Equal(Cc.Puzzles.Count, result.PuzzlesTotal);
         Assert.Equal(result.PuzzlesTotal, result.PuzzlesSolved);
@@ -240,7 +239,7 @@ public class CouplesCipherTests
         // group: the room's points (easy = 100, no hints); personal: answers and the clock mechanism
         Assert.Equal(100, board.Rooms["cc-sounds"]);
         Assert.Equal(100, board.Group);
-        Assert.Equal(25 + 25, board.Personal[g.Ps[0].Id.ToString()]);
+        Assert.Equal(25, board.Personal[g.Ps[0].Id.ToString()]);   // one answer: "הצליל החסר" is retired
         Assert.Equal(20, board.Personal[g.Ps[1].Id.ToString()]);
         // a hint costs the room's group points, as in the other games
         Assert.True(g.E.RequestHint(g.R, g.Ps[0].Id, "cc2-bridge", T0).Ok);
@@ -294,17 +293,24 @@ public class CouplesCipherTests
         Assert.Equal("stuck", GameEngine.RollBall(BridgeData, 0, 0, 0).End);
         Assert.Equal("stuck", GameEngine.RollBall(BridgeData, 0, -1, 0).End);
         Assert.Equal("steep", GameEngine.RollBall(BridgeData, 0, 3, 3).End);
-        Assert.Equal([0, 1], GameEngine.RollBall(BridgeData, 0, 1, 1).Path.ToArray());
-        // two stations at once, to the joint, where the halves must meet
-        Assert.Equal("rest", GameEngine.RollBall(BridgeData, 0, 2, 2).End);
+        // one release rolls as far as the slopes go: gently all the way into the container
+        var run = GameEngine.RollBall(BridgeData, 0, 1, 1);
+        Assert.Equal("container", run.End);
+        Assert.Equal([0, 1, 2, 3, 4], run.Path.ToArray());
+        Assert.Equal("container", GameEngine.RollBall(BridgeData, 0, 2, 1).End);
+        // the halves must meet at the joint
         Assert.Equal("joint", GameEngine.RollBall(BridgeData, 0, 2, -1).End);
-        // uphill on the other half stops it at the joint
-        var up = GameEngine.RollBall(BridgeData, 1, 1, 0);
+        // uphill or flat on the other half stops it at the joint
+        var up = GameEngine.RollBall(BridgeData, 0, 1, 0);
         Assert.Equal("rest", up.End);
         Assert.Equal(2, up.Path[^1]);
-        // into the container: gently only
-        Assert.Equal("bounced", GameEngine.RollBall(BridgeData, 2, 2, 2).End);
-        Assert.Equal("container", GameEngine.RollBall(BridgeData, 3, 1, 1).End);
+        // into the container: only on a gentle last half, however steep the first
+        Assert.Equal("bounced", GameEngine.RollBall(BridgeData, 0, 2, 2).End);
+        Assert.Equal("bounced", GameEngine.RollBall(BridgeData, 0, 1, 2).End);
+        // without "continuous" (the older bridges), a slope of n still moves the ball n stations
+        var stepwise = (JsonObject)BridgeData.DeepClone();
+        stepwise.Remove("continuous");
+        Assert.Equal([0, 1], GameEngine.RollBall(stepwise, 0, 1, 1).Path.ToArray());
     }
 
     [Fact]
@@ -334,13 +340,15 @@ public class CouplesCipherTests
     {
         var g = Start(1, "CCJOIN");
         Sounds(g);
+        // (-2, 2) → (0, 0); bolt the flat right half, tilt the left: the ball rolls down and stops at the joint
+        g.Op(0, "cc2-bridge", new { op = "tilt", side = 0, dir = 1 });
+        g.Op(0, "cc2-bridge", new { op = "tilt", side = 0, dir = 1 });
         g.Op(0, "cc2-bridge", new { op = "latch", side = 1 });
-        for (var i = 0; i < 3; i++) g.Op(0, "cc2-bridge", new { op = "tilt", side = 0, dir = 1 });
-        g.Op(0, "cc2-bridge", new { op = "release" });
-        g.Op(0, "cc2-bridge", new { op = "release" });
+        g.Op(0, "cc2-bridge", new { op = "tilt", side = 0, dir = 1 });
+        Assert.Equal("rolled", g.Op(0, "cc2-bridge", new { op = "release" }).Code);
         Assert.Equal(2, g.Mech("cc2-bridge").Progress);
-        // the left half down by one (latched right half stays at 2): 0 vs 2 — too far apart
-        Assert.Equal("fell", g.Op(0, "cc2-bridge", new { op = "tilt", side = 0, dir = -1 }).Code);
+        // the left half up to 2 while the right stays at 0: too far apart, the ball falls between them
+        Assert.Equal("fell", g.Op(0, "cc2-bridge", new { op = "tilt", side = 0, dir = 1 }).Code);
         Assert.Equal(0, g.Mech("cc2-bridge").Progress);
         Assert.Equal("joint", g.Mech("cc2-bridge").Revealed);
     }
@@ -388,10 +396,39 @@ public class CouplesCipherTests
         var g = Start(1, "CCGEAR");
         Sounds(g);
         Bridge(g);
-        foreach (var (slot, item) in new[] { ("g1", "cc-gear-r3-20"), ("g2", "cc-gear-r1-8"), ("g3", "cc-gear-r2-16") })
+        // the right size with the wrong teeth is refused on the pin itself
+        Assert.Equal("wrong-place", g.Op(0, "cc2-gears", new { op = "place", slot = "g1", item = "cc-gear-r3-20" }).Code);
+        foreach (var (slot, item) in new[] { ("g2", "cc-gear-r1-8"), ("g3", "cc-gear-r2-16") })
             g.Op(0, "cc2-gears", new { op = "place", slot, item });
         Assert.NotEqual("solved", g.Op(0, "cc2-gears", new { op = "activate" }).Code);
         Assert.Equal(PuzzleStatus.Active, g.Status("cc2-gears"));
+    }
+
+    [Fact]
+    public void Each_gear_is_judged_on_its_pin_a_wrong_one_counts_and_stays_on_the_table()
+    {
+        var g = Start(2, "CCPINS");
+        Sounds(g);
+        Bridge(g);
+        var before = g.R.Puzzles.First(p => p.PuzzleId == "cc2-gears").Attempts;
+        // a wrong gear: refused at once, counted as a wrong attempt, still on the table; the message names no size or teeth
+        var wrong = g.Op(0, "cc2-gears", new { op = "place", slot = "g1", item = "cc-gear-r3-20" });
+        Assert.False(wrong.Ok);
+        Assert.Equal("wrong-place", wrong.Code);
+        Assert.DoesNotContain("24", wrong.Message);
+        Assert.DoesNotContain("רדיוס", wrong.Message);
+        Assert.Contains("cc-gear-r3-20", g.World.WorldItems);
+        Assert.False(g.Mech("cc2-gears").Slots.ContainsKey("g1"));
+        Assert.Equal(before + 1, g.R.Puzzles.First(p => p.PuzzleId == "cc2-gears").Attempts);
+        // a right gear stays on its pin, and cannot be lifted off again
+        Assert.True(g.Op(1, "cc2-gears", new { op = "place", slot = "g1", item = "cc-gear-r3-24" }).Ok);
+        Assert.Equal("verified", g.Op(0, "cc2-gears", new { op = "remove", slot = "g1" }).Code);
+        // the whole train first: the mechanism waits until every pin holds its gear, and only then can it be activated
+        Assert.Equal("not-ready", g.Op(0, "cc2-gears", new { op = "activate" }).Code);
+        Assert.True(g.Op(0, "cc2-gears", new { op = "place", slot = "g2", item = "cc-gear-r1-8" }).Ok);
+        Assert.True(g.Op(1, "cc2-gears", new { op = "place", slot = "g3", item = "cc-gear-r2-16" }).Ok);
+        Assert.Equal(PuzzleStatus.Active, g.Status("cc2-gears"));
+        Assert.Equal("solved", g.Op(0, "cc2-gears", new { op = "activate" }).Code);
     }
 
     // ------------------------------------------------------------------ the house
@@ -404,60 +441,50 @@ public class CouplesCipherTests
     }
 
     [Fact]
-    public void A_wrong_stage_does_not_lock_or_say_which_part_is_wrong()
+    public void A_wrong_stone_goes_back_to_the_shelf_counts_as_a_wrong_attempt_and_says_nothing_of_the_answer()
     {
         var g = AtTheHouse(1, "CCHOM1");
-        // the look-alike star stone instead of the wave stone
-        g.Op(0, "cc6-build", new { op = "place", socket = "f-nw", item = "cc-base-arch" });
-        g.Op(0, "cc6-build", new { op = "place", socket = "f-ne", item = "cc-base-flame" });
-        g.Op(0, "cc6-build", new { op = "place", socket = "f-se", item = "cc-foundation-stone" });
-        g.Op(0, "cc6-build", new { op = "place", socket = "f-sw", item = "cc-base-star" });
-        var wrong = g.Op(0, "cc6-build", new { op = "check" });
-        Assert.Equal("wrong-answer", wrong.Code);
-        Assert.DoesNotContain("כוכב", wrong.Message);
-        Assert.Equal(0, g.Mech("cc6-build").Progress);
-        // the next stage stays closed until this one is right
-        Assert.Equal("bad-socket", g.Op(0, "cc6-build", new { op = "place", socket = "w-n", item = "cc-wall-hidden" }).Code);
-        // swap the stone back: it returns to the shelf in the room
-        Assert.True(g.Op(0, "cc6-build", new { op = "remove", socket = "f-sw" }).Ok);
-        Assert.Contains("cc-base-star", g.World.WorldItems);
-        Assert.True(g.Op(0, "cc6-build", new { op = "place", socket = "f-sw", item = "cc-base-wave" }).Ok);
-        Assert.Equal("stage", g.Op(0, "cc6-build", new { op = "check" }).Code);
-        Assert.Equal(1, g.Mech("cc6-build").Progress);
+        var before = g.R.Puzzles.First(p => p.PuzzleId == "cc6-wall").Attempts;
+        var wrong = g.Op(0, "cc6-wall", new { op = "place", slot = "wave", item = "cc-stone-bell" });
+        Assert.Equal("wrong-place", wrong.Code);
+        Assert.DoesNotContain("גלגל", wrong.Message);
+        Assert.Contains("cc-stone-bell", g.World.WorldItems);
+        Assert.False(g.Mech("cc6-wall").Slots.ContainsKey("wave"));
+        Assert.Equal(before + 1, g.R.Puzzles.First(p => p.PuzzleId == "cc6-wall").Attempts);
+        // a right stone stays in the wall: it can't be taken out again
+        Assert.Equal("placed", g.Op(0, "cc6-wall", new { op = "place", slot = "wave", item = "cc-stone-gear" }).Code);
+        Assert.Equal("verified", g.Op(0, "cc6-wall", new { op = "remove", slot = "wave" }).Code);
+        Assert.Contains(g.World.Score!.Log, e => e.Key == "placement:cc6-wall:wave" && e.PlayerId == g.Ps[0].Id.ToString());
     }
 
     [Fact]
-    public void A_wall_turned_to_the_wrong_side_is_wrong_and_the_parts_lock_once_right()
+    public void Each_wrong_stone_takes_points_off_the_room_like_a_hint_and_every_screen_sees_where_it_was()
+    {
+        var g = AtTheHouse(2, "CCHOM4");
+        var wrong = g.Op(1, "cc6-wall", new { op = "place", slot = "star", item = "cc-stone-key" });
+        Assert.Contains("−5", wrong.Message);
+        // the place judged wrong is in the shared state (both screens frame it), and only that one
+        Assert.Equal(new Dictionary<string, bool> { ["star"] = false }, g.Mech("cc6-wall").Verdict);
+        g.Op(0, "cc6-wall", new { op = "place", slot = "wave", item = "cc-stone-bell" });
+        Assert.Equal(new Dictionary<string, bool> { ["wave"] = false }, g.Mech("cc6-wall").Verdict);
+        Assert.Equal(2, g.Mech("cc6-wall").Misses);
+        Home(g);
+        var full = Cc.Scoring!.Room[Cc.ZoneDifficulty["cc-home"]];
+        var room = g.World.Score!.Log.Single(e => e.Key == "room:cc-home");
+        Assert.Equal(full - 2 * 5, room.Points);
+        Assert.Contains("2 הצבות שגויות", room.Reason);
+    }
+
+    [Fact]
+    public void The_fifth_right_stone_completes_the_wall_and_the_game_for_both_players()
     {
         var g = AtTheHouse(2, "CCHOM2");
-        Assert.Equal("stage", BuildStage(g, 0).Code);
-        foreach (var (socket, item) in new[] { ("w-n", "cc-wall-hidden"), ("w-e", "cc-wall-door"), ("w-s", "cc-wall-garden"), ("w-w", "cc-wall-plain") })
-            g.Op(0, "cc6-build", new { op = "place", socket, item });
-        Assert.Equal("wrong-answer", g.Op(1, "cc6-build", new { op = "check" }).Code);
-        g.Op(0, "cc6-build", new { op = "turn", socket = "w-n" });
-        g.Op(0, "cc6-build", new { op = "turn", socket = "w-n" });
-        g.Op(0, "cc6-build", new { op = "turn", socket = "w-e" });
-        g.Op(0, "cc6-build", new { op = "turn", socket = "w-e" });
-        Assert.False(g.Op(0, "cc6-build", new { op = "turn", socket = "f-nw" }).Ok);
-        Assert.Equal("stage", g.Op(1, "cc6-build", new { op = "check" }).Code);
-        Assert.Equal(new[] { "f-ne", "f-nw", "f-se", "f-sw", "w-e", "w-n", "w-s", "w-w" }, g.Mech("cc6-build").Verdict.Keys.Order().ToArray());
-        // placements score for the player who placed them, once the stage is right
-        Assert.Contains(g.World.Score!.Log, e => e.Key == "placement:cc6-build:w-n" && e.PlayerId == g.Ps[0].Id.ToString());
-    }
-
-    [Fact]
-    public void The_plain_gear_does_not_start_the_house()
-    {
-        var g = AtTheHouse(1, "CCHOM3");
-        for (var s = 0; s < 4; s++) Assert.Equal("stage", BuildStage(g, s).Code);
-        g.Op(0, "cc6-build", new { op = "place", socket = "h-axle", item = "cc-gear-plain" });
-        Assert.Equal("wrong-answer", g.Op(0, "cc6-build", new { op = "check" }).Code);
+        foreach (var (slot, item) in Wall.Take(4)) Assert.Equal("placed", g.Op(1, "cc6-wall", new { op = "place", slot, item }).Code);
         Assert.NotEqual(RoomPhase.Completed, g.R.Phase);
-        g.Op(0, "cc6-build", new { op = "remove", socket = "h-axle" });
-        g.Op(0, "cc6-build", new { op = "place", socket = "h-axle", item = "cc-heart-gear" });
-        var done = g.Op(0, "cc6-build", new { op = "check" });
+        var done = g.Op(0, "cc6-wall", new { op = "place", slot = "leaf", item = "cc-stone-bell" });
         Assert.Equal("solved", done.Code);
         Assert.Equal(RoomPhase.Completed, g.R.Phase);
         Assert.Contains(done.Notices, n => n.Kind == "game-completed" && n.Message.Contains("ביחד"));
     }
+
 }
