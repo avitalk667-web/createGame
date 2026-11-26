@@ -15,7 +15,7 @@ namespace PortalX.Server.Newsletter;
 /// </summary>
 public sealed class NewsletterStats(PortalDbContext db)
 {
-    public static readonly string[] Filters = ["all", "clicked", "not-clicked", "game", "catalog", "purchased"];
+    public static readonly string[] Filters = ["all", "clicked", "not-clicked", "game", "catalog", "share", "purchased"];
 
     private sealed record Click(long Id, long? DeliveryId, Guid LinkId, DateTime ClickedAt, bool IsAutomated, string? AutomatedReason);
 
@@ -155,6 +155,7 @@ public sealed class NewsletterStats(PortalDbContext db)
             ["not-clicked"] = rows.Count(r => r.clicks == 0),
             ["game"] = rows.Count(r => r.categories.Contains("game")),
             ["catalog"] = rows.Count(r => r.categories.Contains("catalog")),
+            ["share"] = rows.Count(r => r.categories.Contains("share")),
             ["purchased"] = rows.Count(r => r.purchase == "yes"),
         };
         var shown = rows.Where(r => filter switch
@@ -163,6 +164,7 @@ public sealed class NewsletterStats(PortalDbContext db)
             "not-clicked" => r.clicks == 0,
             "game" => r.categories.Contains("game"),
             "catalog" => r.categories.Contains("catalog"),
+            "share" => r.categories.Contains("share"),
             "purchased" => r.purchase == "yes",
             _ => true,
         }).OrderByDescending(r => r.firstClickAt ?? DateTime.MinValue).ThenBy(r => r.Email).Take(2000).ToList();

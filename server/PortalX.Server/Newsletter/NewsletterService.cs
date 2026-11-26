@@ -36,7 +36,7 @@ public sealed record NewsletterSendRequest(int? Confirm);
 /// message, so nobody ever sees another person's links or address.
 /// </summary>
 public sealed class NewsletterService(PortalDbContext db, UnsubscribeLinks links, SiteOptions site, IEmailSender sender,
-    NewsletterOptions options, NewsletterRunner runner, NewsletterTracking tracking)
+    NewsletterOptions options, NewsletterRunner runner, NewsletterTracking tracking, CampaignContent campaign)
 {
     public const string TestPrefix = "[בדיקה] ";
     /// <summary>Gmail cuts an email longer than about 102KB ("[ההודעה נחתכה]"): warn well before that.</summary>
@@ -44,29 +44,28 @@ public sealed class NewsletterService(PortalDbContext db, UnsubscribeLinks links
 
     private static readonly string[] Done = ["sent", "uncertain", "sending"];
 
-    private NewsletterSite Site(string siteUrl) => new(siteUrl.TrimEnd('/'), site.ContactEmail);
+    /// <summary>The site, and its raffle while the draw is still ahead (checked at the moment each email is built).</summary>
+    private NewsletterSite Site(string siteUrl) => new(siteUrl.TrimEnd('/'), site.ContactEmail,
+        campaign.IsOpen(DateTimeOffset.UtcNow) ? new NewsletterRaffle(campaign.Prize, campaign.DrawWhen()) : null);
 
     /// <summary>The personal referral link of an address, if it has an active one.</summary>
     private Task<ReferralLink?> LinkAsync(string email) =>
         db.ReferralLinks.AsNoTracking().FirstOrDefaultAsync(l => l.Email == email && l.Status == ReferralLinkStatus.Active && l.DisabledAt == null);
 
-    /// <summary>The page the "game" personal link opens: the link itself, told which product page to land on.</summary>
-    public static string GameLink(ReferralLink link, string gameId, string siteUrl) => $"{ReferralService.LinkUrl(link, siteUrl)}?to={Uri.EscapeDataString(gameId)}";
+    /// <summary>The site's page that shows a personal link (the existing one, never a new one) with a copy button.</summary>
+    public const string CopyPagePath = "/my-link/";
+    public static string CopyPage(string token, string siteUrl) => $"{siteUrl.TrimEnd('/')}{CopyPagePath}{token}";
 
     /// <summary>Everything personal in one email, read from this address's own rows only.</summary>
     public async Task<NewsletterRecipient> RecipientAsync(string email, NewsletterContent c, string siteUrl, MarketingConsent? consent)
     {
         var link = await LinkAsync(email);
         var unsubscribe = consent is { Status: ConsentStatus.Active } ? await links.UrlAsync(consent, siteUrl) : null;
-        return new NewsletterRecipient(email, link?.FirstName,
-            link == null ? null : GameLink(link, c.Links.GameId, siteUrl),
-            link == null ? null : ReferralService.LinkUrl(link, siteUrl),
-            unsubscribe);
+        return new NewsletterRecipient(email, link?.FirstName, link == null ? null : CopyPage(link.Token, siteUrl), unsubscribe);
     }
 
-    /// <summary>The look of a mailing for someone with every personal part (sample links, no real ones).</summary>
-    public static NewsletterRecipient Sample(string siteUrl) =>
-        new("example@example.com", "ישראל", $"{siteUrl.TrimEnd('/')}/r/EXAMPLE?to=hanukkah-oil", $"{siteUrl.TrimEnd('/')}/r/EXAMPLE", null);
+    /// <summary>The look of a mailing for someone with every personal part (a sample link, no real one).</summary>
+    public static NewsletterRecipient Sample(string siteUrl) => new("example@example.com", "ישראל", CopyPage("EXAMPLE", siteUrl), null);
 
     public async Task<object> PreviewAsync(NewsletterContent c, string? email, string siteUrl)
     {
@@ -85,7 +84,7 @@ public sealed class NewsletterService(PortalDbContext db, UnsubscribeLinks links
         return new
         {
             subject = NewsletterTemplate.Subject(c), html, text = NewsletterTemplate.Text(c, r, Site(siteUrl)), bytes,
-            who, hasGameLink = r.GameLinkUrl != null, hasSiteLink = r.SiteLinkUrl != null, hasUnsubscribe = r.UnsubscribeUrl != null,
+            who, hasPersonalLink = r.CopyPageUrl != null, hasUnsubscribe = r.UnsubscribeUrl != null,
             warning = bytes > ClipWarnBytes ? "המייל ארוך מדי: Gmail עלול לקצר אותו. כדאי לקצר טקסט או להסתיר אזור." : null,
             problem = c.Validate(),
         };
@@ -218,7 +217,7 @@ public sealed class NewsletterService(PortalDbContext db, UnsubscribeLinks links
             {
                 await sender.SendAsync(new EmailMessage(e, TestPrefix + NewsletterTemplate.Subject(c),
                     NewsletterTemplate.Html(c, r, Site(siteUrl)), NewsletterTemplate.Text(c, r, Site(siteUrl)), r.UnsubscribeUrl));
-                results.Add(new { email = e, ok = true, personalLinks = r.GameLinkUrl != null, unsubscribe = r.UnsubscribeUrl != null });
+                results.Add(new { email = e, ok = true, personalLinks = r.CopyPageUrl != null, unsubscribe = r.UnsubscribeUrl != null });
             }
             catch (EmailSendException ex)
             {

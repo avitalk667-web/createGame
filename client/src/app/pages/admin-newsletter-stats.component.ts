@@ -39,9 +39,10 @@ async function get<T>(url: string): Promise<T> {
 
 const FILTERS: { id: string; label: string }[] = [
   { id: 'all', label: 'כל הנמענים' }, { id: 'clicked', label: 'לחצו' }, { id: 'not-clicked', label: 'לא לחצו' },
-  { id: 'game', label: 'לחצו על קישור למשחק' }, { id: 'catalog', label: 'לחצו על קטלוג המשחקים' }, { id: 'purchased', label: 'רכשו אחרי הקלקה' },
+  { id: 'game', label: 'לחצו על קישור למשחק' }, { id: 'catalog', label: 'לחצו על קטלוג המשחקים' },
+  { id: 'share', label: 'פתחו את הקישור האישי לשיתוף' }, { id: 'purchased', label: 'רכשו אחרי הקלקה' },
 ];
-const CATEGORY: Record<string, string> = { game: 'משחק', catalog: 'קטלוג / אתר', other: 'אחר' };
+const CATEGORY: Record<string, string> = { game: 'משחק', catalog: 'קטלוג / אתר', share: 'שיתוף הקישור', other: 'אחר' };
 const REASON: Record<string, string> = {
   agent: 'דפדפן של סורק או כלי אוטומטי', head: 'בדיקת קישור בלי פתיחה', prefetch: 'טעינה מוקדמת',
   'too-fast': 'פחות מ־10 שניות אחרי השליחה', burst: 'כמה קישורים באותן שניות',

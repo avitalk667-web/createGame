@@ -31,7 +31,14 @@ public sealed partial class NewsletterContent
     };
 
     public string ToJson() => JsonSerializer.Serialize(this, Json);
-    public static NewsletterContent FromJson(string json) => JsonSerializer.Deserialize<NewsletterContent>(json, Json) ?? new();
+    public static NewsletterContent FromJson(string json)
+    {
+        var c = JsonSerializer.Deserialize<NewsletterContent>(json, Json) ?? new();
+        // a draft saved with the earlier two-button area keeps its custom texts, but the old default wording follows the new one
+        if (c.Links.Title == NewsletterLinks.OldTitle) c.Links.Title = new NewsletterLinks().Title;
+        if (c.Links.Note == NewsletterLinks.OldNote) c.Links.Note = new NewsletterLinks().Note;
+        return c;
+    }
 
     public const int MaxSections = 8;
     public const int MaxClues = 10;
@@ -60,8 +67,8 @@ public sealed partial class NewsletterContent
                 if (s.Clues.Any(c => string.IsNullOrWhiteSpace(c.Code) || Long(c.Code, 12) || Long(c.Text, 200))) return $"בחידה \"{s.Title}\" יש רמז בלי קוד או ארוך מדי.";
             }
         }
-        if (Links.Show && !GameId().IsMatch(Links.GameId ?? "")) return "מזהה המשחק של הקישור האישי אינו תקין.";
-        if (Long(Links.GameLabel, 80) || Long(Links.SiteLabel, 80) || Long(Links.Title, 80) || Long(Links.Note, 300)) return "טקסט הקישורים האישיים ארוך מדי.";
+        if (Links.Show && string.IsNullOrWhiteSpace(Links.ButtonLabel)) return "חסר טקסט לכפתור הקישור האישי (או הסתירו את האזור).";
+        if (Long(Links.ButtonLabel, 60) || Long(Links.Title, 80) || Long(Links.Note, 300) || Long(Links.Footnote, 200)) return "טקסט אזור הקישור האישי ארוך מדי.";
         if (Offer.Show)
         {
             if (string.IsNullOrWhiteSpace(Offer.Code) || !CouponCode().IsMatch(Offer.Code)) return "קוד הקופון חייב להכיל אותיות באנגלית, ספרות, מקף או קו תחתון (עד 32 תווים).";
@@ -175,16 +182,22 @@ public sealed class NewsletterClue
     public string Text { get; set; } = "";
 }
 
-/// <summary>The two personal links of each recipient (their own referral link); a button is left out when there is none.</summary>
+/// <summary>
+/// The share area: one button that opens a page of the site showing the recipient's own existing personal link, with
+/// a copy button (an email cannot copy to the clipboard itself). Left out for a recipient without an active link.
+/// </summary>
 public sealed class NewsletterLinks
 {
+    public const string OldTitle = "הקישורים האישיים שלכם";
+    public const string OldNote = "לשיתוף עם חברים ומשפחה";
+
     public bool Show { get; set; } = true;
-    public string Title { get; set; } = "הקישורים האישיים שלכם";
-    public string Note { get; set; } = "לשיתוף עם חברים ומשפחה";
-    /// <summary>The product the first link opens (its page on the site).</summary>
-    public string GameId { get; set; } = "hanukkah-oil";
-    public string GameLabel { get; set; } = "סוד פך השמן – הקישור האישי שלי";
-    public string SiteLabel { get; set; } = "אתר המשחקים PORTAL-X – הקישור האישי שלי";
+    public string Title { get; set; } = "הקישור האישי שלכם";
+    public string Note { get; set; } = "נהניתם מהחוויה? שתפו את החברים והמשפחה!";
+    public string ButtonLabel { get; set; } = "📋 העתקת הקישור האישי";
+    public string Footnote { get; set; } = "שתפו והזמינו גם אותם לגלות את עולם PORTAL-X";
+    /// <summary>Show the site's raffle line in the share area (only while the draw is still ahead).</summary>
+    public bool ShowRaffle { get; set; } = true;
 }
 
 public sealed class NewsletterOffer

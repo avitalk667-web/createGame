@@ -9,7 +9,7 @@ export interface NlContent {
   subject: string; adPrefix: boolean; preheader: string; greeting: boolean;
   intro: { show: boolean; title: string; lead: string; text: string };
   sections: NlSection[];
-  links: { show: boolean; title: string; note: string; gameId: string; gameLabel: string; siteLabel: string };
+  links: { show: boolean; title: string; note: string; buttonLabel: string; footnote: string; showRaffle: boolean };
   offer: { show: boolean; title: string; subtitle: string; percent: number; gameName: string; code: string; imageUrl: string; note: string };
   cta: { show: boolean; label: string; url: string };
 }
@@ -25,7 +25,7 @@ export interface NlIssue {
 interface NlList { issues: NlIssue[]; audience: number; senderReady: boolean; dailyLimit: number; sentLast24h: number }
 interface NlDetail { issue: NlIssue; content: NlContent; pending: number; running: boolean; tested: boolean; locked: boolean }
 interface NlPreview {
-  subject: string; html: string; text: string; bytes: number; who: string; hasGameLink: boolean; hasSiteLink: boolean; hasUnsubscribe: boolean;
+  subject: string; html: string; text: string; bytes: number; who: string; hasPersonalLink: boolean; hasUnsubscribe: boolean;
   warning?: string | null; problem?: string | null;
 }
 interface NlTestResult { ok: boolean; results: { email: string; ok: boolean; error?: string; personalLinks?: boolean; unsubscribe?: boolean }[] }
@@ -154,16 +154,15 @@ const ERRORS: Record<string, string> = { 'not-configured': 'שליחת המיי�
             }
             <button class="btn small" type="button" (click)="addSection()" [disabled]="c.sections.length >= 8">+ אזור תוכן</button>
 
-            <h3><label class="check"><input type="checkbox" [checked]="c.links.show" (change)="set(c.links, 'show', chk($event))" /> הקישורים האישיים</label></h3>
+            <h3><label class="check"><input type="checkbox" [checked]="c.links.show" (change)="set(c.links, 'show', chk($event))" /> הקישור האישי (שיתוף)</label></h3>
             @if (c.links.show) {
-              <p class="muted small">הקישורים נלקחים מהקישור האישי של כל נמען. למי שאין קישור — האזור לא מוצג.</p>
-              <label class="field">כותרת<input [value]="c.links.title" (input)="set(c.links, 'title', val($event))" /></label>
-              <label class="field">שורת הסבר<input [value]="c.links.note" (input)="set(c.links, 'note', val($event))" /></label>
-              <div class="row2">
-                <label class="field">כפתור המשחק<input [value]="c.links.gameLabel" (input)="set(c.links, 'gameLabel', val($event))" /></label>
-                <label class="field icon wide">מזהה המשחק<input dir="ltr" [value]="c.links.gameId" (input)="set(c.links, 'gameId', val($event))" /></label>
-              </div>
-              <label class="field">כפתור האתר<input [value]="c.links.siteLabel" (input)="set(c.links, 'siteLabel', val($event))" /></label>
+              <p class="muted small">כפתור אחד שפותח באתר דף עם הקישור האישי הקיים של הנמען וכפתור העתקה (מייל לא יכול להעתיק בעצמו). למי שאין קישור — האזור לא מוצג.</p>
+              <label class="field">כותרת (אחרי 🔗)<input [value]="c.links.title" (input)="set(c.links, 'title', val($event))" /></label>
+              <label class="field">טקסט<input [value]="c.links.note" (input)="set(c.links, 'note', val($event))" /></label>
+              <label class="field">טקסט הכפתור<input [value]="c.links.buttonLabel" (input)="set(c.links, 'buttonLabel', val($event))" maxlength="60" /></label>
+              <label class="field">טקסט קטן מתחת<input [value]="c.links.footnote" (input)="set(c.links, 'footnote', val($event))" /></label>
+              <label class="check"><input type="checkbox" [checked]="c.links.showRaffle" (change)="set(c.links, 'showRaffle', chk($event))" /> 🎁 שורת ההגרלה ("כל רכישה דרך הקישור האישי = כרטיס להגרלה…")</label>
+              <p class="muted small">הנוסח, הפרס ומועד ההגרלה נלקחים מהבאנר של האתר; השורה יורדת לבד אחרי מועד ההגרלה.</p>
             }
 
             <h3><label class="check"><input type="checkbox" [checked]="c.offer.show" (change)="set(c.offer, 'show', chk($event))" /> הטבה וקופון</label></h3>
@@ -213,7 +212,7 @@ const ERRORS: Record<string, string> = { 'not-configured': 'שליחת המיי�
             </div>
             @if (preview(); as p) {
               <p class="small"><b>נושא:</b> {{ p.subject }}</p>
-              <p class="small muted">{{ p.who }} · קישור משחק: {{ p.hasGameLink ? '✓' : '—' }} · קישור אתר: {{ p.hasSiteLink ? '✓' : '—' }} · קישור הסרה: {{ p.hasUnsubscribe ? '✓' : 'לדוגמה' }} · {{ (p.bytes / 1024).toFixed(0) }}KB</p>
+              <p class="small muted">{{ p.who }} · קישור אישי: {{ p.hasPersonalLink ? '✓' : 'אין — האזור מוסתר' }} · קישור הסרה: {{ p.hasUnsubscribe ? '✓' : 'לדוגמה' }} · {{ (p.bytes / 1024).toFixed(0) }}KB</p>
               @if (p.problem) { <p class="msg-box">{{ p.problem }}</p> }
               @if (p.warning) { <p class="msg-box">{{ p.warning }}</p> }
               <div class="frame-wrap"><iframe title="תצוגה מקדימה של המייל" sandbox="allow-same-origin"[style.width.px]="width()" [srcdoc]="safe()"></iframe></div>

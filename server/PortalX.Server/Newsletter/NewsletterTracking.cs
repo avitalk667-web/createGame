@@ -56,7 +56,10 @@ public sealed class NewsletterTracking(PortalDbContext db, ILogger<NewsletterTra
     /// <summary>One link an email can carry: where it sits, what it leads to, its label and its destination.</summary>
     public sealed record Planned(string Kind, string Category, string Label, string Destination);
 
-    /// <summary>"game" for a game page, "catalog" for the site's home (the games catalog), "other" for anything else.</summary>
+    /// <summary>
+    /// "game" for a game page, "catalog" for the site's home (the games catalog), "other" for anything else. The share
+    /// button is "share".
+    /// </summary>
     public static string CategoryOf(string url)
     {
         var path = url.Split('?', '#')[0];
@@ -72,11 +75,7 @@ public sealed class NewsletterTracking(PortalDbContext db, ILogger<NewsletterTra
     public static List<Planned> Plan(NewsletterContent c)
     {
         var list = new List<Planned>();
-        if (c.Links.Show)
-        {
-            list.Add(new("game", "game", Short(c.Links.GameLabel), "personal:game:" + c.Links.GameId));
-            list.Add(new("site", "catalog", Short(c.Links.SiteLabel), "personal:site"));
-        }
+        if (c.Links.Show) list.Add(new("share", "share", Short(c.Links.ButtonLabel), "personal:share"));
         if (c.Cta.Show) list.Add(new("cta", CategoryOf(c.Cta.Url), Short(c.Cta.Label), c.Cta.Url.Trim()));
         list.Add(new("home", "catalog", "אתר PORTAL-X (בתחתית המייל)", "/"));
         return list;
@@ -228,6 +227,9 @@ public sealed class NewsletterTracking(PortalDbContext db, ILogger<NewsletterTra
             if (gameId != null && !NewsletterContent.GameId().IsMatch(gameId)) gameId = null;
             var own = email == null ? null : await db.ReferralLinks.AsNoTracking()
                 .FirstOrDefaultAsync(l => l.Email == email && l.Status == ReferralLinkStatus.Active && l.DisabledAt == null);
+            // the share button: the page that shows the recipient's own link to copy (or the page to make one)
+            if (d == "personal:share") return own == null ? "/share" : NewsletterService.CopyPage(own.Token, "");
+            // the two personal buttons of mailings sent before the share area
             if (own == null) return gameId != null ? $"/games/{gameId}" : "/";
             var url = ReferralService.LinkUrl(own, "");
             return gameId != null ? $"{url}?to={Uri.EscapeDataString(gameId)}" : url;

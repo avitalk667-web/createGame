@@ -34,7 +34,7 @@ public class NewsletterTests
     {
         var c = NewsletterContent.Welcome();
         Assert.Null(c.Validate());
-        var r = new NewsletterRecipient("a@example.org", "דנה", $"{Site}/r/TOKENA?to=hanukkah-oil", $"{Site}/r/TOKENA", $"{Site}/unsubscribe#t=abc");
+        var r = new NewsletterRecipient("a@example.org", "דנה", $"{Site}/my-link/TOKENA", $"{Site}/unsubscribe#t=abc");
         var html = NewsletterTemplate.Html(c, r, SiteInfo);
 
         // the five clues as supplied, each code next to its own text
@@ -65,9 +65,17 @@ public class NewsletterTests
         Assert.Contains("<span dir=\"ltr\">10%</span> הנחה", html);
         Assert.Contains($"href=\"{Site}/games/hanukkah-oil?coupon=PORTAL10\"", html);
 
-        // personal links and the personal unsubscribe link
-        Assert.Contains($"href=\"{Site}/r/TOKENA?to=hanukkah-oil\"", html);
-        Assert.Contains($"href=\"{Site}/r/TOKENA\"", html);
+        // one share area: its button opens the page with the recipient's own link to copy; and the personal unsubscribe link
+        Assert.Contains("🔗 הקישור האישי שלכם", html);
+        Assert.Contains("נהניתם מהחוויה? שתפו את החברים והמשפחה!", html);
+        Assert.Contains($"href=\"{Site}/my-link/TOKENA\"", html);
+        // the encoder writes the emoji as a numeric entity (&#128203;), which every mail client shows as 📋
+        Assert.Contains(">📋 העתקת הקישור האישי</a>", System.Net.WebUtility.HtmlDecode(html));
+        // no raffle line when the site has no raffle running
+        Assert.DoesNotContain("כרטיס להגרלה", html);
+        Assert.Contains("שתפו והזמינו גם אותם לגלות את עולם PORTAL-X", html);
+        Assert.DoesNotContain("/r/", html);                           // no separate game / site links any more
+        Assert.DoesNotContain("סוד פך השמן – הקישור האישי שלי", html);
         Assert.Contains($"href=\"{Site}/unsubscribe#t=abc\"", html);
 
         // email-safe: no script, no flex/grid layout, no external stylesheet, no background images; small enough for Gmail
@@ -86,7 +94,7 @@ public class NewsletterTests
         if (!string.IsNullOrEmpty(dump))
         {
             File.WriteAllText(Path.Combine(dump, "welcome.html"), html);
-            File.WriteAllText(Path.Combine(dump, "welcome-no-links.html"), NewsletterTemplate.Html(c, r with { GameLinkUrl = null, SiteLinkUrl = null }, SiteInfo));
+            File.WriteAllText(Path.Combine(dump, "welcome-no-links.html"), NewsletterTemplate.Html(c, r with { CopyPageUrl = null }, SiteInfo));
             File.WriteAllText(Path.Combine(dump, "welcome.txt"), NewsletterTemplate.Text(c, r, SiteInfo));
             File.WriteAllText(Path.Combine(dump, "welcome-sample.html"), NewsletterTemplate.Html(c, NewsletterService.Sample(Site), SiteInfo));
         }
@@ -96,16 +104,64 @@ public class NewsletterTests
     public void A_recipient_without_personal_links_gets_no_link_buttons_and_never_a_placeholder_link()
     {
         var c = NewsletterContent.Welcome();
-        var html = NewsletterTemplate.Html(c, new NewsletterRecipient("b@example.org", null, null, null, $"{Site}/unsubscribe#t=b"), SiteInfo);
-        Assert.DoesNotContain("🔗 הקישורים האישיים שלכם", html);
-        Assert.DoesNotContain("/r/", html);
+        var html = NewsletterTemplate.Html(c, new NewsletterRecipient("b@example.org", null, null, $"{Site}/unsubscribe#t=b"), SiteInfo);
+        Assert.DoesNotContain("🔗 הקישור האישי שלכם", html);
+        Assert.DoesNotContain("העתקת הקישור האישי", html);
+        Assert.DoesNotContain("/my-link/", html);
         Assert.DoesNotContain("שלום ", html);
         // the offer then takes the full width
         Assert.Contains("max-width:564px", html);
-        // only one of the two links: only its button
-        var one = NewsletterTemplate.Html(c, new NewsletterRecipient("b@example.org", null, null, $"{Site}/r/T", null), SiteInfo);
-        Assert.Contains("אתר המשחקים PORTAL-X – הקישור האישי שלי", one);
-        Assert.DoesNotContain("סוד פך השמן – הקישור האישי שלי", one);
+        Assert.DoesNotContain("העתקת הקישור האישי", NewsletterTemplate.Text(c, new NewsletterRecipient("b@example.org", null, null, null), SiteInfo));
+    }
+
+    [Fact]
+    public void The_share_area_mentions_the_raffle_only_while_the_draw_is_ahead_and_only_when_switched_on()
+    {
+        var c = NewsletterContent.Welcome();
+        var r = new NewsletterRecipient("a@example.org", "דנה", $"{Site}/my-link/TOKENA", $"{Site}/unsubscribe#t=abc");
+        var raffle = new NewsletterSite(Site, "info.portalx@gmail.com", new NewsletterRaffle("888 ₪", "יום ראשון, 13/12/2026, 20:00"));
+        var html = System.Net.WebUtility.HtmlDecode(NewsletterTemplate.Html(c, r, raffle));
+        Assert.Contains("כל רכישה דרך הקישור האישי = כרטיס להגרלה על <span", html);
+        Assert.Contains(">888 ₪</span>!", html);
+        Assert.Contains("ההגרלה: יום ראשון, 13/12/2026, 20:00", html);
+        // inside the share box, before its button
+        Assert.True(html.IndexOf("כרטיס להגרלה") > html.IndexOf("🔗 הקישור האישי שלכם") && html.IndexOf("כרטיס להגרלה") < html.IndexOf("📋 העתקת"));
+        var text = NewsletterTemplate.Text(c, r, raffle);
+        Assert.Contains("🎁 כל רכישה דרך הקישור האישי = כרטיס להגרלה על 888 ₪!", text);
+        Assert.Contains("ההגרלה: יום ראשון, 13/12/2026, 20:00", text);
+
+        // switched off in the editor, or a recipient without a link (no share box at all): no raffle line
+        c.Links.ShowRaffle = false;
+        Assert.DoesNotContain("כרטיס להגרלה", NewsletterTemplate.Html(c, r, raffle));
+        Assert.DoesNotContain("כרטיס להגרלה", NewsletterTemplate.Text(c, r, raffle));
+        Assert.DoesNotContain("כרטיס להגרלה", NewsletterTemplate.Html(NewsletterContent.Welcome(), r with { CopyPageUrl = null }, raffle));
+
+        // the site's own raffle: open until its moment, closed after it or when switched off
+        var campaign = new PortalX.Server.Referrals.CampaignContent { Enabled = true, Prize = "888 ₪", DrawDate = "13/12/2026", DrawAt = DateTimeOffset.Parse("2026-12-13T20:00:00+02:00") };
+        Assert.True(campaign.IsOpen(DateTimeOffset.Parse("2026-12-13T19:59:00+02:00")));
+        Assert.False(campaign.IsOpen(DateTimeOffset.Parse("2026-12-13T20:00:00+02:00")));
+        Assert.False(new PortalX.Server.Referrals.CampaignContent { Enabled = false, Prize = "888 ₪" }.IsOpen(DateTimeOffset.UtcNow));
+        Assert.Equal("13/12/2026 בשעה 20:00", campaign.DrawWhen());
+        // the real campaign file gives the wording the site shows
+        var real = PortalX.Server.Referrals.CampaignContent.LoadDefault();
+        Assert.Equal("888 ₪", real.Prize);
+        Assert.EndsWith("13/12/2026 בשעה 20:00", real.DrawWhen());
+        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("PORTALX_NEWSLETTER_DUMP")))
+            File.WriteAllText(Path.Combine(Environment.GetEnvironmentVariable("PORTALX_NEWSLETTER_DUMP")!, "welcome-raffle.html"),
+                NewsletterTemplate.Html(NewsletterContent.Welcome(), r, new NewsletterSite(Site, "info.portalx@gmail.com", new NewsletterRaffle(real.Prize, real.DrawWhen()))));
+    }
+
+    [Fact]
+    public void A_draft_saved_with_the_earlier_two_button_area_gets_the_new_share_wording()
+    {
+        var old = """{"subject":"x","links":{"show":true,"title":"הקישורים האישיים שלכם","note":"לשיתוף עם חברים ומשפחה","gameId":"hanukkah-oil","gameLabel":"a","siteLabel":"b"}}""";
+        var c = NewsletterContent.FromJson(old);
+        Assert.Equal("הקישור האישי שלכם", c.Links.Title);
+        Assert.Equal("נהניתם מהחוויה? שתפו את החברים והמשפחה!", c.Links.Note);
+        Assert.Equal("📋 העתקת הקישור האישי", c.Links.ButtonLabel);
+        Assert.Equal("שתפו והזמינו גם אותם לגלות את עולם PORTAL-X", c.Links.Footnote);
+        // a text the admin wrote is kept
+        Assert.Equal("שלנו", NewsletterContent.FromJson("""{"links":{"title":"שלנו"}}""").Links.Title);
     }
 
     [Fact]
@@ -146,7 +202,8 @@ public class NewsletterTests
         var c = NewsletterContent.Welcome();
         c.Offer.Code = "PORTAL 10"; Assert.NotNull(c.Validate());
         c = NewsletterContent.Welcome(); c.Offer.Percent = 0; Assert.NotNull(c.Validate());
-        c = NewsletterContent.Welcome(); c.Links.GameId = "../admin"; Assert.NotNull(c.Validate());
+        c = NewsletterContent.Welcome(); c.Links.ButtonLabel = " "; Assert.NotNull(c.Validate());
+        c = NewsletterContent.Welcome(); c.Links.ButtonLabel = new string('א', 61); Assert.NotNull(c.Validate());
         c = NewsletterContent.Welcome(); c.Subject = " "; Assert.NotNull(c.Validate());
         c = NewsletterContent.Welcome(); c.Sections[1].Clues.Clear(); Assert.NotNull(c.Validate());
         c = NewsletterContent.Welcome(); c.Offer.ImageUrl = "http://x.example/a.png"; Assert.NotNull(c.Validate());
@@ -202,6 +259,36 @@ public class NewsletterTests
         return await q(scope.ServiceProvider.GetRequiredService<PortalDbContext>());
     }
 
+    /// <summary>Where the email's share button leads (followed through the click tracking, one redirect).</summary>
+    private static async Task<string> ShareTargetAsync(WebApplicationFactory<Program> f, string html)
+    {
+        var href = System.Text.RegularExpressions.Regex.Match(html, "href=\"https://portalx\\.test(/newsletter/click/[^\"]+)\"[^>]*>(?:📋|&#128203;)").Groups[1].Value;
+        Assert.NotEmpty(href);
+        var r = await f.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false }).GetAsync(href);
+        return r.Headers.Location!.OriginalString;
+    }
+
+    [Fact]
+    public async Task The_copy_page_shows_only_an_active_link_and_opening_it_is_not_a_visit()
+    {
+        var (f, _) = Site_();
+        using var __ = f;
+        var http = f.CreateClient();
+        var token = await SubscriberAsync(http, Unique("copy"), "יעל");
+        var clicksBefore = await DbAsync(f, db => db.ReferralClicks.CountAsync());
+        var r = await http.GetAsync($"/api/referrals/link/{token}");
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        var body = await Body(r);
+        Assert.Equal($"{Site}/r/{token}", body.GetProperty("url").GetString());
+        Assert.Single(body.EnumerateObject());                              // the address only: no name, no email
+        Assert.Equal(clicksBefore, await DbAsync(f, db => db.ReferralClicks.CountAsync()));
+        foreach (var bad in new[] { "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "x", "..%2Fadmin" })
+            Assert.Equal(HttpStatusCode.NotFound, (await http.GetAsync($"/api/referrals/link/{bad}")).StatusCode);
+        // a disabled link is not shown
+        await DbAsync(f, db => db.ReferralLinks.Where(l => l.Token == token).ExecuteUpdateAsync(s => s.SetProperty(l => l.Status, PortalX.Server.Domain.ReferralLinkStatus.Disabled)));
+        Assert.Equal(HttpStatusCode.NotFound, (await http.GetAsync($"/api/referrals/link/{token}")).StatusCode);
+    }
+
     [Fact]
     public async Task The_personal_game_link_lands_on_its_game_page_and_never_off_the_site()
     {
@@ -243,7 +330,7 @@ public class NewsletterTests
 
         // the preview for one address shows that address's own links
         var preview = await Body(await admin.PostAsJsonAsync("/api/admin/newsletters/preview", new { content = NewsletterContent.Welcome(), email = a }));
-        Assert.Contains($"/r/{tokenA}?to=hanukkah-oil", preview.GetProperty("html").GetString());
+        Assert.Contains($"/my-link/{tokenA}", preview.GetProperty("html").GetString());
         Assert.DoesNotContain(tokenB, preview.GetProperty("html").GetString());
 
         // not tested yet: the list cannot be mailed
@@ -260,8 +347,10 @@ public class NewsletterTests
         var toA = mail.Sent.Single(m => m.To == a);
         var toB = mail.Sent.Single(m => m.To == b);
         Assert.StartsWith(NewsletterService.TestPrefix + "פרסומת:", toA.Subject);
-        Assert.Contains(tokenA, toA.Html); Assert.DoesNotContain(tokenB, toA.Html);
-        Assert.Contains(tokenB, toB.Html); Assert.DoesNotContain(tokenA, toB.Html);
+        // each share button opens its own recipient's link page (through the click tracking), never the other's
+        Assert.Equal($"/my-link/{tokenA}", await ShareTargetAsync(f, toA.Html));
+        Assert.Equal($"/my-link/{tokenB}", await ShareTargetAsync(f, toB.Html));
+        Assert.DoesNotContain(tokenB, toA.Html); Assert.DoesNotContain(tokenA, toB.Html);
         Assert.NotNull(toA.UnsubscribeUrl);
         Assert.NotEqual(toA.UnsubscribeUrl, toB.UnsubscribeUrl);
         Assert.Contains(toA.UnsubscribeUrl!, toA.Html);
@@ -284,7 +373,7 @@ public class NewsletterTests
         Assert.Equal(mail.Sent.Count, mail.Sent.Select(m => m.To).Distinct().Count());
         Assert.DoesNotContain(mail.Sent, m => m.To == gone);
         var listA = mail.Sent.Single(m => m.To == a);
-        Assert.Contains(tokenA, listA.Html); Assert.DoesNotContain(tokenB, listA.Html);
+        Assert.Equal($"/my-link/{tokenA}", await ShareTargetAsync(f, listA.Html)); Assert.DoesNotContain(tokenB, listA.Html);
         Assert.DoesNotContain(NewsletterService.TestPrefix, listA.Subject);
         Assert.All(mail.Sent, m => Assert.NotNull(m.UnsubscribeUrl));
 

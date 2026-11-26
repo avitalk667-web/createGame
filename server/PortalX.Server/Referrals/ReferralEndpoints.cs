@@ -31,6 +31,14 @@ public static class ReferralEndpoints
             var (reply, status) = await service.ResendAsync(req.Token, MailEndpoints.SiteUrl(site, http));
             return Results.Json(reply, statusCode: status);
         }).RequireRateLimiting("referral-resend");
+
+        // "/my-link/{token}" (the share button of the "סודות הפורטל" mailing): the existing link, to copy. Only the address
+        // of the link itself — no name, no email, no numbers — and opening it is not a visit through the link.
+        api.MapGet("/referrals/link/{token}", async (string token, HttpRequest http, ReferralService service, SiteOptions site) =>
+            await service.ActiveTokenAsync(token) is { } t
+                ? Results.Ok(new { url = ReferralService.LinkUrl(new PortalX.Server.Domain.ReferralLink { Token = t }, MailEndpoints.SiteUrl(site, http)) })
+                : Results.NotFound(new ApiError("not-found", "הקישור לא נמצא או שאינו פעיל.")))
+            .RequireRateLimiting("referral-visit");
     }
 
     /// <summary>

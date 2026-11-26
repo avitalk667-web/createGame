@@ -91,6 +91,12 @@ public sealed class CampaignContent
         return t.ToString();
     }
 
+    /// <summary>Whether the draw is still ahead: switched on and its moment not yet passed (no moment = until switched off).</summary>
+    public bool IsOpen(DateTimeOffset now) => Enabled && !string.IsNullOrWhiteSpace(Prize) && (DrawAt == null || DrawAt > now);
+
+    /// <summary>When the draw is, in words: its date and, when its moment is known, the hour as written in the file.</summary>
+    public string DrawWhen() => DrawAt is { } at ? $"{DrawDate} בשעה {at:HH:mm}" : DrawDate;
+
     /// <summary>What the site shows (banner and popup).</summary>
     public object Public() => new
     {

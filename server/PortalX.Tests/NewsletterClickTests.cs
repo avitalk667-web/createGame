@@ -141,18 +141,17 @@ public class NewsletterClickTests
     }
 
     [Fact]
-    public void The_buttons_carry_the_tracked_address_while_the_printed_link_and_the_unsubscribe_link_stay_as_they_are()
+    public void The_buttons_carry_the_tracked_address_while_the_unsubscribe_link_stays_as_it_is()
     {
         var tracked = new Dictionary<string, string>
         {
-            ["game"] = $"{Site}/newsletter/click/AAAAAAAAAAAAAAAAAAAAAAAA.1", ["site"] = $"{Site}/newsletter/click/AAAAAAAAAAAAAAAAAAAAAAAA.2",
-            ["cta"] = $"{Site}/newsletter/click/AAAAAAAAAAAAAAAAAAAAAAAA.3", ["home"] = $"{Site}/newsletter/click/AAAAAAAAAAAAAAAAAAAAAAAA.4",
+            ["share"] = $"{Site}/newsletter/click/AAAAAAAAAAAAAAAAAAAAAAAA.1",
+            ["cta"] = $"{Site}/newsletter/click/AAAAAAAAAAAAAAAAAAAAAAAA.2", ["home"] = $"{Site}/newsletter/click/AAAAAAAAAAAAAAAAAAAAAAAA.3",
         };
-        var r = new NewsletterRecipient("a@example.org", "דנה", $"{Site}/r/TOKEN?to=hanukkah-oil", $"{Site}/r/TOKEN", $"{Site}/unsubscribe?t=U", tracked);
+        var r = new NewsletterRecipient("a@example.org", "דנה", $"{Site}/my-link/TOKEN", $"{Site}/unsubscribe?t=U", tracked);
         var html = NewsletterTemplate.Html(NewsletterContent.Welcome(), r, new NewsletterSite(Site, "info@example.org"));
         foreach (var url in tracked.Values) Assert.Contains($"href=\"{url}\"", html);
-        Assert.DoesNotContain($"href=\"{Site}/r/TOKEN", html);                  // no untracked button
-        Assert.Contains($"{Site}/r/TOKEN?to=hanukkah-oil", html);               // the shareable link, printed as text
+        Assert.DoesNotContain("TOKEN", html);                                    // the share button too goes through the tracking
         Assert.Contains($"href=\"{Site}/unsubscribe?t=U\"", html);               // never tracked
         Assert.Contains("סודות הפורטל", html);
         var text = NewsletterTemplate.Text(NewsletterContent.Welcome(), r, new NewsletterSite(Site, "info@example.org"));
@@ -200,14 +199,14 @@ public class NewsletterClickTests
         await DbAsync(f, db => db.NewsletterClickEvents.Where(x => x.IssueId == one).ExecuteUpdateAsync(s => s.SetProperty(x => x.ClickedAt, x => x.ClickedAt.AddMinutes(-2))));
         await ClickAsync(browserA, urls[a]["cta"]);
 
-        // the personal game button leads to the recipient's own personal link, never someone else's
-        var g = await ClickAsync(browserA, urls[a]["game"]);
-        Assert.Equal($"/r/{tokenA}?to=hanukkah-oil", g.Headers.Location!.OriginalString);
-        var gb = await ClickAsync(NoRedirect(f), urls[b]["game"]);
-        Assert.Equal($"/r/{tokenB}?to=hanukkah-oil", gb.Headers.Location!.OriginalString);
+        // the share button opens the page with the recipient's own personal link, never someone else's
+        var g = await ClickAsync(browserA, urls[a]["share"]);
+        Assert.Equal($"/my-link/{tokenA}", g.Headers.Location!.OriginalString);
+        var gb = await ClickAsync(NoRedirect(f), urls[b]["share"]);
+        Assert.Equal($"/my-link/{tokenB}", gb.Headers.Location!.OriginalString);
         // a query added by hand changes nothing
-        var forged = await ClickAsync(NoRedirect(f), urls[b]["site"] + "?to=https://evil.example&url=//evil.example");
-        Assert.Equal($"/r/{tokenB}", forged.Headers.Location!.OriginalString);
+        var forged = await ClickAsync(NoRedirect(f), urls[b]["home"] + "?to=https://evil.example&url=//evil.example");
+        Assert.Equal("/", forged.Headers.Location!.OriginalString);
 
         var admin = await AdminAsync(f);
         var s = await Body(await admin.GetAsync($"/api/admin/newsletters/{one}/stats"));
@@ -215,13 +214,14 @@ public class NewsletterClickTests
         Assert.Equal(3, cards.GetProperty("sent").GetInt32());
         Assert.Equal(1, cards.GetProperty("failed").GetInt32());
         Assert.Equal(2, cards.GetProperty("clickers").GetInt32());          // A and B
-        Assert.Equal(5, cards.GetProperty("clicks").GetInt32());            // A: cta ×2 + game, B: game + site
+        Assert.Equal(5, cards.GetProperty("clicks").GetInt32());            // A: cta ×2 + share, B: share + home
         Assert.Equal(66.7, cards.GetProperty("ctr").GetDouble());           // 2 ÷ 3
         Assert.Equal(0, cards.GetProperty("automated").GetInt32());
         var links = s.GetProperty("links").EnumerateArray().ToDictionary(l => l.GetProperty("kind").GetString()!);
         Assert.Equal(1, links["cta"].GetProperty("unique").GetInt32());
         Assert.Equal(2, links["cta"].GetProperty("clicks").GetInt32());
-        Assert.Equal(2, links["game"].GetProperty("unique").GetInt32());
+        Assert.Equal(2, links["share"].GetProperty("unique").GetInt32());
+        Assert.Equal("share", links["share"].GetProperty("category").GetString());
         Assert.Equal(33.3, links["cta"].GetProperty("ctr").GetDouble());
 
         // the other mailing (also to A) has none of these clicks
@@ -238,8 +238,9 @@ public class NewsletterClickTests
             .GetProperty("rows").EnumerateArray().Select(x => x.GetProperty("email").GetString()!).OrderBy(x => x).ToList();
         Assert.Equal(new[] { a, b }.OrderBy(x => x), await Who("clicked"));
         Assert.Equal(new[] { c, d }.OrderBy(x => x), await Who("not-clicked"));
-        Assert.Equal(new[] { a, b }.OrderBy(x => x), await Who("game"));
-        Assert.Equal(new[] { b }, await Who("catalog"));
+        Assert.Equal(new[] { a }, await Who("game"));                         // the main button opens the game page
+        Assert.Equal(new[] { b }, await Who("catalog"));                      // the site link at the bottom
+        Assert.Equal(new[] { a, b }.OrderBy(x => x), await Who("share"));
         Assert.Empty(await Who("purchased"));
         var rowA = (await Body(await admin.GetAsync($"/api/admin/newsletters/{one}/stats/recipients?filter=clicked")))
             .GetProperty("rows").EnumerateArray().Single(x => x.GetProperty("email").GetString() == a);
@@ -311,10 +312,10 @@ public class NewsletterClickTests
         var scan = await ClickAsync(http, urls[a]["cta"], "Mozilla/5.0 (compatible; Proofpoint URL Defense)");
         Assert.Equal("/games/hanukkah-oil?coupon=PORTAL10", scan.Headers.Location!.OriginalString);   // it still goes on
         Assert.Null(AttributionCookie(scan));
-        await ClickAsync(http, urls[a]["game"], null);
+        await ClickAsync(http, urls[a]["share"], null);
         await ClickAsync(http, urls[a]["home"], Browser, "HEAD");
         // B's scanner opens every link within a second, in a normal browser name
-        foreach (var kind in new[] { "game", "site", "cta" }) await ClickAsync(http, urls[b][kind]);
+        foreach (var kind in new[] { "share", "home", "cta" }) await ClickAsync(http, urls[b][kind]);
 
         // an email opened on arrival (seconds after it was sent)
         var (fresh, freshUrls) = await SentAsync(f, [(c, "sent")], DateTime.UtcNow);
@@ -349,11 +350,11 @@ public class NewsletterClickTests
         Assert.Equal(HttpStatusCode.OK, (await admin.PostAsJsonAsync($"/api/admin/newsletters/{id}/test", new { emails = new[] { a } })).StatusCode);
         var html = Assert.Single(mail.Sent).Html;
         var hrefs = Regex.Matches(html, "href=\"(https://portalx\\.test/newsletter/click/[^\"]+)\"").Select(m => m.Groups[1].Value).ToList();
-        Assert.Equal(4, hrefs.Count);                                   // game, site, main button, site in the footer
-        Assert.Contains($"{Site}/r/{tokenA}?to=hanukkah-oil", html);     // the shareable link is still printed
+        Assert.Equal(3, hrefs.Count);                                   // the share button, the main button, the site in the footer
+        Assert.DoesNotContain(tokenA, html);                            // the link itself is on the copy page, not in the email
 
         var r = await ClickAsync(NoRedirect(f), hrefs[0]);
-        Assert.Equal($"/r/{tokenA}?to=hanukkah-oil", r.Headers.Location!.OriginalString);
+        Assert.Equal($"/my-link/{tokenA}", r.Headers.Location!.OriginalString);
         Assert.Null(AttributionCookie(r));
         var cards = (await Body(await admin.GetAsync($"/api/admin/newsletters/{id}/stats"))).GetProperty("cards");
         Assert.Equal(1, cards.GetProperty("testClicks").GetInt32());

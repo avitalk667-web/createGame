@@ -191,6 +191,7 @@ public sealed partial class ReferralService(
     /// A personal link was opened. Returns the visit token for the session cookie, or null when the link is unknown or
     /// disabled. The same visit opening another valid link now points to that one (last click).
     /// </summary>
+    /// <remarks>See also <see cref="ActiveTokenAsync"/>, which only reads.</remarks>
     public async Task<string?> OpenVisitAsync(string? linkToken, string? visitToken)
     {
         if (string.IsNullOrEmpty(linkToken) || !TokenShape().IsMatch(linkToken)) return null;
@@ -227,6 +228,14 @@ public sealed partial class ReferralService(
         return await db.ReferralVisits.Where(v => v.TokenHash == hash && v.LastClickAt > since)
             .Join(db.ReferralLinks.Where(l => l.Status == ReferralLinkStatus.Active), v => v.ReferralLinkId, l => l.Id, (v, l) => (Guid?)l.Id)
             .FirstOrDefaultAsync();
+    }
+
+    /// <summary>The token itself when it names an active link (for the page that shows the link to copy); never counts a visit.</summary>
+    public async Task<string?> ActiveTokenAsync(string? linkToken)
+    {
+        if (string.IsNullOrEmpty(linkToken) || !TokenShape().IsMatch(linkToken)) return null;
+        return await db.ReferralLinks.AsNoTracking().AnyAsync(l => l.Token == linkToken && l.Status == ReferralLinkStatus.Active && l.DisabledAt == null)
+            ? linkToken : null;
     }
 
     public static CookieOptions VisitCookieOptions(HttpRequest request) => new()

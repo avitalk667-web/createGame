@@ -9,8 +9,9 @@ namespace PortalX.Server.Newsletter;
 /// What belongs to one recipient: their first name, their own two personal links and their own signed unsubscribe link.
 /// A missing value hides its part (never a placeholder link, never someone else's link).
 /// </summary>
-/// <param name="Tracked">Link kind ("game", "site", "cta", "home") → the tracked address of this one email; none in previews.</param>
-public sealed record NewsletterRecipient(string Email, string? FirstName, string? GameLinkUrl, string? SiteLinkUrl, string? UnsubscribeUrl,
+/// <param name="CopyPageUrl">The site's page that shows this recipient's own personal link to copy (/my-link/{token}); null without an active link.</param>
+/// <param name="Tracked">Link kind ("share", "cta", "home") → the tracked address of this one email; none in previews.</param>
+public sealed record NewsletterRecipient(string Email, string? FirstName, string? CopyPageUrl, string? UnsubscribeUrl,
     IReadOnlyDictionary<string, string>? Tracked = null)
 {
     /// <summary>Where a button points: its tracked address when the email has one, else the link itself.</summary>
@@ -18,7 +19,14 @@ public sealed record NewsletterRecipient(string Email, string? FirstName, string
 }
 
 /// <summary>Where the email points: the public site and the one contact address.</summary>
-public sealed record NewsletterSite(string SiteUrl, string ContactEmail);
+public sealed record NewsletterSite(string SiteUrl, string ContactEmail, NewsletterRaffle? Raffle = null);
+
+/// <summary>The site's raffle while it is still ahead (the same texts as the site's banner); null = no raffle line.</summary>
+public sealed record NewsletterRaffle(string Prize, string When)
+{
+    public string Line => $"כל רכישה דרך הקישור האישי = כרטיס להגרלה על {Prize}!";
+    public string WhenLine => $"ההגרלה: {When}";
+}
 
 /// <summary>
 /// The fixed "סודות הפורטל" email around a <see cref="NewsletterContent"/>: header (logo, title, tagline), opening,
@@ -46,6 +54,7 @@ public static partial class NewsletterTemplate
     private const string Blue = "#0e3a7a";
     private const string BlueDeep = "#0a2552";
     private const string BlueGlow = "#49c0ff";
+    private const string ShareBox = "#0f1d48";
 
     public const string Title = "סודות הפורטל";
     public const string Tagline = "חידות | אתגרים | הצצות | הטבות מיוחדות";
@@ -97,6 +106,19 @@ a[x-apple-data-detectors]{color:inherit !important;text-decoration:none !importa
 """;
 
     private static string Row(string inner, string pad = "10px 16px") => $"<tr><td class=\"px\" style=\"padding:{pad};\" dir=\"rtl\">{inner}</td></tr>\n";
+
+    /// <summary>The raffle strip inside the share box: a gold-edged note, no countdown (an email cannot tick).</summary>
+    private static string RaffleHtml(NewsletterContent c, NewsletterSite site)
+    {
+        if (!c.Links.ShowRaffle || site.Raffle is not { } d) return "";
+        var line = E(d.Line).Replace(E(d.Prize), $"<span style=\"color:{GoldLight};white-space:nowrap;\">{E(d.Prize)}</span>");
+        return $"""
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;margin:0 0 12px;"><tr><td align="center" bgcolor="#1a2a66" style="background-color:#1a2a66;border:1px solid {Gold};border-radius:12px;padding:9px 10px;text-align:center;" dir="rtl">
+<p style="margin:0;font-family:{Font};font-size:15px;font-weight:bold;line-height:1.45;color:#ffffff;text-align:center;">🎁 {line}</p>
+<p style="margin:3px 0 0;font-family:{Font};font-size:13px;line-height:1.45;color:#dce8ff;text-align:center;">{E(d.WhenLine)}</p>
+</td></tr></table>
+""";
+    }
 
     public static string Html(NewsletterContent c, NewsletterRecipient r, NewsletterSite site)
     {
@@ -166,10 +188,9 @@ a[x-apple-data-detectors]{color:inherit !important;text-decoration:none !importa
             h.Append(Row(Card(inner.ToString()), "8px 16px"));
         }
 
-        // D + E — personal links and the offer: side by side on a computer, stacked on a phone (links first)
-        var gameLink = c.Links.Show ? r.GameLinkUrl : null;
-        var siteLink = c.Links.Show ? r.SiteLinkUrl : null;
-        var showLinks = gameLink != null || siteLink != null;
+        // D + E — the share area and the offer: side by side on a computer, stacked on a phone (share first)
+        var copyPage = c.Links.Show ? r.CopyPageUrl : null;
+        var showLinks = copyPage != null;
         if (showLinks || c.Offer.Show)
         {
             var both = showLinks && c.Offer.Show;
@@ -177,23 +198,21 @@ a[x-apple-data-detectors]{color:inherit !important;text-decoration:none !importa
             h.Append($"<tr><td class=\"px\" align=\"center\" style=\"padding:8px 12px;font-size:0;text-align:center;\" dir=\"ltr\">\n");
             if (showLinks)
             {
+                // one button to a page of the site that shows the recipient's own link and copies it (an email cannot copy)
                 h.Append($"""
 <div class="col" style="display:inline-block;width:100%;{box}vertical-align:top;margin:6px 4px;" dir="rtl">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;"><tr><td bgcolor="{Blue}" style="background-color:{Blue};background-image:linear-gradient(180deg,#14509e,{BlueDeep});border:2px solid {BlueGlow};border-radius:16px;padding:14px 14px 10px;text-align:right;" dir="rtl">
-<p style="margin:0 0 2px;font-family:{Font};font-size:19px;font-weight:bold;line-height:1.35;color:#ffffff;">🔗 {E(c.Links.Title)}</p>
-{(string.IsNullOrWhiteSpace(c.Links.Note) ? "" : $"<p style=\"margin:0 0 4px;font-family:{Font};font-size:13px;color:#bfe6ff;\">{E(c.Links.Note)}</p>")}
-""");
-                foreach (var (kind, label, url) in new[] { ("game", c.Links.GameLabel, gameLink), ("site", c.Links.SiteLabel, siteLink) })
-                {
-                    if (url == null) continue;
-                    h.Append($"""
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;margin:10px 0 2px;"><tr><td align="center" bgcolor="#dff3ff" style="background-color:#dff3ff;background-image:linear-gradient(180deg,#f1faff,#b9e4ff);border:2px solid #7fd3ff;border-radius:999px;">
-<a href="{E(r.Href(kind, url))}" style="display:block;padding:11px 12px;font-family:{Font};font-size:15px;font-weight:bold;line-height:1.3;color:{BlueDeep};text-decoration:none;border-radius:999px;">{E(label)}&nbsp; ↗</a>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;"><tr><td align="center" bgcolor="{ShareBox}" style="background-color:{ShareBox};background-image:linear-gradient(180deg,#13265c,{ShareBox});border:1px solid #2b4c95;border-radius:16px;padding:16px 14px 14px;text-align:center;" dir="rtl">
+<p style="margin:0 0 6px;font-family:{Font};font-size:20px;font-weight:bold;line-height:1.35;color:#ffffff;text-align:center;">🔗 {E(c.Links.Title)}</p>
+{(string.IsNullOrWhiteSpace(c.Links.Note) ? "" : $"<p style=\"margin:0 0 12px;font-family:{Font};font-size:15px;line-height:1.5;color:#dce8ff;text-align:center;\">{E(c.Links.Note)}</p>")}
+{RaffleHtml(c, site)}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;"><tr><td align="center" bgcolor="#dff3ff" style="background-color:#dff3ff;background-image:linear-gradient(180deg,#eef9ff,#cdeafe);border:1px solid #9fd6ff;border-radius:999px;">
+<a href="{E(r.Href("share", copyPage!))}" style="display:block;padding:13px 14px;font-family:{Font};font-size:16px;font-weight:bold;line-height:1.3;color:{BlueDeep};text-decoration:none;border-radius:999px;">{E(c.Links.ButtonLabel)}</a>
 </td></tr></table>
-<p style="margin:2px 0 0;font-family:{Font};font-size:11px;line-height:1.4;color:#9fd8ff;text-align:center;word-break:break-all;" dir="ltr">{E(url)}</p>
+{(string.IsNullOrWhiteSpace(c.Links.Footnote) ? "" : $"<p style=\"margin:10px 0 0;font-family:{Font};font-size:13px;line-height:1.5;color:#b9cbef;text-align:center;\">{E(c.Links.Footnote)}</p>")}
+</td></tr></table>
+</div>
+
 """);
-                }
-                h.Append("</td></tr></table>\n</div>\n");
             }
             if (c.Offer.Show)
             {
@@ -290,11 +309,13 @@ a[x-apple-data-detectors]{color:inherit !important;text-decoration:none !importa
             }
             t.AppendLine();
         }
-        if (c.Links.Show && (r.GameLinkUrl != null || r.SiteLinkUrl != null))
+        if (c.Links.Show && r.CopyPageUrl != null)
         {
             t.AppendLine($"== {c.Links.Title} ==");
-            if (r.GameLinkUrl != null) t.AppendLine($"{c.Links.GameLabel}: {r.GameLinkUrl}");
-            if (r.SiteLinkUrl != null) t.AppendLine($"{c.Links.SiteLabel}: {r.SiteLinkUrl}");
+            if (!string.IsNullOrWhiteSpace(c.Links.Note)) t.AppendLine(c.Links.Note);
+            if (c.Links.ShowRaffle && site.Raffle is { } d) { t.AppendLine("🎁 " + d.Line); t.AppendLine(d.WhenLine); }
+            t.AppendLine($"{c.Links.ButtonLabel}: {r.Href("share", r.CopyPageUrl)}");
+            if (!string.IsNullOrWhiteSpace(c.Links.Footnote)) t.AppendLine(c.Links.Footnote);
             t.AppendLine();
         }
         if (c.Offer.Show)
