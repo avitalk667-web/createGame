@@ -1056,3 +1056,76 @@ public class NewsletterDelivery
     public string? Error { get; set; }
     public DateTime At { get; set; }
 }
+
+/// <summary>
+/// One link of one mailing ("the game button", "the main button"...): its slot in the tracked address, its kind and
+/// where it leads. Written by the server from the saved mailing, so a click can only ever reach a destination listed
+/// here — never an address taken from the browser. A personal link ("game", "site") is resolved at click time to the
+/// recipient's own personal link.
+/// </summary>
+public class NewsletterLink
+{
+    public Guid Id { get; set; }
+    public Guid IssueId { get; set; }
+    /// <summary>1..n within the mailing; the last part of the tracked address.</summary>
+    public int Slot { get; set; }
+    /// <summary>Where it sits in the email: "game", "site", "cta", "home" (more kinds can be added).</summary>
+    public string Kind { get; set; } = "";
+    /// <summary>What it leads to, for the statistics filters: "game", "catalog" or "other".</summary>
+    public string Category { get; set; } = "other";
+    public string Label { get; set; } = "";
+    /// <summary>A site path ("/games/x") or an https address; "personal:game" / "personal:site" for the personal links.</summary>
+    public string Destination { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>
+/// The tracking key of one email: random, stored only as a hash, and naming no address. A real email has its
+/// delivery; a test email (IsTest) names the test address, and its clicks never count in the statistics.
+/// </summary>
+public class NewsletterTracker
+{
+    public Guid Id { get; set; }
+    public Guid IssueId { get; set; }
+    public long? DeliveryId { get; set; }
+    public bool IsTest { get; set; }
+    /// <summary>Only for a test email (its personal links are the test address's own).</summary>
+    public string? TestEmail { get; set; }
+    public string TokenHash { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>
+/// One click on a link of a mailing. No IP address is kept; the browser name is kept (cut short) only to tell people
+/// from mail-security scanners, which open every link by themselves (IsAutomated, with the reason).
+/// </summary>
+public class NewsletterClickEvent
+{
+    public long Id { get; set; }
+    public Guid IssueId { get; set; }
+    public Guid TrackerId { get; set; }
+    public long? DeliveryId { get; set; }
+    public Guid LinkId { get; set; }
+    public DateTime ClickedAt { get; set; }
+    public string? UserAgent { get; set; }
+    public bool IsTest { get; set; }
+    public bool IsAutomated { get; set; }
+    /// <summary>"agent", "head", "prefetch", "too-fast" or "burst".</summary>
+    public string? AutomatedReason { get; set; }
+    /// <summary>Hash of the purchase-attribution key placed in the browser by this click (human, real clicks only).</summary>
+    public string? AttributionHash { get; set; }
+}
+
+/// <summary>
+/// An order whose checkout started in a browser that clicked a link of a mailing within the attribution window. Written
+/// beside the order (the order and its payment are untouched); one per order at most.
+/// </summary>
+public class NewsletterOrderAttribution
+{
+    public Guid OrderId { get; set; }
+    public Guid IssueId { get; set; }
+    public long ClickId { get; set; }
+    public long? DeliveryId { get; set; }
+    public DateTime ClickedAt { get; set; }
+    public DateTime AttributedAt { get; set; }
+}

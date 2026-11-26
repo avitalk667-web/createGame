@@ -86,6 +86,8 @@ builder.Services.AddScoped<PortalX.Server.Treasure.TreasureAdmin>();
 builder.Services.AddSingleton(sp => PortalX.Server.Newsletter.NewsletterOptions.FromConfig(sp.GetRequiredService<IConfiguration>()));
 builder.Services.AddSingleton<PortalX.Server.Newsletter.NewsletterRunner>();
 builder.Services.AddScoped<PortalX.Server.Newsletter.NewsletterService>();
+builder.Services.AddScoped<PortalX.Server.Newsletter.NewsletterTracking>();
+builder.Services.AddScoped<PortalX.Server.Newsletter.NewsletterStats>();
 builder.Services.AddHostedService<PortalX.Server.Mail.MailRetentionService>();
 builder.Services.AddAdminAuth();
 
@@ -152,6 +154,9 @@ builder.Services.AddRateLimiter(o =>
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:ReferralResendPer10Minutes", 5), Window = TimeSpan.FromMinutes(10) }));
     o.AddPolicy("referral-visit", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:ReferralVisitsPerMinute", 30), Window = TimeSpan.FromMinutes(1) }));
+    // newsletter link clicks: plenty for a reader, too few to try tokens at scale
+    o.AddPolicy("newsletter-click", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:NewsletterClicksPerMinute", 60), Window = TimeSpan.FromMinutes(1) }));
     // the challenge: checking eligibility, and issuing or resending a personal coupon (a few per address)
     o.AddPolicy("challenge-status", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:ChallengeStatusPerMinute", 30), Window = TimeSpan.FromMinutes(1) }));
@@ -321,6 +326,7 @@ api.MapPost("/rooms/{code}/players", async (string code, JoinRequest req, HttpCo
 app.MapHub<GameHub>("/hubs/game");
 // personal links: "/r/{token}" starts this visit's referral session and opens the home page
 PortalX.Server.Referrals.ReferralEndpoints.MapReferralRedirect(app);
+PortalX.Server.Newsletter.NewsletterEndpoints.MapNewsletterClick(app);
 // unknown API paths answer 404 instead of falling through to the Angular page
 app.Map("/api/{**rest}", () => Results.NotFound(new ApiError("not-found", "הכתובת לא נמצאה.")));
 app.MapFallbackToFile("index.html", StaticCaching.Options);

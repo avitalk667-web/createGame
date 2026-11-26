@@ -36,7 +36,7 @@ public sealed record NewsletterSendRequest(int? Confirm);
 /// message, so nobody ever sees another person's links or address.
 /// </summary>
 public sealed class NewsletterService(PortalDbContext db, UnsubscribeLinks links, SiteOptions site, IEmailSender sender,
-    NewsletterOptions options, NewsletterRunner runner)
+    NewsletterOptions options, NewsletterRunner runner, NewsletterTracking tracking)
 {
     public const string TestPrefix = "[בדיקה] ";
     /// <summary>Gmail cuts an email longer than about 102KB ("[ההודעה נחתכה]"): warn well before that.</summary>
@@ -207,10 +207,13 @@ public sealed class NewsletterService(PortalDbContext db, UnsubscribeLinks links
         var c = NewsletterContent.FromJson(i.ContentJson);
         var results = new List<object>();
         var allOk = true;
+        // a test email goes through the same click tracking as the list's, marked as a test: its clicks never count
+        var trackedLinks = await tracking.EnsureLinksAsync(i, c);
         foreach (var e in emails)
         {
             var consent = await db.MarketingConsents.AsNoTracking().FirstOrDefaultAsync(x => x.Email == e);
             var r = await RecipientAsync(e, c, siteUrl, consent);
+            r = r with { Tracked = await tracking.NewTrackerAsync(i.Id, null, e, trackedLinks, siteUrl) };
             try
             {
                 await sender.SendAsync(new EmailMessage(e, TestPrefix + NewsletterTemplate.Subject(c),
@@ -284,6 +287,7 @@ public sealed class NewsletterService(PortalDbContext db, UnsubscribeLinks links
         var issue = await db.NewsletterIssues.FirstAsync(x => x.Id == id);
         var c = NewsletterContent.FromJson(issue.ContentJson);
         var emails = await Pending(id).OrderBy(x => x.ConsentedAt).Select(x => x.Email).ToListAsync(stop);
+        var trackedLinks = await tracking.EnsureLinksAsync(issue, c);
         string? note = null;
         foreach (var email in emails)
         {
@@ -306,6 +310,7 @@ public sealed class NewsletterService(PortalDbContext db, UnsubscribeLinks links
             catch (DbUpdateException) { db.ChangeTracker.Clear(); continue; } // another run claimed it
 
             var r = await RecipientAsync(email, c, siteUrl, consent);
+            r = r with { Tracked = await tracking.NewTrackerAsync(id, row.Id, null, trackedLinks, siteUrl) };
             try
             {
                 row.ProviderMessageId = await sender.SendAsync(new EmailMessage(email, NewsletterTemplate.Subject(c),

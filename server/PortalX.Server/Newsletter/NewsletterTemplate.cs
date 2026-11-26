@@ -9,7 +9,13 @@ namespace PortalX.Server.Newsletter;
 /// What belongs to one recipient: their first name, their own two personal links and their own signed unsubscribe link.
 /// A missing value hides its part (never a placeholder link, never someone else's link).
 /// </summary>
-public sealed record NewsletterRecipient(string Email, string? FirstName, string? GameLinkUrl, string? SiteLinkUrl, string? UnsubscribeUrl);
+/// <param name="Tracked">Link kind ("game", "site", "cta", "home") → the tracked address of this one email; none in previews.</param>
+public sealed record NewsletterRecipient(string Email, string? FirstName, string? GameLinkUrl, string? SiteLinkUrl, string? UnsubscribeUrl,
+    IReadOnlyDictionary<string, string>? Tracked = null)
+{
+    /// <summary>Where a button points: its tracked address when the email has one, else the link itself.</summary>
+    public string Href(string kind, string url) => Tracked != null && Tracked.TryGetValue(kind, out var t) ? t : url;
+}
 
 /// <summary>Where the email points: the public site and the one contact address.</summary>
 public sealed record NewsletterSite(string SiteUrl, string ContactEmail);
@@ -177,12 +183,12 @@ a[x-apple-data-detectors]{color:inherit !important;text-decoration:none !importa
 <p style="margin:0 0 2px;font-family:{Font};font-size:19px;font-weight:bold;line-height:1.35;color:#ffffff;">🔗 {E(c.Links.Title)}</p>
 {(string.IsNullOrWhiteSpace(c.Links.Note) ? "" : $"<p style=\"margin:0 0 4px;font-family:{Font};font-size:13px;color:#bfe6ff;\">{E(c.Links.Note)}</p>")}
 """);
-                foreach (var (label, url) in new[] { (c.Links.GameLabel, gameLink), (c.Links.SiteLabel, siteLink) })
+                foreach (var (kind, label, url) in new[] { ("game", c.Links.GameLabel, gameLink), ("site", c.Links.SiteLabel, siteLink) })
                 {
                     if (url == null) continue;
                     h.Append($"""
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;margin:10px 0 2px;"><tr><td align="center" bgcolor="#dff3ff" style="background-color:#dff3ff;background-image:linear-gradient(180deg,#f1faff,#b9e4ff);border:2px solid #7fd3ff;border-radius:999px;">
-<a href="{E(url)}" style="display:block;padding:11px 12px;font-family:{Font};font-size:15px;font-weight:bold;line-height:1.3;color:{BlueDeep};text-decoration:none;border-radius:999px;">{E(label)}&nbsp; ↗</a>
+<a href="{E(r.Href(kind, url))}" style="display:block;padding:11px 12px;font-family:{Font};font-size:15px;font-weight:bold;line-height:1.3;color:{BlueDeep};text-decoration:none;border-radius:999px;">{E(label)}&nbsp; ↗</a>
 </td></tr></table>
 <p style="margin:2px 0 0;font-family:{Font};font-size:11px;line-height:1.4;color:#9fd8ff;text-align:center;word-break:break-all;" dir="ltr">{E(url)}</p>
 """);
@@ -220,7 +226,7 @@ a[x-apple-data-detectors]{color:inherit !important;text-decoration:none !importa
             h.Append($"""
 <tr><td align="center" style="padding:16px 16px 6px;">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr><td class="cta" align="center" bgcolor="#5b23a8" style="background-color:#5b23a8;background-image:linear-gradient(180deg,#7d3fd4,#45157f);border:3px solid {Gold};border-radius:999px;box-shadow:0 0 18px rgba(167,110,255,.55);">
-<a href="{E(Absolute(c.Cta.Url, siteUrl))}" style="display:inline-block;padding:15px 38px;font-family:{Font};font-size:23px;font-weight:bold;line-height:1.3;color:#ffffff;text-decoration:none;border-radius:999px;"><span style="color:{GoldLight};">▶</span>&nbsp; {E(c.Cta.Label)}</a>
+<a href="{E(r.Href("cta", Absolute(c.Cta.Url, siteUrl)))}" style="display:inline-block;padding:15px 38px;font-family:{Font};font-size:23px;font-weight:bold;line-height:1.3;color:#ffffff;text-decoration:none;border-radius:999px;"><span style="color:{GoldLight};">▶</span>&nbsp; {E(c.Cta.Label)}</a>
 </td></tr></table>
 </td></tr>
 
@@ -245,7 +251,7 @@ a[x-apple-data-detectors]{color:inherit !important;text-decoration:none !importa
         h.Append($"""
 <table role="presentation" class="wrap" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;"><tr><td class="px" style="padding:14px 18px 4px;font-family:{Font};font-size:12px;line-height:1.75;color:{Muted};text-align:center;" dir="rtl">
 קיבלתם את המייל הזה כי הסכמתם לקבל דיוור מ־PORTAL-X (סודות הפורטל). {unsub} · אפשר גם להשיב למייל זה עם המילה "הסר".<br>
-השולח: צוות PORTAL-X · חדרי בריחה וירטואליים · <a href="{E(siteUrl)}" style="color:{GoldLight};">{E(host)}</a> · לפניות: <a href="mailto:{E(site.ContactEmail)}" style="color:{GoldLight};">{E(site.ContactEmail)}</a>
+השולח: צוות PORTAL-X · חדרי בריחה וירטואליים · <a href="{E(r.Href("home", siteUrl))}" style="color:{GoldLight};">{E(host)}</a> · לפניות: <a href="mailto:{E(site.ContactEmail)}" style="color:{GoldLight};">{E(site.ContactEmail)}</a>
 </td></tr></table>
 </td></tr>
 </table>
@@ -299,7 +305,7 @@ a[x-apple-data-detectors]{color:inherit !important;text-decoration:none !importa
             if (!string.IsNullOrWhiteSpace(c.Offer.Note)) t.AppendLine(c.Offer.Note);
             t.AppendLine();
         }
-        if (c.Cta.Show) t.AppendLine($"{c.Cta.Label}: {Absolute(c.Cta.Url, siteUrl)}").AppendLine();
+        if (c.Cta.Show) t.AppendLine($"{c.Cta.Label}: {r.Href("cta", Absolute(c.Cta.Url, siteUrl))}").AppendLine();
         t.AppendLine("מחכים לכם מעבר לפורטל!");
         t.AppendLine("צוות PORTAL-X");
         t.AppendLine();

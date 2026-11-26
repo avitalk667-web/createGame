@@ -1139,6 +1139,62 @@ namespace PortalX.Server.Data.Migrations
                     b.ToTable("MarketingConsentEvents");
                 });
 
+            modelBuilder.Entity("PortalX.Server.Domain.NewsletterClickEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AttributionHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("AutomatedReason")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTime>("ClickedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("DeliveryId")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("IsAutomated")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsTest")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("IssueId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("LinkId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TrackerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AttributionHash");
+
+                    b.HasIndex("DeliveryId");
+
+                    b.HasIndex("LinkId");
+
+                    b.HasIndex("IssueId", "ClickedAt");
+
+                    b.HasIndex("TrackerId", "ClickedAt");
+
+                    b.ToTable("NewsletterClickEvents");
+                });
+
             modelBuilder.Entity("PortalX.Server.Domain.NewsletterDelivery", b =>
                 {
                     b.Property<long>("Id")
@@ -1224,6 +1280,118 @@ namespace PortalX.Server.Data.Migrations
                     b.HasIndex("CreatedAt");
 
                     b.ToTable("NewsletterIssues");
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.NewsletterLink", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Destination")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid>("IssueId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<int>("Slot")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IssueId", "Kind")
+                        .IsUnique();
+
+                    b.HasIndex("IssueId", "Slot")
+                        .IsUnique();
+
+                    b.ToTable("NewsletterLinks");
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.NewsletterOrderAttribution", b =>
+                {
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("AttributedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("ClickId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("ClickedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("DeliveryId")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("IssueId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("OrderId");
+
+                    b.HasIndex("ClickId");
+
+                    b.HasIndex("IssueId");
+
+                    b.ToTable("NewsletterOrderAttributions");
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.NewsletterTracker", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("DeliveryId")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("IsTest")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("IssueId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("TestEmail")
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeliveryId");
+
+                    b.HasIndex("IssueId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("NewsletterTrackers");
                 });
 
             modelBuilder.Entity("PortalX.Server.Domain.OAuthState", b =>
@@ -2381,8 +2549,73 @@ namespace PortalX.Server.Data.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
                 });
 
+            modelBuilder.Entity("PortalX.Server.Domain.NewsletterClickEvent", b =>
+                {
+                    b.HasOne("PortalX.Server.Domain.NewsletterIssue", null)
+                        .WithMany()
+                        .HasForeignKey("IssueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("PortalX.Server.Domain.NewsletterLink", null)
+                        .WithMany()
+                        .HasForeignKey("LinkId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("PortalX.Server.Domain.NewsletterTracker", null)
+                        .WithMany()
+                        .HasForeignKey("TrackerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("PortalX.Server.Domain.NewsletterDelivery", b =>
                 {
+                    b.HasOne("PortalX.Server.Domain.NewsletterIssue", null)
+                        .WithMany()
+                        .HasForeignKey("IssueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.NewsletterLink", b =>
+                {
+                    b.HasOne("PortalX.Server.Domain.NewsletterIssue", null)
+                        .WithMany()
+                        .HasForeignKey("IssueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.NewsletterOrderAttribution", b =>
+                {
+                    b.HasOne("PortalX.Server.Domain.NewsletterClickEvent", null)
+                        .WithMany()
+                        .HasForeignKey("ClickId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("PortalX.Server.Domain.NewsletterIssue", null)
+                        .WithMany()
+                        .HasForeignKey("IssueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("PortalX.Server.Domain.Order", null)
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.NewsletterTracker", b =>
+                {
+                    b.HasOne("PortalX.Server.Domain.NewsletterDelivery", null)
+                        .WithMany()
+                        .HasForeignKey("DeliveryId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
                     b.HasOne("PortalX.Server.Domain.NewsletterIssue", null)
                         .WithMany()
                         .HasForeignKey("IssueId")

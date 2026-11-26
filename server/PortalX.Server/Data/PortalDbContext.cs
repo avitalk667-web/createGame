@@ -48,6 +48,10 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
     public DbSet<TreasureGiftProduct> TreasureGiftProducts => Set<TreasureGiftProduct>();
     public DbSet<NewsletterIssue> NewsletterIssues => Set<NewsletterIssue>();
     public DbSet<NewsletterDelivery> NewsletterDeliveries => Set<NewsletterDelivery>();
+    public DbSet<NewsletterLink> NewsletterLinks => Set<NewsletterLink>();
+    public DbSet<NewsletterTracker> NewsletterTrackers => Set<NewsletterTracker>();
+    public DbSet<NewsletterClickEvent> NewsletterClickEvents => Set<NewsletterClickEvent>();
+    public DbSet<NewsletterOrderAttribution> NewsletterOrderAttributions => Set<NewsletterOrderAttribution>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -72,6 +76,56 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.HasIndex(x => new { x.IssueId, x.Email }).IsUnique();
             e.HasIndex(x => x.At);
             e.HasOne<NewsletterIssue>().WithMany().HasForeignKey(x => x.IssueId).OnDelete(DeleteBehavior.Cascade);
+        });
+        // ---- clicks on the links of a mailing, and the purchases they led to ----
+        b.Entity<NewsletterLink>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Kind).HasMaxLength(24);
+            e.Property(x => x.Category).HasMaxLength(16);
+            e.Property(x => x.Label).HasMaxLength(120);
+            e.Property(x => x.Destination).HasMaxLength(500);
+            e.HasIndex(x => new { x.IssueId, x.Slot }).IsUnique();
+            e.HasIndex(x => new { x.IssueId, x.Kind }).IsUnique();
+            e.HasOne<NewsletterIssue>().WithMany().HasForeignKey(x => x.IssueId).OnDelete(DeleteBehavior.Cascade);
+        });
+        b.Entity<NewsletterTracker>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.TokenHash).HasMaxLength(64);
+            e.Property(x => x.TestEmail).HasMaxLength(254);
+            e.HasIndex(x => x.TokenHash).IsUnique();
+            e.HasIndex(x => x.IssueId);
+            e.HasIndex(x => x.DeliveryId);
+            e.HasOne<NewsletterIssue>().WithMany().HasForeignKey(x => x.IssueId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<NewsletterDelivery>().WithMany().HasForeignKey(x => x.DeliveryId).OnDelete(DeleteBehavior.Cascade);
+        });
+        b.Entity<NewsletterClickEvent>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.UserAgent).HasMaxLength(256);
+            e.Property(x => x.AutomatedReason).HasMaxLength(16);
+            e.Property(x => x.AttributionHash).HasMaxLength(64);
+            e.HasIndex(x => new { x.IssueId, x.ClickedAt });
+            e.HasIndex(x => new { x.TrackerId, x.ClickedAt });
+            e.HasIndex(x => x.DeliveryId);
+            e.HasIndex(x => x.LinkId);
+            e.HasIndex(x => x.AttributionHash);
+            e.HasOne<NewsletterIssue>().WithMany().HasForeignKey(x => x.IssueId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<NewsletterTracker>().WithMany().HasForeignKey(x => x.TrackerId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<NewsletterLink>().WithMany().HasForeignKey(x => x.LinkId).OnDelete(DeleteBehavior.Cascade);
+        });
+        b.Entity<NewsletterOrderAttribution>(e =>
+        {
+            e.HasKey(x => x.OrderId);
+            e.Property(x => x.OrderId).ValueGeneratedNever();
+            e.HasIndex(x => x.IssueId);
+            e.HasIndex(x => x.ClickId);
+            e.HasOne<Order>().WithMany().HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<NewsletterIssue>().WithMany().HasForeignKey(x => x.IssueId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<NewsletterClickEvent>().WithMany().HasForeignKey(x => x.ClickId).OnDelete(DeleteBehavior.Cascade);
         });
 
         // ---- challenge campaigns ("Challenge 240") and their personal coupons ----

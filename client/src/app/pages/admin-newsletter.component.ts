@@ -2,6 +2,7 @@ import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, OnDestroy, signal } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ApiError } from '../core/api.service';
+import { AdminNewsletterStatsComponent } from './admin-newsletter-stats.component';
 
 /** One mailing's editable content (the same shape as NewsletterContent on the server). */
 export interface NlContent {
@@ -56,9 +57,14 @@ const ERRORS: Record<string, string> = { 'not-configured': 'שליחת המיי�
  */
 @Component({
   selector: 'px-admin-newsletter',
-  imports: [DatePipe],
+  imports: [DatePipe, AdminNewsletterStatsComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
+    <div class="views" role="group" aria-label="תצוגה">
+      <button type="button" class="btn small" [class.on]="view() === 'edit'" (click)="view.set('edit')">✉️ דיוורים ועריכה</button>
+      <button type="button" class="btn small" [class.on]="view() === 'stats'" (click)="showStats(null)">📊 סטטיסטיקות והקלקות</button>
+    </div>
+    @if (view() === 'stats') { <px-admin-newsletter-stats [issueId]="statsFor()" /> } @else {
     @if (error()) { <p class="msg-box" role="alert">{{ error() }}</p> }
     @if (list(); as l) {
       <div class="cards">
@@ -222,6 +228,7 @@ const ERRORS: Record<string, string> = { 'not-configured': 'שליחת המיי�
               <button class="btn small" type="button" (click)="test()" [disabled]="busy() || dirty() || d.locked">שליחת בדיקה</button>
             </div>
             @if (dirty()) { <p class="muted small">יש לשמור לפני שליחת בדיקה.</p> }
+            <p class="muted small">הכפתורים במייל הבדיקה עוברים דרך מעקב ההקלקות כמו בדיוור עצמו, אבל ההקלקות עליהם לא נספרות בסטטיסטיקות.</p>
             @if (testResult(); as t) {
               <ul class="small">
                 @for (r of t.results; track r.email) {
@@ -254,6 +261,7 @@ const ERRORS: Record<string, string> = { 'not-configured': 'שליחת המיי�
               }
             }
             <button class="btn small ghost" type="button" (click)="loadDeliveries()">מי קיבל?</button>
+            @if (d.issue.sent) { <button class="btn small ghost" type="button" (click)="showStats(d.issue.id)">📊 נתוני הקלקות</button> }
             @if (deliveries(); as ds) {
               <div class="table-wrap deliveries"><table>
                 <thead><tr><th>כתובת</th><th>סטטוס</th><th>מתי</th></tr></thead>
@@ -268,8 +276,11 @@ const ERRORS: Record<string, string> = { 'not-configured': 'שליחת המיי�
       </div>
       }
     }
+    }
   `,
   styles: [`
+    .views { display:flex; gap:.5rem; flex-wrap:wrap; margin-bottom:1rem; }
+    .views .btn.on { border-color:var(--gold); color:var(--gold-2); background:rgba(224,185,92,.1); }
     .cards { margin-bottom:1rem; }
     .bar .actions { display:flex; gap:.5rem; flex-wrap:wrap; }
     .list { max-height:260px; }
@@ -317,6 +328,13 @@ const ERRORS: Record<string, string> = { 'not-configured': 'שליחת המיי�
 })
 export class AdminNewsletterComponent implements OnDestroy {
   private sanitizer = inject(DomSanitizer);
+  view = signal<'edit' | 'stats'>('edit');
+  statsFor = signal<string | null>(null);
+  showStats(id: string | null) {
+    if (id === null && this.dirty() && !confirm('יש שינויים שלא נשמרו. לעבור בכל זאת?')) return;
+    this.statsFor.set(id);
+    this.view.set('stats');
+  }
   list = signal<NlList | null>(null);
   selected = signal<NlDetail | null>(null);
   c = signal<NlContent | null>(null);
