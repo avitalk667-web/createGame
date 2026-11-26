@@ -1643,6 +1643,12 @@ namespace PortalX.Server.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<bool>("DurationIsMinimum")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("DurationMinutes")
+                        .HasColumnType("integer");
+
                     b.Property<string>("FeaturesJson")
                         .IsRequired()
                         .HasColumnType("jsonb");

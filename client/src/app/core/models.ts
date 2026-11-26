@@ -317,6 +317,8 @@ export interface Product {
   included: string[];
   minPlayers: number;
   maxPlayers: number;
+  /** Approximate play time from the server; null/missing = not set, nothing is shown. */
+  duration?: { minutes: number; atLeast: boolean } | null;
   scenarioId?: string | null;
   playable: boolean;
   priceSet: boolean;
@@ -411,6 +413,13 @@ export function formatPrice(p: Product): string | null {
 export function formatPreviousPrice(p: Product): string | null {
   if (p.isFree || p.price == null || p.previousPrice == null || !(p.previousPrice > p.price)) return null;
   return formatAmount(p.previousPrice, p.currency);
+}
+
+/** "כ־60 דקות" / "כ־60 דקות ומעלה", or null when the game has no play time set. */
+export function durationLabel(p: Pick<Product, 'duration'>): string | null {
+  const d = p.duration;
+  if (!d || !(d.minutes > 0)) return null;
+  return `כ־${d.minutes} דקות${d.atLeast ? ' ומעלה' : ''}`;
 }
 
 export function playersLabel(p: Product): string {

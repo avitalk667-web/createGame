@@ -49,6 +49,42 @@ public class ProductCatalogTests
     }
 
     [Fact]
+    public async Task Every_game_carries_its_play_time_from_the_server_and_a_game_without_one_shows_none()
+    {
+        var expected = new Dictionary<string, (int Minutes, bool AtLeast)>
+        {
+            ["hanukkah-oil"] = (60, true), ["stone-maze"] = (45, true), ["last-portal"] = (60, false), ["couples-cipher"] = (60, true),
+        };
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PortalDbContext>();
+            foreach (var (id, (minutes, atLeast)) in expected)
+            {
+                var p = await db.Products.AsNoTracking().SingleAsync(x => x.Id == id);
+                Assert.Equal(minutes, p.DurationMinutes);
+                Assert.Equal(atLeast, p.DurationIsMinimum);
+            }
+        }
+
+        var list = await _factory.CreateClient().GetFromJsonAsync<JsonElement>("/api/products");
+        var seen = 0;
+        foreach (var p in list.EnumerateArray())
+        {
+            var id = p.GetProperty("id").GetString()!;
+            // the API leaves null fields out, so a game without a play time may have no "duration" at all
+            var has = p.TryGetProperty("duration", out var duration) && duration.ValueKind != JsonValueKind.Null;
+            if (expected.TryGetValue(id, out var e))
+            {
+                Assert.Equal(e.Minutes, duration.GetProperty("minutes").GetInt32());
+                Assert.Equal(e.AtLeast, duration.GetProperty("atLeast").GetBoolean());
+                seen++;
+            }
+            else Assert.False(has); // no play time set: nothing to show
+        }
+        Assert.True(seen >= 2);
+    }
+
+    [Fact]
     public async Task Unknown_or_hidden_product_is_not_found()
     {
         var client = _factory.CreateClient();

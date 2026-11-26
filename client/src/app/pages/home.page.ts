@@ -4,7 +4,8 @@ import { AdminApiService } from '../core/admin-api.service';
 import { ApiService, Campaign } from '../core/api.service';
 import { AudioService } from '../core/audio.service';
 import { SiteService } from '../core/site.service';
-import { FaqEntryView, Product, formatPreviousPrice, formatPrice, playersLabel } from '../core/models';
+import { FaqEntryView, Product, durationLabel, formatPreviousPrice, formatPrice, playersLabel } from '../core/models';
+import { GameDurationComponent } from '../ui/game-duration.component';
 import { DrawCountdownComponent } from '../ui/draw-countdown.component';
 import { PrizeGiftComponent } from '../ui/prize-gift.component';
 import { HowItWorksComponent } from '../ui/how-it-works.component';
@@ -17,7 +18,7 @@ import { demoTrack } from '../demo/demo.api';
 /** Shared entry gate: a catalog of both games, each with its own server-side price (spec §2). */
 @Component({
   selector: 'px-home',
-  imports: [RouterLink, SettingsPanelComponent, DrawCountdownComponent, PrizeGiftComponent, HowItWorksComponent, TutorialVideoComponent, TreasurePromoComponent, HelpMenuComponent],
+  imports: [RouterLink, SettingsPanelComponent, DrawCountdownComponent, PrizeGiftComponent, HowItWorksComponent, TutorialVideoComponent, TreasurePromoComponent, HelpMenuComponent, GameDurationComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="bg" aria-hidden="true"></div>
@@ -139,6 +140,7 @@ import { demoTrack } from '../demo/demo.api';
                   <h3><a [routerLink]="['/games', p.id]">{{ p.name }}</a></h3>
                   <p class="tagline">{{ p.tagline }}</p>
                   <ul class="features">
+                    @if (duration(p)) { <li><px-game-duration [product]="p" chip /></li> }
                     @for (f of p.features; track f) { <li class="chip">{{ f }}</li> }
                   </ul>
                   @if (!p.isFree && p.purchasable) { <px-treasure-promo variant="badge" /> }
@@ -489,6 +491,7 @@ export class HomePage implements AfterViewInit, OnDestroy {
   /** Display only: the charge is always the current price. */
   previousPrice = formatPreviousPrice;
   players = playersLabel;
+  duration = durationLabel;
 
   private taste = viewChild<ElementRef<HTMLElement>>('taste');
   private tasteSeen?: IntersectionObserver;

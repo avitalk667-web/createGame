@@ -31,6 +31,8 @@
     "status": "Published",
     "minPlayers": 2,
     "maxPlayers": 4,
+    "durationMinutes": 60,
+    "durationIsMinimum": false,
     "scenarioId": "last-portal",
     "sortOrder": 1
   },
@@ -90,6 +92,8 @@
     "status": "Published",
     "minPlayers": 1,
     "maxPlayers": 4,
+    "durationMinutes": 60,
+    "durationIsMinimum": true,
     "scenarioId": "hanukkah-oil",
     "sortOrder": 2
   },
@@ -174,6 +178,8 @@
     "status": "Published",
     "minPlayers": 1,
     "maxPlayers": 4,
+    "durationMinutes": 45,
+    "durationIsMinimum": true,
     "scenarioId": "stone-maze",
     "sortOrder": 3
   },
@@ -205,6 +211,8 @@
     "status": "Draft",
     "minPlayers": 1,
     "maxPlayers": 2,
+    "durationMinutes": 60,
+    "durationIsMinimum": true,
     "scenarioId": "couples-cipher",
     "sortOrder": 4
   }

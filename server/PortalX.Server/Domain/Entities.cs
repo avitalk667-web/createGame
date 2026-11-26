@@ -311,6 +311,10 @@ public class Product
     public ProductStatus Status { get; set; }
     public int MinPlayers { get; set; } = 1;
     public int MaxPlayers { get; set; } = 4;
+    /// <summary>Approximate play time in minutes, shown on the game's card and page ("כ־60 דקות"); null = not set, nothing is shown.</summary>
+    public int? DurationMinutes { get; set; }
+    /// <summary>The play time is a minimum ("כ־60 דקות ומעלה").</summary>
+    public bool DurationIsMinimum { get; set; }
     /// <summary>A free trial game: started without payment, never sold, never revenue.</summary>
     public bool IsFree { get; set; }
     public string GameType { get; set; } = "escape-room-3d";

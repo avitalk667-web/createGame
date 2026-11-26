@@ -3,7 +3,8 @@ import { ChangeDetectionStrategy, Component, ElementRef, HostListener, NgZone, O
 import { Router, RouterLink } from '@angular/router';
 import { ApiError, ApiService } from '../core/api.service';
 import { AudioService } from '../core/audio.service';
-import { Product, formatPreviousPrice, formatPrice, playersLabel } from '../core/models';
+import { Product, durationLabel, formatPreviousPrice, formatPrice, playersLabel } from '../core/models';
+import { GameDurationComponent } from '../ui/game-duration.component';
 import { SettingsService } from '../core/settings.service';
 import { JoystickComponent } from '../ui/joystick.component';
 import { DEMO_ITEMS, DEMO_SPOTS, DemoSpot, DemoSpotId } from './demo-content';
@@ -27,7 +28,7 @@ type ItemId = (typeof DEMO_ITEMS)[number];
 @Component({
   selector: 'px-demo-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, JoystickComponent, DemoGateSceneComponent, DemoInspectComponent, DemoKeypadComponent, DemoFinaleComponent],
+  imports: [RouterLink, JoystickComponent, DemoGateSceneComponent, DemoInspectComponent, DemoKeypadComponent, DemoFinaleComponent, GameDurationComponent],
   template: `
     <div class="stage" [class.hidden]="phase() === 'gate'"><canvas #canvas aria-label="החדר הנעול בתלת־ממד"></canvas></div>
 
@@ -261,7 +262,7 @@ type ItemId = (typeof DEMO_ITEMS)[number];
                             <s><span class="sr-only">מחיר קודם: </span><bdi>{{ was }}</bdi></s>
                           }
                           <b><span class="sr-only">מחיר: </span><bdi>{{ price(p) }}</bdi></b>
-                          <small>{{ players(p) }}</small>
+                          <small>{{ players(p) }}@if (playTime(p)) { · <px-game-duration [product]="p" />}</small>
                         </div>
                         <a class="btn primary" [routerLink]="['/games', p.id]" (click)="productClicked(p)">לרכישת המשחק</a>
                       </div>
@@ -579,6 +580,7 @@ export class DemoPage implements OnInit, OnDestroy {
   readonly price = formatPrice;
   readonly previousPrice = formatPreviousPrice;
   readonly players = playersLabel;
+  readonly playTime = durationLabel;
   /** The portal finale behind the opened door is on (in the room; the coupon screen opens over it on request). */
   finaleOn = signal(false);
   /** The finale is shown as it is after its animation (the taste was already solved before this visit or refresh). */

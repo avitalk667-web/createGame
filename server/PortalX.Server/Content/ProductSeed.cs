@@ -24,6 +24,8 @@ public sealed class ProductSeed
     public ProductStatus Status { get; init; }
     public int MinPlayers { get; init; } = 1;
     public int MaxPlayers { get; init; } = 4;
+    public int? DurationMinutes { get; init; }
+    public bool DurationIsMinimum { get; init; }
     public bool IsFree { get; init; }
     public string? ScenarioId { get; init; }
     public int SortOrder { get; init; }
@@ -50,6 +52,7 @@ public sealed class ProductSeed
                 FeaturesJson = JsonSerializer.Serialize(s.Features, ScenarioCatalog.JsonOptions),
                 IncludedJson = JsonSerializer.Serialize(s.Included, ScenarioCatalog.JsonOptions),
                 Status = s.Status, MinPlayers = s.MinPlayers, MaxPlayers = s.MaxPlayers, IsFree = s.IsFree,
+                DurationMinutes = s.DurationMinutes, DurationIsMinimum = s.DurationIsMinimum,
                 ScenarioId = s.ScenarioId, SortOrder = s.SortOrder, CreatedAt = now, UpdatedAt = now,
             });
         }
@@ -147,6 +150,8 @@ public static class ProductView
             Features = JsonNode.Parse(p.FeaturesJson),
             Included = JsonNode.Parse(p.IncludedJson),
             p.MinPlayers, p.MaxPlayers, p.ScenarioId, p.IsFree,
+            // approximate play time; null = not set, the site shows nothing
+            Duration = p.DurationMinutes is > 0 and var m ? new { Minutes = m, AtLeast = p.DurationIsMinimum } : null,
             // the game content exists on the server and can be played
             Playable = playable,
             PriceSet = p.PriceIls is > 0,

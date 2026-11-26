@@ -4,6 +4,7 @@ import { Router, RouterLink } from '@angular/router';
 import { ApiService, StoredOrder, orderStore, sessionStore } from '../core/api.service';
 import { AudioService } from '../core/audio.service';
 import { CouponQuote, Product, formatPreviousPrice, formatPrice, playersLabel } from '../core/models';
+import { GameDurationComponent } from '../ui/game-duration.component';
 import { CouponInputComponent } from '../challenge/coupon-input.component';
 import { pendingCoupon } from '../challenge/challenge.service';
 import { SiteService } from '../core/site.service';
@@ -12,7 +13,7 @@ import { TreasurePromoComponent } from '../ui/treasure-promo.component';
 /** /games/:id — one product: large image, what's included, players, price and the next step (spec §2). */
 @Component({
   selector: 'px-game',
-  imports: [RouterLink, DatePipe, CouponInputComponent, TreasurePromoComponent],
+  imports: [RouterLink, DatePipe, CouponInputComponent, TreasurePromoComponent, GameDurationComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <main>
@@ -30,7 +31,7 @@ import { TreasurePromoComponent } from '../ui/treasure-promo.component';
         <section class="hero">
           <img class="cover" [src]="p.coverImage" [alt]="p.name" />
           <div class="intro">
-            <span class="chip">{{ players(p) }}</span>
+            <div class="meta-chips"><span class="chip">{{ players(p) }}</span><px-game-duration [product]="p" chip /></div>
             <h1>{{ p.name }}</h1>
             <p class="tagline">{{ p.tagline }}</p>
             <p class="desc">{{ p.description }}</p>
@@ -167,6 +168,7 @@ import { TreasurePromoComponent } from '../ui/treasure-promo.component';
     .tagline { font-size:1.2rem; color:var(--blue); margin:0 0 .6rem; }
     .desc { line-height:1.8; color:#e6e0cf; margin:0; white-space:pre-line; }
     .features { list-style:none; padding:0; margin:1rem 0 0; display:flex; flex-wrap:wrap; gap:.4rem; }
+    .meta-chips { display:flex; flex-wrap:wrap; gap:.4rem; }
     .layout { display:grid; grid-template-columns:1.6fr 1fr; gap:1.25rem; margin-top:1.75rem; align-items:start; }
     h2 { font-family:var(--font-title); margin:0 0 .6rem; }
     .included ul { line-height:1.8; padding-inline-start:1.2rem; margin:0 0 1.25rem; }

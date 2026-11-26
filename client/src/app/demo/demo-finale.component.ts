@@ -1,7 +1,8 @@
 import { AfterViewInit, ChangeDetectionStrategy, Component, NgZone, OnDestroy, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AudioService } from '../core/audio.service';
-import { Product, formatPreviousPrice, formatPrice, playersLabel } from '../core/models';
+import { Product, durationLabel, formatPreviousPrice, formatPrice, playersLabel } from '../core/models';
+import { GameDurationComponent } from '../ui/game-duration.component';
 import { demoTrack } from './demo.api';
 import { DemoFinale, FinaleCard } from './demo-finale';
 import { DemoWorld } from './demo-world';
@@ -15,7 +16,7 @@ import { DemoWorld } from './demo-world';
 @Component({
   selector: 'px-demo-finale',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink],
+  imports: [RouterLink, GameDurationComponent],
   template: `
     @if (!ready()) { <div class="letterbox top"></div><div class="letterbox bottom"></div> }
 
@@ -69,7 +70,7 @@ import { DemoWorld } from './demo-world';
           <h2 class="gold-title">{{ p.name }}</h2>
           <p class="tag">{{ p.tagline }}</p>
           <p class="desc">{{ p.description }}</p>
-          <p class="meta">{{ playersOf(p) }}</p>
+          <p class="meta">{{ playersOf(p) }}@if (durationOf(p)) { · <px-game-duration [product]="p" />}</p>
           <p class="price">
             @if (price(p); as pr) { <b>{{ pr }}</b> }
             @if (previous(p); as prev) { <s aria-label="מחיר קודם">{{ prev }}</s> }
@@ -198,6 +199,7 @@ export class DemoFinaleComponent implements AfterViewInit, OnDestroy {
   price = formatPrice;
   previous = formatPreviousPrice;
   playersOf = playersLabel;
+  durationOf = durationLabel;
 
   constructor() {
     // the games arrive after the coupon (the list is narrowed to what it is good for); the cards come out once they are in
@@ -237,7 +239,9 @@ export class DemoFinaleComponent implements AfterViewInit, OnDestroy {
     this.shown = list;
     this.list.set(list);
     const cards: FinaleCard[] = list.map((p) => ({
-      id: p.id, name: p.name, tagline: p.tagline, price: formatPrice(p), previousPrice: formatPreviousPrice(p), players: playersLabel(p), cover: p.coverImage,
+      id: p.id, name: p.name, tagline: p.tagline, price: formatPrice(p), previousPrice: formatPreviousPrice(p),
+      // the card's small line: players, and the play time when the game has one
+      players: [playersLabel(p), durationLabel(p) && '🕒 ' + durationLabel(p)].filter(Boolean).join(' · '), cover: p.coverImage,
     }));
     this.cards.set(cards);
     this.zone.runOutsideAngular(() => this.finale?.setCards(cards));
