@@ -36,11 +36,14 @@ public static class ReferralEndpoints
     /// <summary>
     /// "/r/{token}": checks the link on the server, starts (or updates) this visit's referral session and goes to the home
     /// page, so the address bar no longer carries the token. An unknown or disabled link simply opens the site.
+    /// "?to={product id}" (the personal game link of the "סודות הפורטל" mailing) lands on that game's page instead — only
+    /// a product id of the shape a-z0-9-, so the link can never lead to another site.
     /// </summary>
     public static void MapReferralRedirect(this WebApplication app)
     {
-        app.MapGet("/r/{token}", async (string token, HttpContext ctx, ReferralService service, ILoggerFactory logs) =>
+        app.MapGet("/r/{token}", async (string token, string? to, HttpContext ctx, ReferralService service, ILoggerFactory logs) =>
         {
+            var target = to != null && PortalX.Server.Newsletter.NewsletterContent.GameId().IsMatch(to) ? $"/games/{to}" : "/";
             try
             {
                 var visit = await service.OpenVisitAsync(token, ctx.Request.Cookies[ReferralService.VisitCookie]);
@@ -52,7 +55,7 @@ public static class ReferralEndpoints
                 logs.CreateLogger("Referrals").LogWarning("Referral visit not recorded ({Type})", ex.GetType().Name);
             }
             ctx.Response.Headers.CacheControl = "no-store";
-            return Results.Redirect("/");
+            return Results.Redirect(target);
         }).RequireRateLimiting("referral-visit");
     }
 

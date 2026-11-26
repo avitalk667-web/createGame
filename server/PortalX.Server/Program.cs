@@ -83,6 +83,9 @@ builder.Services.AddScoped<PortalX.Server.Demo.DemoAdmin>();
 builder.Services.AddScoped<PortalX.Server.Demo.DemoCouponService>();
 builder.Services.AddScoped<PortalX.Server.Treasure.TreasureService>();
 builder.Services.AddScoped<PortalX.Server.Treasure.TreasureAdmin>();
+builder.Services.AddSingleton(sp => PortalX.Server.Newsletter.NewsletterOptions.FromConfig(sp.GetRequiredService<IConfiguration>()));
+builder.Services.AddSingleton<PortalX.Server.Newsletter.NewsletterRunner>();
+builder.Services.AddScoped<PortalX.Server.Newsletter.NewsletterService>();
 builder.Services.AddHostedService<PortalX.Server.Mail.MailRetentionService>();
 builder.Services.AddAdminAuth();
 

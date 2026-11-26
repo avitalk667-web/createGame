@@ -46,9 +46,34 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
     public DbSet<TreasureConfig> TreasureConfigs => Set<TreasureConfig>();
     public DbSet<TreasureWin> TreasureWins => Set<TreasureWin>();
     public DbSet<TreasureGiftProduct> TreasureGiftProducts => Set<TreasureGiftProduct>();
+    public DbSet<NewsletterIssue> NewsletterIssues => Set<NewsletterIssue>();
+    public DbSet<NewsletterDelivery> NewsletterDeliveries => Set<NewsletterDelivery>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
+        // ---- "סודות הפורטל" mailings and who got each one ----
+        b.Entity<NewsletterIssue>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Name).HasMaxLength(120);
+            e.Property(x => x.Status).HasMaxLength(16);
+            e.Property(x => x.StatusNote).HasMaxLength(300);
+            e.HasIndex(x => x.CreatedAt);
+        });
+        b.Entity<NewsletterDelivery>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Email).HasMaxLength(254);
+            e.Property(x => x.Status).HasMaxLength(16);
+            e.Property(x => x.ProviderMessageId).HasMaxLength(128);
+            e.Property(x => x.Error).HasMaxLength(64);
+            // one row per address per mailing: the guard against mailing anyone twice
+            e.HasIndex(x => new { x.IssueId, x.Email }).IsUnique();
+            e.HasIndex(x => x.At);
+            e.HasOne<NewsletterIssue>().WithMany().HasForeignKey(x => x.IssueId).OnDelete(DeleteBehavior.Cascade);
+        });
+
         // ---- challenge campaigns ("Challenge 240") and their personal coupons ----
         b.Entity<CouponCampaign>(e =>
         {

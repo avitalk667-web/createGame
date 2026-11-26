@@ -1020,3 +1020,39 @@ public class PersonalLetter
     public DateTime? DeliveredAt { get; set; }
     public DateTime? OpenedAt { get; set; }
 }
+
+/// <summary>
+/// One "סודות הפורטל" mailing: its editable content (NewsletterContent as JSON) and where its sending stands.
+/// The content is locked once sending starts, so every recipient gets the same mailing.
+/// </summary>
+public class NewsletterIssue
+{
+    public Guid Id { get; set; }
+    /// <summary>The admin's own name for it (not shown to recipients).</summary>
+    public string Name { get; set; } = "";
+    public string ContentJson { get; set; } = "{}";
+    /// <summary>"draft", "sending", "paused" or "sent".</summary>
+    public string Status { get; set; } = "draft";
+    public string? StatusNote { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    /// <summary>The last test send that went out after the last change; sending to the list needs one.</summary>
+    public DateTime? TestedAt { get; set; }
+    public DateTime? SendStartedAt { get; set; }
+    public DateTime? SendFinishedAt { get; set; }
+}
+
+/// <summary>
+/// One recipient of one mailing. Written before the send ("sending"), so an address is never mailed twice for the same
+/// mailing; "sent", "failed" (may be tried again) or "uncertain" (may have gone out: never retried automatically).
+/// </summary>
+public class NewsletterDelivery
+{
+    public long Id { get; set; }
+    public Guid IssueId { get; set; }
+    public string Email { get; set; } = "";
+    public string Status { get; set; } = "sending";
+    public string? ProviderMessageId { get; set; }
+    public string? Error { get; set; }
+    public DateTime At { get; set; }
+}
