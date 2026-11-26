@@ -98,5 +98,18 @@ public static class NewsletterEndpoints
             ctx.Response.Headers["X-Robots-Tag"] = "noindex, nofollow";
             return Results.Redirect(result.Target);
         }).RequireRateLimiting("newsletter-click");
+
+        // the invisible picture: always the same transparent GIF, whatever the address (nothing to learn from it)
+        app.MapMethods(NewsletterTracking.OpenPath + "{token}", ["GET", "HEAD"], async (string token, HttpContext ctx, NewsletterTracking tracking) =>
+        {
+            var h = ctx.Request.Headers;
+            var info = new NewsletterClickInfo(ctx.Request.Method, h.UserAgent.ToString(), h["Sec-Purpose"].FirstOrDefault() ?? h["Purpose"].FirstOrDefault());
+            await tracking.OpenAsync(token, info, DateTime.UtcNow);
+            ctx.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate, private";
+            ctx.Response.Headers.Pragma = "no-cache";
+            ctx.Response.Headers["Referrer-Policy"] = "no-referrer";
+            ctx.Response.Headers["X-Robots-Tag"] = "noindex, nofollow";
+            return Results.File(NewsletterTracking.Pixel, "image/gif");
+        }).RequireRateLimiting("newsletter-open");
     }
 }

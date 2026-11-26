@@ -16,6 +16,8 @@ public sealed record NewsletterRecipient(string Email, string? FirstName, string
 {
     /// <summary>Where a button points: its tracked address when the email has one, else the link itself.</summary>
     public string Href(string kind, string url) => Tracked != null && Tracked.TryGetValue(kind, out var t) ? t : url;
+    /// <summary>The invisible picture's address of this email (real and test emails only; never in a preview).</summary>
+    public string? OpenPixel => Tracked != null && Tracked.TryGetValue(NewsletterTracking.OpenKind, out var t) ? t : null;
 }
 
 /// <summary>Where the email points: the public site and the one contact address.</summary>
@@ -267,11 +269,15 @@ a[x-apple-data-detectors]{color:inherit !important;text-decoration:none !importa
         var unsub = r.UnsubscribeUrl != null
             ? $"<a href=\"{E(r.UnsubscribeUrl)}\" style=\"color:{GoldLight};text-decoration:underline;\">להסרה מרשימת הדיוור לחצו כאן</a>"
             : $"<span style=\"color:{GoldLight};\">[במייל לנמען יופיע כאן קישור ההסרה האישי שלו]</span>";
+        // the invisible 1×1 picture whose loading estimates that the email was opened (empty alt: nothing shows with images off)
+        var pixel = r.OpenPixel == null ? "" :
+            $"<img src=\"{E(r.OpenPixel)}\" width=\"1\" height=\"1\" alt=\"\" style=\"display:block;width:1px;height:1px;border:0;margin:0 auto;padding:0;overflow:hidden;\">";
         h.Append($"""
 <table role="presentation" class="wrap" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;"><tr><td class="px" style="padding:14px 18px 4px;font-family:{Font};font-size:12px;line-height:1.75;color:{Muted};text-align:center;" dir="rtl">
 קיבלתם את המייל הזה כי הסכמתם לקבל דיוור מ־PORTAL-X (סודות הפורטל). {unsub} · אפשר גם להשיב למייל זה עם המילה "הסר".<br>
 השולח: צוות PORTAL-X · חדרי בריחה וירטואליים · <a href="{E(r.Href("home", siteUrl))}" style="color:{GoldLight};">{E(host)}</a> · לפניות: <a href="mailto:{E(site.ContactEmail)}" style="color:{GoldLight};">{E(site.ContactEmail)}</a>
 </td></tr></table>
+{pixel}
 </td></tr>
 </table>
 </body>

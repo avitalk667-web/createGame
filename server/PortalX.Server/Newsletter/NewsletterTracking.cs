@@ -130,7 +130,71 @@ public sealed class NewsletterTracking(PortalDbContext db, ILogger<NewsletterTra
             db.Entry(tracker).State = EntityState.Detached;
             return null;
         }
-        return links.Values.ToDictionary(l => l.Kind, l => Url(siteUrl, token, l.Slot));
+        var tracked = links.Values.ToDictionary(l => l.Kind, l => Url(siteUrl, token, l.Slot));
+        tracked[OpenKind] = OpenUrl(siteUrl, token);
+        return tracked;
+    }
+
+    // ---------------------------------------------------------------- the open (an estimate)
+
+    public const string OpenPath = "/newsletter/open/";
+    /// <summary>The key of the invisible picture's address among an email's tracked addresses.</summary>
+    public const string OpenKind = "open";
+    /// <summary>At most this many loadings are kept per email (the first one is what counts).</summary>
+    public const int MaxOpens = 5;
+    /// <summary>The picture loaded again within this time is the same opening.</summary>
+    public static readonly TimeSpan OpenRepeat = TimeSpan.FromMinutes(1);
+
+    public static string OpenUrl(string siteUrl, string token) => $"{siteUrl.TrimEnd('/')}{OpenPath}{token}.gif";
+
+    /// <summary>A transparent 1×1 GIF.</summary>
+    public static readonly byte[] Pixel = Convert.FromBase64String("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7");
+
+    /// <summary>
+    /// Why a picture loading looks automatic, or null. Unlike a click, mail image proxies (Gmail, Yahoo) load the picture
+    /// for the reader, so a missing "Mozilla" is not a sign; only scanner names, HEAD and prefetch are.
+    /// </summary>
+    public static string? OpenAutomatedReason(NewsletterClickInfo info)
+    {
+        if (string.Equals(info.Method, "HEAD", StringComparison.OrdinalIgnoreCase)) return "head";
+        if (info.Purpose != null && info.Purpose.Contains("prefetch", StringComparison.OrdinalIgnoreCase)) return "prefetch";
+        var ua = (info.UserAgent ?? "").ToLowerInvariant();
+        return ScannerAgents.Any(ua.Contains) ? "agent" : null;
+    }
+
+    /// <summary>Records that an email's picture was loaded. Never throws; an unknown or broken address records nothing.</summary>
+    public async Task OpenAsync(string raw, NewsletterClickInfo info, DateTime now)
+    {
+        try
+        {
+            if (!raw.EndsWith(".gif") || raw.Length != 28) return;
+            var token = raw[..24];
+            if (!token.All(ch => char.IsAsciiLetterOrDigit(ch) || ch is '-' or '_')) return;
+            var hash = RoomService.Hash(token);
+            var tracker = await db.NewsletterTrackers.AsNoTracking().FirstOrDefaultAsync(t => t.TokenHash == hash);
+            if (tracker == null) return;
+            var mine = await db.NewsletterOpenEvents.Where(o => o.TrackerId == tracker.Id).Select(o => o.OpenedAt).ToListAsync();
+            if (mine.Count >= MaxOpens || mine.Any(t => t > now - OpenRepeat && t <= now)) return;
+
+            var reason = OpenAutomatedReason(info);
+            if (reason == null && tracker.DeliveryId is { } did)
+            {
+                var at = await db.NewsletterDeliveries.AsNoTracking().Where(d => d.Id == did).Select(d => (DateTime?)d.At).FirstOrDefaultAsync();
+                if (at != null && now >= at && now - at < TooFast) reason = "too-fast";
+            }
+            db.NewsletterOpenEvents.Add(new NewsletterOpenEvent
+            {
+                IssueId = tracker.IssueId, TrackerId = tracker.Id, DeliveryId = tracker.DeliveryId, OpenedAt = now,
+                UserAgent = info.UserAgent is { Length: > 256 } ua ? ua[..256] : info.UserAgent,
+                IsTest = tracker.IsTest, IsAutomated = reason != null, AutomatedReason = reason,
+            });
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("Newsletter open not recorded ({Type})", ex.GetType().Name);
+            db.ChangeTracker.Clear();
+        }
     }
 
     // ---------------------------------------------------------------- the click

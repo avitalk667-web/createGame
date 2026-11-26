@@ -1327,6 +1327,51 @@ namespace PortalX.Server.Data.Migrations
                     b.ToTable("NewsletterLinks");
                 });
 
+            modelBuilder.Entity("PortalX.Server.Domain.NewsletterOpenEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AutomatedReason")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<long?>("DeliveryId")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("IsAutomated")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsTest")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("IssueId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("OpenedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("TrackerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeliveryId");
+
+                    b.HasIndex("IssueId", "OpenedAt");
+
+                    b.HasIndex("TrackerId", "OpenedAt");
+
+                    b.ToTable("NewsletterOpenEvents");
+                });
+
             modelBuilder.Entity("PortalX.Server.Domain.NewsletterOrderAttribution", b =>
                 {
                     b.Property<Guid>("OrderId")
@@ -2584,6 +2629,21 @@ namespace PortalX.Server.Data.Migrations
                     b.HasOne("PortalX.Server.Domain.NewsletterIssue", null)
                         .WithMany()
                         .HasForeignKey("IssueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PortalX.Server.Domain.NewsletterOpenEvent", b =>
+                {
+                    b.HasOne("PortalX.Server.Domain.NewsletterIssue", null)
+                        .WithMany()
+                        .HasForeignKey("IssueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("PortalX.Server.Domain.NewsletterTracker", null)
+                        .WithMany()
+                        .HasForeignKey("TrackerId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

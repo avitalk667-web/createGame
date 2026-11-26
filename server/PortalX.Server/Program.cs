@@ -157,6 +157,9 @@ builder.Services.AddRateLimiter(o =>
     // newsletter link clicks: plenty for a reader, too few to try tokens at scale
     o.AddPolicy("newsletter-click", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:NewsletterClicksPerMinute", 60), Window = TimeSpan.FromMinutes(1) }));
+    // the invisible picture of a mailing: Gmail loads it for many readers from a few shared addresses, so it allows more
+    o.AddPolicy("newsletter-open", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:NewsletterOpensPerMinute", 600), Window = TimeSpan.FromMinutes(1) }));
     // the challenge: checking eligibility, and issuing or resending a personal coupon (a few per address)
     o.AddPolicy("challenge-status", ctx => RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "x",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = Limit(ctx, "RateLimits:ChallengeStatusPerMinute", 30), Window = TimeSpan.FromMinutes(1) }));

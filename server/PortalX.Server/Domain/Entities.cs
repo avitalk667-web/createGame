@@ -1117,6 +1117,25 @@ public class NewsletterClickEvent
 }
 
 /// <summary>
+/// One loading of the invisible picture of an email: an estimate that the email was opened. Only the first load and at
+/// most a few more per email are kept. No IP address; the browser name (cut short) only marks mail scanners and the
+/// picture loaded right on arrival (IsAutomated, with the reason).
+/// </summary>
+public class NewsletterOpenEvent
+{
+    public long Id { get; set; }
+    public Guid IssueId { get; set; }
+    public Guid TrackerId { get; set; }
+    public long? DeliveryId { get; set; }
+    public DateTime OpenedAt { get; set; }
+    public string? UserAgent { get; set; }
+    public bool IsTest { get; set; }
+    public bool IsAutomated { get; set; }
+    /// <summary>"agent", "head", "prefetch" or "too-fast".</summary>
+    public string? AutomatedReason { get; set; }
+}
+
+/// <summary>
 /// An order whose checkout started in a browser that clicked a link of a mailing within the attribution window. Written
 /// beside the order (the order and its payment are untouched); one per order at most.
 /// </summary>

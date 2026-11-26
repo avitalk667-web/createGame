@@ -9,19 +9,34 @@ namespace PortalX.Server.Newsletter;
 ///
 /// A "clicker" is a recipient of a real email (not a test) with at least one click that does not look automatic; they
 /// count once however many times they clicked. "Clicks" counts every such click. CTR = clickers ÷ emails sent
-/// successfully × 100. Suspected scanner clicks are counted apart and never as people. A purchase counts for a mailing
+/// successfully × 100. An "opener" (an estimate) is an email whose invisible picture loaded or that was clicked. Suspected scanner clicks are counted apart and never as people. A purchase counts for a mailing
 /// only through the key its click placed in the browser (<see cref="NewsletterTracking.AttributeAsync"/>), when the
 /// order was paid (not a test payment, not refunded).
 /// </summary>
 public sealed class NewsletterStats(PortalDbContext db)
 {
-    public static readonly string[] Filters = ["all", "clicked", "not-clicked", "game", "catalog", "share", "purchased"];
+    public static readonly string[] Filters = ["all", "opened", "not-opened", "clicked", "not-clicked", "game", "catalog", "share", "purchased"];
 
     private sealed record Click(long Id, long? DeliveryId, Guid LinkId, DateTime ClickedAt, bool IsAutomated, string? AutomatedReason);
 
     private sealed record Bought(Guid OrderId, long? DeliveryId, long Number, decimal Amount, string Currency, DateTime ClickedAt, DateTime? PaidAt);
 
     public static double? Ctr(int clickers, int sent) => sent <= 0 ? null : Math.Round(clickers * 100.0 / sent, 1);
+
+    /// <summary>
+    /// The first moment each email of the mailing was seen opened: its picture loaded (not automatically), or else its
+    /// first real click — a click means the email was open even when its pictures were not shown. An estimate.
+    /// </summary>
+    private async Task<Dictionary<long, DateTime>> OpenedAsync(Guid id, IEnumerable<Click> clicks)
+    {
+        var opened = (await db.NewsletterOpenEvents.AsNoTracking()
+                .Where(o => o.IssueId == id && !o.IsTest && !o.IsAutomated && o.DeliveryId != null)
+                .GroupBy(o => o.DeliveryId!.Value).Select(g => new { g.Key, At = g.Min(o => o.OpenedAt) }).ToListAsync())
+            .ToDictionary(x => x.Key, x => x.At);
+        foreach (var c in clicks.Where(c => !c.IsAutomated && c.DeliveryId != null))
+            if (!opened.TryGetValue(c.DeliveryId!.Value, out var at) || c.ClickedAt < at) opened[c.DeliveryId!.Value] = c.ClickedAt;
+        return opened;
+    }
 
     private Task<List<Click>> ClicksAsync(Guid id) =>
         db.NewsletterClickEvents.AsNoTracking().Where(c => c.IssueId == id && !c.IsTest)
@@ -49,6 +64,11 @@ public sealed class NewsletterStats(PortalDbContext db)
         var clickers = human.Select(c => c.DeliveryId).Distinct().Count();
         var bought = await PurchasesAsync(id);
         var testClicks = await db.NewsletterClickEvents.CountAsync(c => c.IssueId == id && c.IsTest);
+        var opened = await OpenedAsync(id, clicks);
+        var byPicture = await db.NewsletterOpenEvents.AsNoTracking().Where(o => o.IssueId == id && !o.IsTest && !o.IsAutomated && o.DeliveryId != null)
+            .Select(o => o.DeliveryId).Distinct().CountAsync();
+        var automatedOpens = await db.NewsletterOpenEvents.CountAsync(o => o.IssueId == id && !o.IsTest && o.IsAutomated);
+        var testOpens = await db.NewsletterOpenEvents.CountAsync(o => o.IssueId == id && o.IsTest);
 
         return new
         {
@@ -58,8 +78,15 @@ public sealed class NewsletterStats(PortalDbContext db)
                 sent,
                 failed = counts.GetValueOrDefault("failed"),
                 uncertain = counts.GetValueOrDefault("uncertain") + counts.GetValueOrDefault("sending"),
+                openers = opened.Count,
+                openRate = Ctr(opened.Count, sent),
+                openedByPicture = byPicture,
+                automatedOpens,
+                testOpens,
                 clickers,
                 ctr = Ctr(clickers, sent),
+                // of those who opened, how many clicked
+                clickToOpen = Ctr(clickers, opened.Count),
                 clicks = human.Count,
                 automated = clicks.Count(c => c.IsAutomated),
                 testClicks,
@@ -83,6 +110,8 @@ public sealed class NewsletterStats(PortalDbContext db)
             // clicks by day (Israel time) for the small chart
             days = human.GroupBy(c => IsraelDate(c.ClickedAt)).OrderBy(g => g.Key)
                 .Select(g => new { day = g.Key, clicks = g.Count(), clickers = g.Select(c => c.DeliveryId).Distinct().Count() }).ToList(),
+            // first openings by day (Israel time)
+            openDays = opened.Values.GroupBy(IsraelDate).OrderBy(g => g.Key).Select(g => new { day = g.Key, openers = g.Count() }).ToList(),
             attributionDays = (int)NewsletterTracking.AttributionWindow.TotalDays,
         };
     }
@@ -116,7 +145,9 @@ public sealed class NewsletterStats(PortalDbContext db)
                 .OrderBy(l => l.CreatedAt).Select(l => new { l.Email, l.FirstName }).ToListAsync())
             .GroupBy(l => l.Email).ToDictionary(g => g.Key, g => g.Last().FirstName);
         var links = await db.NewsletterLinks.AsNoTracking().Where(l => l.IssueId == id).ToDictionaryAsync(l => l.Id);
-        var human = (await ClicksAsync(id)).Where(c => !c.IsAutomated && c.DeliveryId != null).GroupBy(c => c.DeliveryId!.Value)
+        var all = await ClicksAsync(id);
+        var opened = await OpenedAsync(id, all);
+        var human = all.Where(c => !c.IsAutomated && c.DeliveryId != null).GroupBy(c => c.DeliveryId!.Value)
             .ToDictionary(g => g.Key, g => g.ToList());
         var bought = (await PurchasesAsync(id)).Where(b => b.DeliveryId != null).GroupBy(b => b.DeliveryId!.Value)
             .ToDictionary(g => g.Key, g => g.ToList());
@@ -140,6 +171,7 @@ public sealed class NewsletterStats(PortalDbContext db)
             return new
             {
                 d.Email, name = names.GetValueOrDefault(d.Email), d.Status, sentAt = d.At,
+                openedAt = opened.TryGetValue(d.Id, out var seen) ? seen : (DateTime?)null,
                 firstClickAt = first, clicks = mine.Count,
                 links = clickedLinks.Select(l => l!.Label).ToList(),
                 categories = clickedLinks.Select(l => l!.Category).Distinct().ToList(),
@@ -151,6 +183,8 @@ public sealed class NewsletterStats(PortalDbContext db)
         var counts = new Dictionary<string, int>
         {
             ["all"] = rows.Count,
+            ["opened"] = rows.Count(r => r.openedAt != null),
+            ["not-opened"] = rows.Count(r => r.openedAt == null && r.Status == "sent"),
             ["clicked"] = rows.Count(r => r.clicks > 0),
             ["not-clicked"] = rows.Count(r => r.clicks == 0),
             ["game"] = rows.Count(r => r.categories.Contains("game")),
@@ -160,6 +194,8 @@ public sealed class NewsletterStats(PortalDbContext db)
         };
         var shown = rows.Where(r => filter switch
         {
+            "opened" => r.openedAt != null,
+            "not-opened" => r.openedAt == null && r.Status == "sent",
             "clicked" => r.clicks > 0,
             "not-clicked" => r.clicks == 0,
             "game" => r.categories.Contains("game"),
@@ -167,7 +203,7 @@ public sealed class NewsletterStats(PortalDbContext db)
             "share" => r.categories.Contains("share"),
             "purchased" => r.purchase == "yes",
             _ => true,
-        }).OrderByDescending(r => r.firstClickAt ?? DateTime.MinValue).ThenBy(r => r.Email).Take(2000).ToList();
+        }).OrderByDescending(r => r.firstClickAt ?? DateTime.MinValue).ThenByDescending(r => r.openedAt ?? DateTime.MinValue).ThenBy(r => r.Email).Take(2000).ToList();
         return new { filter, counts, rows = shown };
     }
 
@@ -185,6 +221,9 @@ public sealed class NewsletterStats(PortalDbContext db)
         var clicks = await db.NewsletterClickEvents.AsNoTracking()
             .Where(c => ids.Contains(c.IssueId) && !c.IsTest && !c.IsAutomated && c.DeliveryId != null)
             .Select(c => new { c.IssueId, c.DeliveryId }).ToListAsync();
+        var opens = await db.NewsletterOpenEvents.AsNoTracking()
+            .Where(o => ids.Contains(o.IssueId) && !o.IsTest && !o.IsAutomated && o.DeliveryId != null)
+            .Select(o => new { o.IssueId, o.DeliveryId }).Distinct().ToListAsync();
         var bought = await (from a in db.NewsletterOrderAttributions.AsNoTracking()
                             join o in db.Orders.AsNoTracking() on a.OrderId equals o.Id
                             where ids.Contains(a.IssueId) && o.Status == OrderStatus.Paid && !o.IsTest
@@ -196,10 +235,11 @@ public sealed class NewsletterStats(PortalDbContext db)
                 var s = sent.GetValueOrDefault(i.Id);
                 var mine = clicks.Where(c => c.IssueId == i.Id).ToList();
                 var clickers = mine.Select(c => c.DeliveryId).Distinct().Count();
+                var openers = opens.Where(o => o.IssueId == i.Id).Select(o => o.DeliveryId).Union(mine.Select(c => c.DeliveryId)).Distinct().Count();
                 var b = bought.Where(x => x.IssueId == i.Id).ToList();
                 return new
                 {
-                    i.Id, i.Name, i.Status, sentAt = i.SendStartedAt, sent = s, clickers, clicks = mine.Count, ctr = Ctr(clickers, s),
+                    i.Id, i.Name, i.Status, sentAt = i.SendStartedAt, sent = s, openers, openRate = Ctr(openers, s), clickers, clicks = mine.Count, ctr = Ctr(clickers, s),
                     purchases = b.Count, revenue = b.Sum(x => x.PriceSnapshot),
                 };
             }).ToList(),

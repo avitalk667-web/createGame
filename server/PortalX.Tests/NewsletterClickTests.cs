@@ -43,6 +43,7 @@ public class NewsletterClickTests
                 ["RateLimits:ReferralPer10Minutes"] = "100000",
                 ["RateLimits:ReferralVisitsPerMinute"] = "100000",
                 ["RateLimits:NewsletterClicksPerMinute"] = "100000",
+                ["RateLimits:NewsletterOpensPerMinute"] = "100000",
             }));
             b.ConfigureTestServices(s => s.AddSingleton<IEmailSender>(mail));
         });
@@ -158,6 +159,100 @@ public class NewsletterClickTests
         Assert.Contains(tracked["cta"], text);
         // without tracking (the preview) nothing changes
         Assert.DoesNotContain("/newsletter/click/", NewsletterTemplate.Html(NewsletterContent.Welcome(), r with { Tracked = null }, new NewsletterSite(Site, "info@example.org")));
+    }
+
+    // ------------------------------------------------------------------ opens (an estimate)
+
+    private const string GmailProxy = "Mozilla/5.0 (Windows NT 5.1; rv:11.0) Gecko Firefox/11.0 (via ggpht.com GoogleImageProxy)";
+
+    [Fact]
+    public void Each_sent_email_carries_its_own_invisible_picture_and_the_preview_none()
+    {
+        var pixel = $"{Site}/newsletter/open/AAAAAAAAAAAAAAAAAAAAAAAA.gif";
+        var r = new NewsletterRecipient("a@example.org", "דנה", $"{Site}/my-link/TOKEN", $"{Site}/unsubscribe?t=U",
+            new Dictionary<string, string> { ["open"] = pixel, ["cta"] = $"{Site}/newsletter/click/AAAAAAAAAAAAAAAAAAAAAAAA.2" });
+        var html = NewsletterTemplate.Html(NewsletterContent.Welcome(), r, new NewsletterSite(Site, "info@example.org"));
+        Assert.Matches($"<img src=\"{Regex.Escape(pixel)}\" width=\"1\" height=\"1\" alt=\"\"", html);
+        Assert.Single(Regex.Matches(html, "/newsletter/open/"));
+        Assert.DoesNotContain("/newsletter/open/", NewsletterTemplate.Text(NewsletterContent.Welcome(), r, new NewsletterSite(Site, "info@example.org")));
+        Assert.DoesNotContain("/newsletter/open/", NewsletterTemplate.Html(NewsletterContent.Welcome(), r with { Tracked = null }, new NewsletterSite(Site, "info@example.org")));
+
+        // a mail image proxy loads the picture for the reader: not a scanner (unlike a click without "Mozilla")
+        Assert.Null(NewsletterTracking.OpenAutomatedReason(new("GET", GmailProxy, null)));
+        Assert.Null(NewsletterTracking.OpenAutomatedReason(new("GET", "YahooMailProxy; https://help.yahoo.com/kb/yahoo-mail-proxy-SLN28749.html", null)));
+        Assert.Equal("agent", NewsletterTracking.OpenAutomatedReason(new("GET", "python-requests/2.31", null)));
+        Assert.Equal("head", NewsletterTracking.OpenAutomatedReason(new("HEAD", Browser, null)));
+    }
+
+    [Fact]
+    public async Task Opens_are_counted_once_per_email_from_the_picture_or_a_click_and_scanners_tests_and_early_loads_are_not()
+    {
+        var (f, mail) = Site_();
+        using var __ = f;
+        var (a, b, c, d, e) = (Unique("oa"), Unique("ob"), Unique("oc"), Unique("od"), Unique("oe"));
+        var (one, urls) = await SentAsync(f, [(a, "sent"), (b, "sent"), (c, "sent"), (d, "sent"), (e, "failed")]);
+        var http = f.CreateClient();
+
+        // A opens: the transparent picture comes back, never cached, and the opening is recorded once
+        var r = await ClickAsync(http, urls[a]["open"]);
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        Assert.Equal("image/gif", r.Content.Headers.ContentType!.MediaType);
+        Assert.Equal(NewsletterTracking.Pixel, await r.Content.ReadAsByteArrayAsync());
+        Assert.Contains("no-store", r.Headers.CacheControl!.ToString());
+        await ClickAsync(http, urls[a]["open"]);                                    // loaded again at once: the same opening
+        Assert.Equal(1, await DbAsync(f, db => db.NewsletterOpenEvents.CountAsync(x => x.IssueId == one)));
+        // only a few loadings are ever kept per email
+        for (var i = 0; i < 8; i++)
+        {
+            await DbAsync(f, db => db.NewsletterOpenEvents.Where(x => x.IssueId == one).ExecuteUpdateAsync(s => s.SetProperty(x => x.OpenedAt, x => x.OpenedAt.AddMinutes(-5))));
+            await ClickAsync(http, urls[a]["open"]);
+        }
+        Assert.Equal(NewsletterTracking.MaxOpens, await DbAsync(f, db => db.NewsletterOpenEvents.CountAsync(x => x.IssueId == one)));
+
+        // B through Gmail's image proxy counts; C's picture was loaded by a scanner (not counted) but C clicked (counted)
+        await ClickAsync(http, urls[b]["open"], GmailProxy);
+        await ClickAsync(http, urls[c]["open"], "python-requests/2.31");
+        await ClickAsync(NoRedirect(f), urls[c]["cta"]);
+        // a broken or guessed address still gets the picture, and records nothing
+        foreach (var bad in new[] { "/newsletter/open/AAAAAAAAAAAAAAAAAAAAAAAA.gif", "/newsletter/open/x.gif", "/newsletter/open/../../etc" })
+            Assert.Equal(HttpStatusCode.OK, (await http.GetAsync(bad)).StatusCode);
+
+        var admin = await AdminAsync(f);
+        var cards = (await Body(await admin.GetAsync($"/api/admin/newsletters/{one}/stats"))).GetProperty("cards");
+        Assert.Equal(4, cards.GetProperty("sent").GetInt32());
+        Assert.Equal(3, cards.GetProperty("openers").GetInt32());                   // A, B (picture) and C (click)
+        Assert.Equal(75, cards.GetProperty("openRate").GetDouble());
+        Assert.Equal(2, cards.GetProperty("openedByPicture").GetInt32());
+        Assert.Equal(1, cards.GetProperty("automatedOpens").GetInt32());
+        Assert.Equal(33.3, cards.GetProperty("clickToOpen").GetDouble());           // 1 clicked of 3 who opened
+
+        async Task<List<string>> Who(string filter) => (await Body(await admin.GetAsync($"/api/admin/newsletters/{one}/stats/recipients?filter={filter}")))
+            .GetProperty("rows").EnumerateArray().Select(x => x.GetProperty("email").GetString()!).OrderBy(x => x).ToList();
+        Assert.Equal(new[] { a, b, c }.OrderBy(x => x), await Who("opened"));
+        Assert.Equal(new[] { d }, await Who("not-opened"));                        // the failed email is not "not opened"
+        var cmp = (await Body(await admin.GetAsync("/api/admin/newsletters/compare"))).GetProperty("issues").EnumerateArray()
+            .Single(x => x.GetProperty("id").GetGuid() == one);
+        Assert.Equal(3, cmp.GetProperty("openers").GetInt32());
+        Assert.Equal(75, cmp.GetProperty("openRate").GetDouble());
+
+        // a picture loaded seconds after sending is the mail system, not a reader; a test email's opens never count
+        var (two, urls2) = await SentAsync(f, [(a, "sent")], DateTime.UtcNow);
+        await ClickAsync(http, urls2[a]["open"]);
+        var testUrls = await DbAsync(f, async db =>
+        {
+            var tracking = new NewsletterTracking(db, NullLogger<NewsletterTracking>.Instance);
+            var links = await db.NewsletterLinks.Where(l => l.IssueId == two).ToDictionaryAsync(l => l.Kind);
+            return (await tracking.NewTrackerAsync(two, null, "tester@example.org", links, Site))!;
+        });
+        await ClickAsync(http, testUrls["open"]);
+        var cards2 = (await Body(await admin.GetAsync($"/api/admin/newsletters/{two}/stats"))).GetProperty("cards");
+        Assert.Equal(0, cards2.GetProperty("openers").GetInt32());
+        Assert.Equal(1, cards2.GetProperty("automatedOpens").GetInt32());
+        Assert.Equal(1, cards2.GetProperty("testOpens").GetInt32());
+        Assert.Equal("too-fast", await DbAsync(f, db => db.NewsletterOpenEvents.Where(x => x.IssueId == two && !x.IsTest).Select(x => x.AutomatedReason).SingleAsync()));
+
+        // no IP is kept, and nothing was mailed
+        Assert.Empty(mail.Sent);
     }
 
     // ------------------------------------------------------------------ clicks and numbers

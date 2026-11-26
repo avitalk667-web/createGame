@@ -52,6 +52,7 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
     public DbSet<NewsletterTracker> NewsletterTrackers => Set<NewsletterTracker>();
     public DbSet<NewsletterClickEvent> NewsletterClickEvents => Set<NewsletterClickEvent>();
     public DbSet<NewsletterOrderAttribution> NewsletterOrderAttributions => Set<NewsletterOrderAttribution>();
+    public DbSet<NewsletterOpenEvent> NewsletterOpenEvents => Set<NewsletterOpenEvent>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -126,6 +127,17 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
             e.HasOne<Order>().WithMany().HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne<NewsletterIssue>().WithMany().HasForeignKey(x => x.IssueId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne<NewsletterClickEvent>().WithMany().HasForeignKey(x => x.ClickId).OnDelete(DeleteBehavior.Cascade);
+        });
+        b.Entity<NewsletterOpenEvent>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.UserAgent).HasMaxLength(256);
+            e.Property(x => x.AutomatedReason).HasMaxLength(16);
+            e.HasIndex(x => new { x.IssueId, x.OpenedAt });
+            e.HasIndex(x => new { x.TrackerId, x.OpenedAt });
+            e.HasIndex(x => x.DeliveryId);
+            e.HasOne<NewsletterIssue>().WithMany().HasForeignKey(x => x.IssueId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<NewsletterTracker>().WithMany().HasForeignKey(x => x.TrackerId).OnDelete(DeleteBehavior.Cascade);
         });
 
         // ---- challenge campaigns ("Challenge 240") and their personal coupons ----
